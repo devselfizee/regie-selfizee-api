@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://regie.selfizee.com/schemas/heartbeat.v1.schema.json",
+  "title": "Heartbeat borne — v1",
+  "description": "Envoyé par chaque borne sur POST /ingest/v1/heartbeats toutes les 5 minutes, même sans vente. Permet de distinguer « pas de client » de « machine en panne ». En rattrapage, la borne peut envoyer plusieurs heartbeats d'un coup ; (borne_id, horodatage) est unique.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "borne_id", "heartbeats"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "borne_id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9_-]{2,63}$" },
+    "heartbeats": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2000,
+      "items": { "$ref": "#/$defs/heartbeat" }
+    }
+  },
+  "$defs": {
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["horodatage", "logiciel_version"],
+      "properties": {
+        "horodatage": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "logiciel_version": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "papier_restant": {
+          "description": "Nombre de tirages restants (papier).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruban_restant": {
+          "description": "Nombre de tirages restants (ruban).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "imprimante_ok": { "type": "boolean" },
+        "module_paiement_ok": { "type": "boolean" },
+        "erreurs": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code"],
+            "properties": {
+              "code": { "type": "string", "maxLength": 64 },
+              "message": { "type": "string", "maxLength": 500 },
+              "composant": { "type": "string", "enum": ["imprimante", "module_paiement", "camera", "ecran", "reseau", "logiciel", "autre"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

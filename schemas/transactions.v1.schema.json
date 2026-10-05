@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://regie.selfizee.com/schemas/transactions.v1.schema.json",
+  "title": "Lot de transactions borne — v1",
+  "description": "Envoyé par une borne (toutes gammes) sur POST /ingest/v1/transactions. Un lot contient 1 à 500 transactions. Idempotent : la clé (borne_id, transaction_id) est unique, renvoyer un lot déjà reçu ne crée rien.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "borne_id", "envoye_le", "logiciel_version", "transactions"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "borne_id": {
+      "description": "Identifiant unique de la borne, doit correspondre à la clé API utilisée.",
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_-]{2,63}$"
+    },
+    "envoye_le": { "$ref": "#/$defs/horodatage" },
+    "logiciel_version": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "rattrapage": {
+      "description": "true quand la borne renvoie un historique après une période hors ligne.",
+      "type": "boolean",
+      "default": false
+    },
+    "transactions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/transaction" }
+    }
+  },
+  "$defs": {
+    "horodatage": {
+      "description": "RFC 3339 avec fuseau explicite obligatoire (Z ou ±hh:mm).",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "transaction": {
+      "type": "object",
+      "description": "Aucune donnée carte (PAN, date d'expiration, nom du porteur) n'est acceptée : additionalProperties=false.",
+      "additionalProperties": false,
+      "required": [
+        "transaction_id", "horodatage", "montant_ttc_centimes", "devise",
+        "statut", "module", "moyen_paiement", "produit"
+      ],
+      "properties": {
+        "transaction_id": {
+          "description": "ID de la transaction côté module de paiement (unique pour la borne).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "horodatage": { "$ref": "#/$defs/horodatage" },
+        "montant_ttc_centimes": {
+          "description": "Montant TTC en centimes (entier). 800 = 8,00 €. Toujours positif, y compris pour un remboursement.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "taux_tva_pct": {
+          "description": "Optionnel. Taux de TVA appliqué ; à défaut, le taux configuré côté plateforme (20 %).",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "devise": { "type": "string", "pattern": "^[A-Z]{3}$", "default": "EUR" },
+        "statut": {
+          "type": "string",
+          "enum": ["accepte", "refuse", "annule", "rembourse"]
+        },
+        "transaction_origine_id": {
+          "description": "Pour un remboursement ou une annulation postérieure : transaction_id de la vente d'origine.",
+          "type": "string",
+          "maxLength": 128
+        },
+        "module": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "description": "Code du référentiel « type de module ». Un code inconnu est rejeté en file d'erreurs.",
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{2,64}$",
+              "examples": ["INGENICO_SELF_2000", "MONNAYEUR", "STRIPE_TERMINAL", "SANS_CONTACT_NAYAX"]
+            },
+            "numero_serie": { "type": "string", "maxLength": 64 }
+          }
+        },
+        "moyen_paiement": {
+          "type": "string",
+          "enum": ["cb", "sans_contact", "especes", "mobile", "autre"]
+        },
+        "reference_monetique": {
+          "description": "Référence prestataire servant au rapprochement (n° d'autorisation, ID PaymentIntent…). Jamais de numéro de carte.",
+          "type": "string",
+          "maxLength": 128
+        },
+        "produit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "nb_tirages"],
+          "properties": {
+            "code": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "libelle": { "type": "string", "maxLength": 128 },
+            "nb_tirages": { "type": "integer", "minimum": 0, "maximum": 100 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "statut": { "const": "rembourse" } } },
+          "then": { "required": ["transaction_origine_id"] }
+        },
+        {
+          "if": { "properties": { "moyen_paiement": { "const": "especes" } } },
+          "then": { "not": { "required": ["reference_monetique"] } }
+        }
+      ]
+    }
+  }
+}

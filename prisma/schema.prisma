@@ -1,0 +1,976 @@
+// Plateforme de suivi Régie Selfizee / Ma Trombine
+// Schéma de données V1 → V2 (à valider avant développement, cf. CDC §9.4)
+//
+// Conventions :
+// - Montants en centimes (Int), taux en points de base (Int : 2000 = 20 %).
+// - Horodatages en UTC (timestamptz). Les dates "métier" (jour, période) sont
+//   des dates locales Europe/Paris (@db.Date).
+// - Les contraintes que Prisma ne sait pas exprimer (non-chevauchement des
+//   affectations / contrats, CHECK) sont ajoutées en SQL brut dans la
+//   migration initiale (voir docs/schema-bdd.md).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Utilisateurs ───────────────────────────────────────────
+
+model User {
+  id          Int      @id @default(autoincrement())
+  keycloakSub String?  @unique @map("keycloak_sub")
+  crmId       Int?     @unique @map("crm_id")
+  email       String   @unique
+  nom         String
+  prenom      String
+  telephone   String? // SMS des alertes critiques
+  role        UserRole @default(COMMERCIAL)
+  lieuId      Int?     @map("lieu_id") // rôle PARTENAIRE uniquement (V2)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lieu             Lieu?                   @relation("PartenaireLieu", fields: [lieuId], references: [id])
+  lieuxCommercial  Lieu[]                  @relation("LieuCommercial")
+  contratsCrees    ContratCommission[]
+  ajustements      ReversementAjustement[]
+  alertesAssignees Alerte[]
+  interventions    Intervention[]
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  COMMERCIAL
+  TECHNICIEN
+  PARTENAIRE
+}
+
+// ─── Listes administrables ──────────────────────────────────
+// Une seule table pour toutes les listes de valeurs de la fiche lieu :
+// ajout d'une valeur = pas de développement, et chaque champ reste filtrable.
+
+model RefValeur {
+  id        Int          @id @default(autoincrement())
+  categorie RefCategorie
+  code      String
+  libelle   String
+  ordre     Int          @default(0)
+  actif     Boolean      @default(true)
+  parentId  Int?         @map("parent_id") // ex. sous-type → type de lieu
+
+  parent  RefValeur?  @relation("RefParent", fields: [parentId], references: [id])
+  enfants RefValeur[] @relation("RefParent")
+
+  lieuxType          Lieu[]          @relation("LieuType")
+  lieuxSousType      Lieu[]          @relation("LieuSousType")
+  lieuxStanding      Lieu[]          @relation("LieuStanding")
+  lieuxZone          Lieu[]          @relation("LieuZone")
+  lieuxTailleCommune Lieu[]          @relation("LieuTailleCommune")
+  lieuxEmplacement   Lieu[]          @relation("LieuEmplacement")
+  lieuxEclairage     Lieu[]          @relation("LieuEclairage")
+  lieuxOrigineLead   Lieu[]          @relation("LieuOrigineLead")
+  lieuxClientele     LieuClientele[]
+  evenements         EvenementLieu[]
+
+  @@unique([categorie, code])
+  @@map("ref_valeurs")
+}
+
+enum RefCategorie {
+  TYPE_LIEU // camping, boîte de nuit, bar, restaurant…
+  SOUS_TYPE_LIEU // parent = TYPE_LIEU
+  STANDING
+  CLIENTELE // familles, touristes, étudiants, 18-25…
+  ZONE_GEO // urbaine, périurbaine, rurale, littoral, montagne
+  TAILLE_COMMUNE
+  EMPLACEMENT_ZONE // entrée, piste, terrasse…
+  ECLAIRAGE
+  ORIGINE_LEAD
+  TYPE_EVENEMENT // soirée spéciale, travaux, changement de prix…
+}
+
+// ─── Lieux (fiche client) ───────────────────────────────────
+
+model Lieu {
+  id          Int        @id @default(autoincrement())
+  crmClientId Int?       @unique @map("crm_client_id")
+  statut      LieuStatut @default(ACTIF)
+
+  // Identité
+  raisonSociale String   @map("raison_sociale")
+  enseigne      String
+  siret         String?  @db.Char(14)
+  adresse       String?
+  codePostal    String?  @map("code_postal")
+  ville         String?
+  pays          String   @default("FR") @db.Char(2)
+  latitude      Decimal? @db.Decimal(9, 6)
+  longitude     Decimal? @db.Decimal(9, 6)
+
+  // Segment
+  typeLieuId Int  @map("type_lieu_id")
+  sousTypeId Int? @map("sous_type_id")
+  standingId Int? @map("standing_id")
+
+  // Activité (horaires, saisons et fermetures : tables dédiées)
+  saisonnalite Saisonnalite @default(ANNUEL)
+
+  // Fréquentation
+  capaciteAccueil      Int? @map("capacite_accueil")
+  frequentationJour    Int? @map("frequentation_jour")
+  frequentationSemaine Int? @map("frequentation_semaine")
+
+  // Environnement
+  zoneGeoId             Int?     @map("zone_geo_id")
+  tailleCommuneId       Int?     @map("taille_commune_id")
+  concurrencePhoto      Boolean? @map("concurrence_photo")
+  concurrencePhotoNotes String?  @map("concurrence_photo_notes")
+
+  // Emplacement
+  interieurExterieur InterieurExterieur? @map("interieur_exterieur")
+  emplacementZoneId  Int?                @map("emplacement_zone_id")
+  visibilite         Int? // 1-5 (CHECK SQL)
+  eclairageId        Int?                @map("eclairage_id")
+
+  // Commercial
+  dateSignature    DateTime? @map("date_signature") @db.Date
+  dateInstallation DateTime? @map("date_installation") @db.Date
+  dureeContratMois Int?      @map("duree_contrat_mois")
+  commercialId     Int?      @map("commercial_id")
+  origineLeadId    Int?      @map("origine_lead_id")
+
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  typeLieu        RefValeur  @relation("LieuType", fields: [typeLieuId], references: [id])
+  sousType        RefValeur? @relation("LieuSousType", fields: [sousTypeId], references: [id])
+  standing        RefValeur? @relation("LieuStanding", fields: [standingId], references: [id])
+  zoneGeo         RefValeur? @relation("LieuZone", fields: [zoneGeoId], references: [id])
+  tailleCommune   RefValeur? @relation("LieuTailleCommune", fields: [tailleCommuneId], references: [id])
+  emplacementZone RefValeur? @relation("LieuEmplacement", fields: [emplacementZoneId], references: [id])
+  eclairage       RefValeur? @relation("LieuEclairage", fields: [eclairageId], references: [id])
+  origineLead     RefValeur? @relation("LieuOrigineLead", fields: [origineLeadId], references: [id])
+  commercial      User?      @relation("LieuCommercial", fields: [commercialId], references: [id])
+
+  contacts     LieuContact[]
+  clienteles   LieuClientele[]
+  horaires     LieuHoraire[]
+  saisons      LieuSaison[]
+  fermetures   LieuFermeture[]
+  affectations AffectationBorne[]
+  transactions Transaction[]
+  contrats     ContratCommission[]
+  reversements Reversement[]
+  alertes      Alerte[]
+  evenements   EvenementLieu[]
+  partenaires  User[]              @relation("PartenaireLieu")
+  aggJours     AggJour[]
+  aggHeures    AggHeure[]
+
+  @@index([typeLieuId])
+  @@index([commercialId])
+  @@map("lieux")
+}
+
+enum LieuStatut {
+  PROSPECT // pipeline de prospection (V3), même fiche que les clients
+  ACTIF
+  SUSPENDU
+  RESILIE
+}
+
+enum Saisonnalite {
+  ANNUEL
+  SAISONNIER
+}
+
+enum InterieurExterieur {
+  INTERIEUR
+  EXTERIEUR
+  MIXTE
+}
+
+model LieuContact {
+  id        Int         @id @default(autoincrement())
+  lieuId    Int         @map("lieu_id")
+  role      ContactRole
+  nom       String
+  prenom    String?
+  email     String?
+  telephone String?
+
+  lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+
+  @@map("lieu_contacts")
+}
+
+enum ContactRole {
+  GERANT
+  REFERENT_SUR_PLACE
+  COMPTABILITE
+  AUTRE
+}
+
+// Clientèle dominante : multi-valeurs
+model LieuClientele {
+  lieuId      Int @map("lieu_id")
+  refValeurId Int @map("ref_valeur_id")
+
+  lieu      Lieu      @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  refValeur RefValeur @relation(fields: [refValeurId], references: [id])
+
+  @@id([lieuId, refValeurId])
+  @@map("lieu_clienteles")
+}
+
+// Horaires hebdomadaires. Plusieurs créneaux par jour possibles.
+// fermeture < ouverture = fermeture le lendemain (boîte de nuit 23h → 5h).
+// Sert à : CA par heure d'ouverture, alerte "vente hors horaires", alertes muettes.
+model LieuHoraire {
+  id          Int      @id @default(autoincrement())
+  lieuId      Int      @map("lieu_id")
+  jourSemaine Int      @map("jour_semaine") // 1 = lundi … 7 = dimanche (ISO)
+  ouverture   DateTime @db.Time(0)
+  fermeture   DateTime @db.Time(0)
+  // Horaires propres à une saison (null = toute l'année)
+  saisonId    Int?     @map("saison_id")
+
+  lieu   Lieu        @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  saison LieuSaison? @relation(fields: [saisonId], references: [id], onDelete: Cascade)
+
+  @@index([lieuId, jourSemaine])
+  @@map("lieu_horaires")
+}
+
+// Périodes d'ouverture d'un lieu saisonnier (une ligne par saison et par année)
+model LieuSaison {
+  id      Int      @id @default(autoincrement())
+  lieuId  Int      @map("lieu_id")
+  libelle String? // "Été 2027"
+  debut   DateTime @db.Date
+  fin     DateTime @db.Date
+
+  lieu     Lieu          @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  horaires LieuHoraire[]
+
+  @@index([lieuId, debut])
+  @@map("lieu_saisons")
+}
+
+// Jours / périodes de fermeture exceptionnelle (congés, travaux…)
+model LieuFermeture {
+  id     Int      @id @default(autoincrement())
+  lieuId Int      @map("lieu_id")
+  debut  DateTime @db.Date
+  fin    DateTime @db.Date
+  motif  String?
+
+  lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+
+  @@index([lieuId, debut])
+  @@map("lieu_fermetures")
+}
+
+// ─── Machines ───────────────────────────────────────────────
+
+// Gammes : Ma Trombine, Prestige… (table, pas enum, pour en ajouter sans dev)
+model Gamme {
+  id      Int     @id @default(autoincrement())
+  code    String  @unique // MA_TROMBINE, PRESTIGE
+  libelle String
+  actif   Boolean @default(true)
+
+  bornes Borne[]
+
+  @@map("gammes")
+}
+
+// Référentiel "type de module" : Ingenico Self 2000, monnayeur, Stripe Terminal…
+model TypeModulePaiement {
+  id           Int     @id @default(autoincrement())
+  code         String  @unique // INGENICO_SELF_2000, MONNAYEUR, STRIPE_TERMINAL…
+  libelle      String
+  fournisseur  String? // Ingenico, Stripe…
+  // Le prestataire fournit-il des relevés pour le rapprochement ?
+  rapprochable Boolean @default(false)
+  actif        Boolean @default(true)
+
+  modules      ModulePaiement[]
+  transactions Transaction[]
+  aggJours     AggJour[]
+
+  @@map("types_module_paiement")
+}
+
+// Module physique monté sur une borne (une borne peut en avoir plusieurs :
+// TPE + monnayeur).
+model ModulePaiement {
+  id                     Int       @id @default(autoincrement())
+  typeId                 Int       @map("type_id")
+  borneId                Int?      @map("borne_id")
+  numeroSerie            String?   @map("numero_serie")
+  // Identifiant côté prestataire (ex. TID Ingenico) pour le rapprochement
+  identifiantPrestataire String?   @map("identifiant_prestataire")
+  installeLe             DateTime? @map("installe_le") @db.Date
+  retireLe               DateTime? @map("retire_le") @db.Date
+
+  type         TypeModulePaiement @relation(fields: [typeId], references: [id])
+  borne        Borne?             @relation(fields: [borneId], references: [id])
+  transactions Transaction[]
+
+  @@unique([typeId, numeroSerie])
+  @@map("modules_paiement")
+}
+
+model Borne {
+  id          Int         @id @default(autoincrement())
+  identifiant String      @unique // ID qui remonte dans les JSON (borne_id)
+  gammeId     Int         @map("gamme_id")
+  numeroSerie String      @unique @map("numero_serie")
+  crmId       Int?        @unique @map("crm_id") // lien parc CRM
+  statut      BorneStatut @default(EN_STOCK)
+
+  // Authentification de l'API d'ingestion : clé propre à la borne.
+  // On ne stocke que le hash ; le préfixe permet d'identifier la clé.
+  apiKeyHash   String?   @map("api_key_hash")
+  apiKeyPrefix String?   @unique @map("api_key_prefix")
+  apiKeyCreeLe DateTime? @map("api_key_cree_le") @db.Timestamptz(3)
+
+  // Dernier état connu (dénormalisé depuis heartbeats/transactions)
+  logicielVersion  String?   @map("logiciel_version")
+  dernierHeartbeat DateTime? @map("dernier_heartbeat") @db.Timestamptz(3)
+  derniereVente    DateTime? @map("derniere_vente") @db.Timestamptz(3)
+
+  // Rentabilité / ROI (V2)
+  coutAchatCents         Int?      @map("cout_achat_cents")
+  dureeAmortissementMois Int?      @map("duree_amortissement_mois")
+  dateMiseEnService      DateTime? @map("date_mise_en_service") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  gamme         Gamme              @relation(fields: [gammeId], references: [id])
+  modules       ModulePaiement[]
+  affectations  AffectationBorne[]
+  transactions  Transaction[]
+  heartbeats    Heartbeat[]
+  imports       ImportLot[]
+  alertes       Alerte[]
+  couts         CoutBorne[]
+  interventions Intervention[]
+  aggJours      AggJour[]
+  aggHeures     AggHeure[]
+  aggDispos     AggDisponibilite[]
+
+  @@map("bornes")
+}
+
+enum BorneStatut {
+  EN_STOCK
+  INSTALLEE
+  EN_PANNE
+  EN_REPARATION
+  REFORMEE
+}
+
+// Historique d'affectation borne → lieu. fin = null : affectation en cours.
+// Contrainte SQL : pas de chevauchement pour une même borne
+//   EXCLUDE USING gist (borne_id WITH =, tstzrange(debut, fin) WITH &&)
+// Une transaction est rattachée au lieu dont l'affectation couvre son horodatage.
+model AffectationBorne {
+  id               Int       @id @default(autoincrement())
+  borneId          Int       @map("borne_id")
+  lieuId           Int       @map("lieu_id")
+  debut            DateTime @db.Timestamptz(3)
+  fin              DateTime? @db.Timestamptz(3)
+  emplacementNotes String?   @map("emplacement_notes")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  borne        Borne         @relation(fields: [borneId], references: [id])
+  lieu         Lieu          @relation(fields: [lieuId], references: [id])
+  transactions Transaction[]
+
+  @@index([borneId, debut])
+  @@index([lieuId])
+  @@map("affectations_borne")
+}
+
+// ─── Ingestion ──────────────────────────────────────────────
+
+// Un appel API (ou un fichier déposé) = un lot. Payload brut conservé (traçabilité).
+model ImportLot {
+  id               BigInt       @id @default(autoincrement())
+  source           ImportSource
+  type             ImportType
+  borneId          Int?         @map("borne_id") // null si borne inconnue
+  borneIdentifiant String?      @map("borne_identifiant")
+  schemaVersion    String?      @map("schema_version")
+  payloadSha256    String       @map("payload_sha256") @db.Char(64)
+  payload          Json
+  recuLe           DateTime     @default(now()) @map("recu_le") @db.Timestamptz(3)
+  ipSource         String?      @map("ip_source")
+  statut           ImportStatut
+  nbRecues         Int          @default(0) @map("nb_recues")
+  nbCreees         Int          @default(0) @map("nb_creees")
+  nbDoublons       Int          @default(0) @map("nb_doublons")
+  nbRejetees       Int          @default(0) @map("nb_rejetees")
+
+  borne        Borne?         @relation(fields: [borneId], references: [id])
+  erreurs      ImportErreur[]
+  transactions Transaction[]
+
+  @@index([borneId, recuLe])
+  @@index([payloadSha256])
+  @@map("import_lots")
+}
+
+enum ImportSource {
+  API
+  DEPOT_FICHIER
+  RATTRAPAGE_MANUEL
+}
+
+enum ImportType {
+  TRANSACTIONS
+  HEARTBEAT
+  RELEVE_MONETIQUE
+}
+
+enum ImportStatut {
+  OK
+  PARTIEL // certaines lignes rejetées
+  REJETE // lot entier rejeté (auth, JSON invalide…)
+}
+
+// File d'erreurs consultable
+model ImportErreur {
+  id                  BigInt             @id @default(autoincrement())
+  importId            BigInt             @map("import_id")
+  index               Int? // position dans le lot
+  transactionIdModule String?            @map("transaction_id_module")
+  code                String // SCHEMA_INVALIDE, BORNE_INCONNUE, CLE_INVALIDE, CONFLIT_DOUBLON…
+  message             String
+  payload             Json?
+  statut              ImportErreurStatut @default(NOUVELLE)
+  traiteLe            DateTime?          @map("traite_le") @db.Timestamptz(3)
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  import ImportLot @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([statut, createdAt])
+  @@map("import_erreurs")
+}
+
+enum ImportErreurStatut {
+  NOUVELLE
+  RETRAITEE
+  IGNOREE
+}
+
+model Transaction {
+  id                  BigInt @id @default(autoincrement())
+  borneId             Int    @map("borne_id")
+  // Clé de dédoublonnage (CDC §4.3) : ID transaction du module + ID borne
+  transactionIdModule String @map("transaction_id_module")
+
+  // Rattachement calculé à l'ingestion selon l'affectation active à horodatage.
+  // null = borne non affectée à cette date : stockée et signalée, jamais perdue.
+  lieuId        Int? @map("lieu_id")
+  affectationId Int? @map("affectation_id")
+
+  horodatage    DateTime @db.Timestamptz(3) // UTC
+  offsetMinutes Int      @map("offset_minutes") // fuseau d'origine envoyé par la borne
+  jourLocal     DateTime @map("jour_local") @db.Date // date Europe/Paris (agrégats)
+
+  montantTtcCents Int               @map("montant_ttc_cents")
+  tauxTvaBp       Int               @map("taux_tva_bp") // 2000 = 20 %
+  montantHtCents  Int               @map("montant_ht_cents")
+  devise          String            @default("EUR") @db.Char(3)
+  statut          TransactionStatut
+
+  typeModuleId       Int           @map("type_module_id")
+  moduleId           Int?          @map("module_id")
+  moyenPaiement      MoyenPaiement @map("moyen_paiement")
+  referenceMonetique String?       @map("reference_monetique") // n° autorisation, pas de donnée carte
+
+  produitCode    String  @map("produit_code")
+  produitLibelle String? @map("produit_libelle")
+  nbTirages      Int     @map("nb_tirages")
+
+  // Remboursement / annulation d'une vente antérieure
+  transactionOrigineId BigInt? @map("transaction_origine_id")
+
+  logicielVersion String   @map("logiciel_version")
+  importId        BigInt   @map("import_id")
+  recuLe          DateTime @default(now()) @map("recu_le") @db.Timestamptz(3)
+
+  rapprochement RapprochementStatut @default(NON_RAPPROCHE)
+
+  borne        Borne              @relation(fields: [borneId], references: [id])
+  lieu         Lieu?              @relation(fields: [lieuId], references: [id])
+  affectation  AffectationBorne?  @relation(fields: [affectationId], references: [id])
+  typeModule   TypeModulePaiement @relation(fields: [typeModuleId], references: [id])
+  module       ModulePaiement?    @relation(fields: [moduleId], references: [id])
+  import       ImportLot          @relation(fields: [importId], references: [id])
+  origine      Transaction?       @relation("TransactionOrigine", fields: [transactionOrigineId], references: [id])
+  derivees     Transaction[]      @relation("TransactionOrigine")
+  lignesReleve ReleveLigne[]
+
+  @@unique([borneId, transactionIdModule])
+  @@index([lieuId, horodatage])
+  @@index([borneId, horodatage])
+  @@index([jourLocal])
+  @@index([lieuId]) // file des transactions non affectées (lieu_id IS NULL)
+  @@map("transactions")
+}
+
+enum TransactionStatut {
+  ACCEPTEE
+  REFUSEE
+  ANNULEE
+  REMBOURSEE
+}
+
+enum MoyenPaiement {
+  CB // carte insérée
+  SANS_CONTACT
+  ESPECES
+  MOBILE // Apple Pay / Google Pay
+  AUTRE
+}
+
+enum RapprochementStatut {
+  NON_RAPPROCHE
+  RAPPROCHE
+  ECART
+  NON_APPLICABLE // espèces
+}
+
+model Heartbeat {
+  id               BigInt   @id @default(autoincrement())
+  borneId          Int      @map("borne_id")
+  horodatage       DateTime @db.Timestamptz(3)
+  recuLe           DateTime @default(now()) @map("recu_le") @db.Timestamptz(3)
+  papierRestant    Int?     @map("papier_restant") // nb de tirages restants
+  rubanRestant     Int?     @map("ruban_restant")
+  imprimanteOk     Boolean? @map("imprimante_ok")
+  modulePaiementOk Boolean? @map("module_paiement_ok")
+  erreurs          Json? // [{code, message}]
+  logicielVersion  String?  @map("logiciel_version")
+
+  borne Borne @relation(fields: [borneId], references: [id])
+
+  @@unique([borneId, horodatage]) // idempotence du rattrapage
+  @@map("heartbeats")
+}
+
+// ─── Rapprochement monétique ────────────────────────────────
+
+model ReleveMonetique {
+  id           Int      @id @default(autoincrement())
+  fournisseur  String // Ingenico…
+  fichierNom   String   @map("fichier_nom")
+  periodeDebut DateTime @map("periode_debut") @db.Date
+  periodeFin   DateTime @map("periode_fin") @db.Date
+  importeLe    DateTime @default(now()) @map("importe_le") @db.Timestamptz(3)
+
+  lignes ReleveLigne[]
+
+  @@map("releves_monetiques")
+}
+
+model ReleveLigne {
+  id                     BigInt              @id @default(autoincrement())
+  releveId               Int                 @map("releve_id")
+  identifiantPrestataire String              @map("identifiant_prestataire") // TID
+  referenceMonetique     String?             @map("reference_monetique")
+  horodatage             DateTime @db.Timestamptz(3)
+  montantCents           Int                 @map("montant_cents")
+  transactionId          BigInt?             @map("transaction_id") // null = encaissé mais non remonté
+  statut                 RapprochementStatut @default(NON_RAPPROCHE)
+
+  releve      ReleveMonetique @relation(fields: [releveId], references: [id], onDelete: Cascade)
+  transaction Transaction?    @relation(fields: [transactionId], references: [id])
+
+  @@index([identifiantPrestataire, horodatage])
+  @@map("releve_lignes")
+}
+
+// ─── Agrégats pré-calculés (CDC §9.1) ───────────────────────
+// Recalculés de façon incrémentale à l'ingestion, et intégralement pour
+// une borne/période quand une affectation est corrigée.
+// Seules les transactions rattachées à un lieu sont agrégées.
+
+model AggJour {
+  jour          DateTime      @db.Date
+  lieuId        Int           @map("lieu_id")
+  borneId       Int           @map("borne_id")
+  typeModuleId  Int           @map("type_module_id")
+  moyenPaiement MoyenPaiement @map("moyen_paiement")
+
+  nbAcceptees       Int      @default(0) @map("nb_acceptees")
+  nbRefusees        Int      @default(0) @map("nb_refusees")
+  nbAnnulees        Int      @default(0) @map("nb_annulees")
+  nbRemboursees     Int      @default(0) @map("nb_remboursees")
+  caTtcCents        Int      @default(0) @map("ca_ttc_cents") // acceptées
+  caHtCents         Int      @default(0) @map("ca_ht_cents")
+  rembourseTtcCents Int      @default(0) @map("rembourse_ttc_cents")
+  rembourseHtCents  Int      @default(0) @map("rembourse_ht_cents")
+  nbTirages         Int      @default(0) @map("nb_tirages")
+  majLe             DateTime @updatedAt @map("maj_le") @db.Timestamptz(3)
+
+  lieu       Lieu               @relation(fields: [lieuId], references: [id])
+  borne      Borne              @relation(fields: [borneId], references: [id])
+  typeModule TypeModulePaiement @relation(fields: [typeModuleId], references: [id])
+
+  @@id([jour, lieuId, borneId, typeModuleId, moyenPaiement])
+  @@index([lieuId, jour])
+  @@map("agg_jour")
+}
+
+// Heatmap jour × heure, tranches horaires (heure locale Paris)
+model AggHeure {
+  jour        DateTime @db.Date
+  heure       Int // 0-23
+  lieuId      Int      @map("lieu_id")
+  borneId     Int      @map("borne_id")
+  nbAcceptees Int      @default(0) @map("nb_acceptees")
+  caTtcCents  Int      @default(0) @map("ca_ttc_cents")
+
+  lieu  Lieu  @relation(fields: [lieuId], references: [id])
+  borne Borne @relation(fields: [borneId], references: [id])
+
+  @@id([jour, heure, lieuId, borneId])
+  @@index([lieuId, jour])
+  @@map("agg_heure")
+}
+
+// Disponibilité : minutes en ligne vs minutes d'ouverture attendues
+model AggDisponibilite {
+  jour             DateTime @db.Date
+  borneId          Int      @map("borne_id")
+  minutesOuverture Int      @default(0) @map("minutes_ouverture") // selon horaires du lieu
+  minutesEnLigne   Int      @default(0) @map("minutes_en_ligne") // heartbeats reçus
+  nbErreurs        Int      @default(0) @map("nb_erreurs")
+
+  borne Borne @relation(fields: [borneId], references: [id])
+
+  @@id([jour, borneId])
+  @@map("agg_disponibilite")
+}
+
+// ─── Commissions ────────────────────────────────────────────
+// Un contrat = une version. Un avenant crée une nouvelle ligne avec une
+// nouvelle date d'effet ; les reversements passés gardent leur contratId.
+
+model ContratCommission {
+  id        Int              @id @default(autoincrement())
+  lieuId    Int              @map("lieu_id")
+  version   Int
+  dateEffet DateTime         @map("date_effet") @db.Date
+  dateFin   DateTime?        @map("date_fin") @db.Date
+  modele    ModeleCommission
+
+  base              BaseCalcul  @default(TTC)
+  netRemboursements Boolean     @default(true) @map("net_remboursements")
+  periodicite       Periodicite @default(MOIS)
+
+  tauxBp              Int?         @map("taux_bp") // % direct, % après seuil, % du forfait
+  seuilCents          Int?         @map("seuil_cents")
+  seuilMode           SeuilMode?   @map("seuil_mode")
+  seuilCumul          SeuilCumul?  @map("seuil_cumul")
+  forfaitCents        Int?         @map("forfait_cents")
+  // Le minimum garanti se combine avec tous les autres modèles
+  minimumGarantiCents Int?         @map("minimum_garanti_cents")
+  paliersMode         PaliersMode? @map("paliers_mode")
+
+  motifAvenant String?  @map("motif_avenant")
+  creeParId    Int?     @map("cree_par_id")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  lieu         Lieu            @relation(fields: [lieuId], references: [id])
+  creePar      User?           @relation(fields: [creeParId], references: [id])
+  paliers      ContratPalier[]
+  reversements Reversement[]
+
+  @@unique([lieuId, version])
+  @@unique([lieuId, dateEffet])
+  @@map("contrats_commission")
+}
+
+enum ModeleCommission {
+  AUCUNE
+  POURCENTAGE
+  POURCENTAGE_APRES_SEUIL
+  PALIERS
+  FORFAIT // forfaitCents (+ tauxBp optionnel)
+}
+
+enum BaseCalcul {
+  TTC
+  HT
+}
+
+enum Periodicite {
+  MOIS
+  TRIMESTRE
+  SAISON // bornes = LieuSaison
+  ANNEE
+}
+
+enum SeuilMode {
+  AU_DELA // taux appliqué à la part du CA au-dessus du seuil
+  DES_ATTEINTE // seuil atteint → taux appliqué à tout le CA de la période
+}
+
+enum SeuilCumul {
+  PAR_PERIODE // remis à zéro à chaque période
+  CUMULE // cumulé depuis la date d'effet du contrat
+}
+
+enum PaliersMode {
+  MARGINAL // chaque tranche à son taux (comme l'impôt)
+  GLOBAL // le taux de la tranche atteinte s'applique à tout le CA
+}
+
+model ContratPalier {
+  id          Int @id @default(autoincrement())
+  contratId   Int @map("contrat_id")
+  depuisCents Int @map("depuis_cents") // borne basse de la tranche
+  tauxBp      Int @map("taux_bp")
+
+  contrat ContratCommission @relation(fields: [contratId], references: [id], onDelete: Cascade)
+
+  @@unique([contratId, depuisCents])
+  @@map("contrat_paliers")
+}
+
+model Reversement {
+  id           Int               @id @default(autoincrement())
+  lieuId       Int               @map("lieu_id")
+  contratId    Int               @map("contrat_id")
+  periodeDebut DateTime          @map("periode_debut") @db.Date
+  periodeFin   DateTime          @map("periode_fin") @db.Date
+  statut       ReversementStatut @default(A_CALCULER)
+
+  caTtcCents              Int   @default(0) @map("ca_ttc_cents")
+  caHtCents               Int   @default(0) @map("ca_ht_cents")
+  rembourseCents          Int   @default(0) @map("rembourse_cents")
+  baseCalculCents         Int   @default(0) @map("base_calcul_cents")
+  commissionCalculeeCents Int   @default(0) @map("commission_calculee_cents")
+  ajustementsCents        Int   @default(0) @map("ajustements_cents") // somme des corrections manuelles
+  montantAReverserCents   Int   @default(0) @map("montant_a_reverser_cents")
+  // Snapshot du calcul (tranches, seuil, cumul antérieur) : le relevé PDF
+  // doit pouvoir être régénéré à l'identique.
+  detailCalcul            Json? @map("detail_calcul")
+
+  calculeLe       DateTime? @map("calcule_le") @db.Timestamptz(3)
+  valideLe        DateTime? @map("valide_le") @db.Timestamptz(3)
+  numeroFacture   String?   @map("numero_facture")
+  factureLe       DateTime? @map("facture_le") @db.Timestamptz(3)
+  payeLe          DateTime? @map("paye_le") @db.Timestamptz(3)
+  pdfChemin       String?   @map("pdf_chemin")
+  envoyeLe        DateTime? @map("envoye_le") @db.Timestamptz(3)
+  exporteComptaLe DateTime? @map("exporte_compta_le") @db.Timestamptz(3)
+
+  lieu        Lieu                    @relation(fields: [lieuId], references: [id])
+  contrat     ContratCommission       @relation(fields: [contratId], references: [id])
+  ajustements ReversementAjustement[]
+
+  @@unique([lieuId, periodeDebut])
+  @@map("reversements")
+}
+
+enum ReversementStatut {
+  A_CALCULER
+  CALCULE
+  VALIDE
+  FACTURE_PAR_LIEU
+  AUTOFACTURE
+  PAYE
+}
+
+// Correction manuelle tracée
+model ReversementAjustement {
+  id            Int      @id @default(autoincrement())
+  reversementId Int      @map("reversement_id")
+  montantCents  Int      @map("montant_cents") // signé
+  motif         String
+  userId        Int      @map("user_id")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  reversement Reversement @relation(fields: [reversementId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@map("reversement_ajustements")
+}
+
+// ─── Alertes ────────────────────────────────────────────────
+
+// Paramétrage : règle globale (lieuId null) ou surcharge par lieu
+model RegleAlerte {
+  id         Int          @id @default(autoincrement())
+  type       TypeAlerte
+  lieuId     Int?         @map("lieu_id")
+  niveau     NiveauAlerte
+  actif      Boolean      @default(true)
+  // ex. BAISSE_CA : {"fenetreJours":7,"referenceSemaines":4,"seuilPct":60}
+  //     MUETTE    : {"heuresSansHeartbeat":3}
+  parametres Json
+
+  @@unique([type, lieuId])
+  @@map("regles_alerte")
+}
+
+model Alerte {
+  id          Int          @id @default(autoincrement())
+  type        TypeAlerte
+  niveau      NiveauAlerte
+  statut      AlerteStatut @default(NOUVELLE)
+  lieuId      Int?         @map("lieu_id")
+  borneId     Int?         @map("borne_id")
+  detecteeLe  DateTime     @default(now()) @map("detectee_le") @db.Timestamptz(3)
+  // Clé d'unicité pour ne pas relever 10 fois la même anomalie
+  cleDedup    String       @unique @map("cle_dedup")
+  message     String
+  valeurs     Json? // valeur observée, référence, seuil
+  commentaire String?
+  assigneeId  Int?         @map("assignee_id")
+  resolueLe   DateTime?    @map("resolue_le") @db.Timestamptz(3)
+
+  lieu          Lieu?                @relation(fields: [lieuId], references: [id])
+  borne         Borne?               @relation(fields: [borneId], references: [id])
+  assignee      User?                @relation(fields: [assigneeId], references: [id])
+  notifications NotificationAlerte[]
+
+  @@index([statut, niveau])
+  @@map("alertes")
+}
+
+enum TypeAlerte {
+  BAISSE_CA
+  ZERO_VENTE
+  BORNE_MUETTE
+  TAUX_REFUS
+  PIC_SUSPECT
+  VENTE_HORS_HORAIRES
+  CONSOMMABLES
+  BORNE_NON_AFFECTEE
+  ECART_RAPPROCHEMENT
+}
+
+enum NiveauAlerte {
+  INFO
+  WARNING
+  CRITIQUE
+}
+
+enum AlerteStatut {
+  NOUVELLE
+  PRISE_EN_CHARGE
+  RESOLUE
+  IGNOREE
+}
+
+model NotificationAlerte {
+  id           Int        @id @default(autoincrement())
+  alerteId     Int?       @map("alerte_id") // null = récap quotidien
+  canal        CanalNotif
+  destinataire String
+  envoyeLe     DateTime?  @map("envoye_le") @db.Timestamptz(3)
+  erreur       String?
+
+  alerte Alerte? @relation(fields: [alerteId], references: [id], onDelete: Cascade)
+
+  @@map("notifications_alerte")
+}
+
+enum CanalNotif {
+  EMAIL
+  SMS
+}
+
+// ─── V2 : coûts, SAV, journal d'événements ──────────────────
+
+model CoutBorne {
+  id             Int           @id @default(autoincrement())
+  borneId        Int           @map("borne_id")
+  date           DateTime      @db.Date
+  categorie      CategorieCout
+  montantCents   Int           @map("montant_cents")
+  libelle        String?
+  interventionId Int?          @map("intervention_id")
+
+  borne        Borne         @relation(fields: [borneId], references: [id])
+  intervention Intervention? @relation(fields: [interventionId], references: [id])
+
+  @@index([borneId, date])
+  @@map("couts_borne")
+}
+
+enum CategorieCout {
+  CONSOMMABLES
+  DEPLACEMENT
+  INTERVENTION
+  PIECE
+  AUTRE
+}
+
+model Intervention {
+  id            Int       @id @default(autoincrement())
+  borneId       Int       @map("borne_id")
+  technicienId  Int?      @map("technicien_id")
+  date          DateTime @db.Timestamptz(3)
+  motif         String
+  compteRendu   String?   @map("compte_rendu")
+  enPanneDepuis DateTime? @map("en_panne_depuis") @db.Timestamptz(3)
+  resolueLe     DateTime? @map("resolue_le") @db.Timestamptz(3)
+
+  borne      Borne       @relation(fields: [borneId], references: [id])
+  technicien User?       @relation(fields: [technicienId], references: [id])
+  couts      CoutBorne[]
+
+  @@map("interventions")
+}
+
+// Affiché sur les courbes pour expliquer pics et creux
+model EvenementLieu {
+  id      Int       @id @default(autoincrement())
+  lieuId  Int       @map("lieu_id")
+  typeId  Int       @map("type_id") // RefValeur TYPE_EVENEMENT
+  debut   DateTime @db.Timestamptz(3)
+  fin     DateTime? @db.Timestamptz(3)
+  libelle String
+
+  lieu Lieu      @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  type RefValeur @relation(fields: [typeId], references: [id])
+
+  @@index([lieuId, debut])
+  @@map("evenements_lieu")
+}
+
+// ─── Audit ──────────────────────────────────────────────────
+
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  entite    String
+  entiteId  String   @map("entite_id")
+  action    String
+  avant     Json?
+  apres     Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entite, entiteId])
+  @@map("audit_logs")
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "borne_id": "MT-0042",
+  "heartbeats": [
+    {
+      "horodatage": "2026-10-05T23:10:00+02:00",
+      "logiciel_version": "3.4.1",
+      "papier_restant": 312,
+      "ruban_restant": 318,
+      "imprimante_ok": true,
+      "module_paiement_ok": true,
+      "erreurs": []
+    },
+    {
+      "horodatage": "2026-10-05T23:15:00+02:00",
+      "logiciel_version": "3.4.1",
+      "papier_restant": 310,
+      "ruban_restant": 316,
+      "imprimante_ok": false,
+      "module_paiement_ok": true,
+      "erreurs": [{ "code": "PRN_JAM", "message": "Bourrage papier", "composant": "imprimante" }]
+    }
+  ]
+}

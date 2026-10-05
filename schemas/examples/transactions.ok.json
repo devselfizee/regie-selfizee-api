@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "borne_id": "MT-0042",
+  "envoye_le": "2026-10-05T23:15:02+02:00",
+  "logiciel_version": "3.4.1",
+  "transactions": [
+    {
+      "transaction_id": "ING-20261005-000184",
+      "horodatage": "2026-10-05T22:47:31+02:00",
+      "montant_ttc_centimes": 800,
+      "devise": "EUR",
+      "statut": "accepte",
+      "module": { "type": "INGENICO_SELF_2000", "numero_serie": "SELF2K-19A77310" },
+      "moyen_paiement": "sans_contact",
+      "reference_monetique": "AUT-554821",
+      "produit": { "code": "BANDE_4", "libelle": "Bande 4 photos", "nb_tirages": 2 }
+    },
+    {
+      "transaction_id": "ING-20261005-000185",
+      "horodatage": "2026-10-05T22:51:09+02:00",
+      "montant_ttc_centimes": 800,
+      "devise": "EUR",
+      "statut": "refuse",
+      "module": { "type": "INGENICO_SELF_2000", "numero_serie": "SELF2K-19A77310" },
+      "moyen_paiement": "cb",
+      "produit": { "code": "BANDE_4", "nb_tirages": 0 }
+    },
+    {
+      "transaction_id": "MON-000912",
+      "horodatage": "2026-10-05T22:58:44+02:00",
+      "montant_ttc_centimes": 500,
+      "devise": "EUR",
+      "statut": "accepte",
+      "module": { "type": "MONNAYEUR" },
+      "moyen_paiement": "especes",
+      "produit": { "code": "PHOTO_ID", "libelle": "Photo d'identité", "nb_tirages": 1 }
+    },
+    {
+      "transaction_id": "ING-20261005-000186",
+      "horodatage": "2026-10-05T23:05:12+02:00",
+      "montant_ttc_centimes": 800,
+      "devise": "EUR",
+      "statut": "rembourse",
+      "transaction_origine_id": "ING-20261005-000184",
+      "module": { "type": "INGENICO_SELF_2000", "numero_serie": "SELF2K-19A77310" },
+      "moyen_paiement": "sans_contact",
+      "reference_monetique": "RMB-554821",
+      "produit": { "code": "BANDE_4", "nb_tirages": 0 }
+    }
+  ]
+}

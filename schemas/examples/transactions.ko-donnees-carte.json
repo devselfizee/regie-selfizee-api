@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "borne_id": "MT-0042",
+  "envoye_le": "2026-10-05T23:15:02Z",
+  "logiciel_version": "3.4.1",
+  "transactions": [
+    {
+      "transaction_id": "ING-1",
+      "horodatage": "2026-10-05T22:47:31",
+      "montant_ttc_centimes": 8.5,
+      "devise": "EUR",
+      "statut": "rembourse",
+      "module": { "type": "INGENICO_SELF_2000" },
+      "moyen_paiement": "cb",
+      "pan": "4970********1234",
+      "produit": { "code": "BANDE_4", "nb_tirages": 2 }
+    }
+  ]
+}
