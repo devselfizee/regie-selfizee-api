@@ -12,6 +12,7 @@ import { utilisateursRouter } from "./routes/utilisateurs.js";
 import { commissionsRouter, reversementsRouter } from "./routes/commissions.js";
 import { alertesRouter } from "./routes/alertes.js";
 import { segmentsRouter } from "./routes/segments.js";
+import { rapprochementRouter } from "./routes/rapprochement.js";
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
@@ -45,7 +46,8 @@ export function creerApp() {
       // Nom des fichiers exportés (CSV, PDF) : sinon le navigateur cache cet en-tête au front
       exposedHeaders: ["Content-Disposition"],
     }),
-    express.json(),
+    // Relevés monétiques envoyés en texte CSV dans le JSON : quelques Mo
+    express.json({ limit: "20mb" }),
     authMiddleware,
     utilisateurCourant
   );
@@ -69,6 +71,7 @@ export function creerApp() {
   app.use("/api/commissions", commissionsRouter);
   app.use("/api/reversements", reversementsRouter);
   app.use("/api/alertes", alertesRouter);
+  app.use("/api/rapprochement", exiger("ADMIN"), rapprochementRouter);
 
   app.use((err: Error & { type?: string; status?: number }, _req: Request, res: Response, _next: NextFunction) => {
     if (err.type === "entity.parse.failed") {

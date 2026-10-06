@@ -11,6 +11,8 @@ export const REGLES_DEFAUT = {
   PIC_SUSPECT: { niveau: "WARNING", parametres: { facteur: 3, minCaEuros: 100 } },
   VENTE_HORS_HORAIRES: { niveau: "INFO", parametres: { minVentes: 3 } },
   CONSOMMABLES: { niveau: "WARNING", parametres: { seuilTirages: 50 } },
+  // Après import d'un relevé monétique : somme des anomalies d'une borne (encaissé non remonté, remonté non encaissé, écarts de montant)
+  ECART_RAPPROCHEMENT: { niveau: "WARNING", parametres: { seuilEuros: 10 } },
 } as const satisfies Partial<Record<TypeAlerte, { niveau: NiveauAlerte; parametres: Record<string, number> }>>;
 
 export type TypeRegle = keyof typeof REGLES_DEFAUT;

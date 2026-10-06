@@ -10,7 +10,7 @@ const eur = (c: number) => `${(c / 100).toLocaleString("fr-FR", { maximumFractio
 const dateHeure = (d: Date) =>
   new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(d);
 
-interface NouvelleAlerte {
+export interface NouvelleAlerte {
   type: TypeAlerte;
   niveau: NiveauAlerte;
   lieuId?: number;
@@ -25,7 +25,7 @@ const OUVERTES = ["NOUVELLE", "PRISE_EN_CHARGE"] as const;
  * Crée l'alerte sauf si la même anomalie est déjà ouverte (ou a déjà été
  * relevée aujourd'hui : une alerte ignorée ne revient pas avant demain).
  */
-async function lever(a: NouvelleAlerte, maintenant: Date): Promise<Alerte | null> {
+export async function lever(a: NouvelleAlerte, maintenant: Date): Promise<Alerte | null> {
   const cible = { type: a.type, lieuId: a.lieuId ?? null, borneId: a.borneId ?? null };
   if (await prisma.alerte.findFirst({ where: { ...cible, statut: { in: [...OUVERTES] } } })) return null;
   try {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { BorneStatut } from "@prisma/client";
+import { BorneStatut, type Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
@@ -67,6 +67,13 @@ bornesRouter.get(
   })
 );
 
+const moduleSchema = z.object({
+  typeId: z.number().int().positive(),
+  numeroSerie: z.string().trim().min(1).optional(),
+  // TID chez le prestataire monétique : sert au rapprochement des relevés
+  identifiantPrestataire: z.string().trim().min(1).nullable().optional(),
+});
+
 const borneSchema = z.object({
   identifiant: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9_-]{2,63}$/, "Identifiant : majuscules, chiffres, - et _"),
   gammeId: z.number().int().positive(),
@@ -77,10 +84,22 @@ const borneSchema = z.object({
   dureeAmortissementMois: z.number().int().min(0).nullable().optional(),
   dateMiseEnService: z.iso.date().nullable().optional().transform((v) => (v ? new Date(`${v}T00:00:00Z`) : v)),
   // Module de paiement principal (créé ou rattaché)
-  module: z
-    .object({ typeId: z.number().int().positive(), numeroSerie: z.string().trim().min(1).optional() })
-    .optional(),
+  module: moduleSchema.optional(),
 });
+
+/** Change le module de paiement (l'ancien est marqué retiré) ou met à jour le TID du module en place. */
+async function changerModule(db: Prisma.TransactionClient, borneId: number, module: z.infer<typeof moduleSchema>) {
+  const actuel = await db.modulePaiement.findFirst({ where: { borneId, retireLe: null } });
+  if (actuel && actuel.typeId === module.typeId && (actuel.numeroSerie ?? undefined) === module.numeroSerie) {
+    if (module.identifiantPrestataire !== undefined)
+      await db.modulePaiement.update({ where: { id: actuel.id }, data: { identifiantPrestataire: module.identifiantPrestataire } });
+    return;
+  }
+  if (actuel) await db.modulePaiement.update({ where: { id: actuel.id }, data: { retireLe: new Date() } });
+  await db.modulePaiement.create({
+    data: { borneId, typeId: module.typeId, numeroSerie: module.numeroSerie, identifiantPrestataire: module.identifiantPrestataire, installeLe: new Date() },
+  });
+}
 
 // POST /api/bornes — crée la borne et renvoie sa clé API (affichée une seule fois)
 bornesRouter.post(
@@ -94,7 +113,7 @@ bornesRouter.post(
         apiKeyHash: cle.hash,
         apiKeyPrefix: cle.prefixe,
         apiKeyCreeLe: new Date(),
-        modules: module ? { create: { typeId: module.typeId, numeroSerie: module.numeroSerie } } : undefined,
+        modules: module ? { create: { typeId: module.typeId, numeroSerie: module.numeroSerie, identifiantPrestataire: module.identifiantPrestataire, installeLe: new Date() } } : undefined,
       },
     });
     res.status(201).json({ ...sansCle(borne), cleApi: cle.cle });
@@ -108,19 +127,21 @@ bornesRouter.put(
     const { module, ...data } = borneSchema.parse(req.body);
     const borneId = Number(req.params.id);
     const borne = await prisma.$transaction(async (db) => {
-      if (module) {
-        const actuel = await db.modulePaiement.findFirst({ where: { borneId, retireLe: null } });
-        const identique = actuel?.typeId === module.typeId && (actuel?.numeroSerie ?? undefined) === module.numeroSerie;
-        if (!identique) {
-          if (actuel) await db.modulePaiement.update({ where: { id: actuel.id }, data: { retireLe: new Date() } });
-          await db.modulePaiement.create({
-            data: { borneId, typeId: module.typeId, numeroSerie: module.numeroSerie, installeLe: new Date() },
-          });
-        }
-      }
+      if (module) await changerModule(db, borneId, module);
       return db.borne.update({ where: { id: borneId }, data });
     });
     res.json(sansCle(borne));
+  })
+);
+
+// PUT /api/bornes/:id/module { typeId, numeroSerie?, identifiantPrestataire? } — module de paiement et TID
+bornesRouter.put(
+  "/:id/module",
+  asynchrone(async (req, res) => {
+    const module = moduleSchema.parse(req.body);
+    const borneId = Number(req.params.id);
+    await prisma.$transaction((db) => changerModule(db, borneId, module));
+    res.json(await prisma.modulePaiement.findMany({ where: { borneId }, include: { type: true }, orderBy: { id: "desc" } }));
   })
 );
 

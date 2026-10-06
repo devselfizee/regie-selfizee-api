@@ -42,3 +42,10 @@ Chaque point indique **le choix retenu par défaut dans les schémas**. Il suffi
 15. **Ventes datées dans le futur** (horloge de la borne décalée) : elles sont aujourd'hui acceptées telles quelles.
     → **Fait** : au-delà de 1 h dans le futur, la vente part dans la file d'erreurs (`HORODATAGE_FUTUR`).
 16. **Débit d'ingestion** : **fait**, traitement par lot (une transaction SQL par lot) : un rattrapage de 500 ventes prend environ 1,2 s en local, contre environ 20 s auparavant.
+
+## Rapprochement monétique
+
+17. **Format du relevé Ingenico** : nous n'avons pas d'exemple de fichier. L'import accepte donc n'importe quel CSV : on indique quelle colonne contient la date, l'heure, le montant, le n° de terminal et le n° d'autorisation, et ce choix est retenu pour le prochain import du même prestataire.
+    → À confirmer avec un vrai relevé : le n° de terminal (TID) y figure-t-il, et le n° d'autorisation remonté par la borne (`reference_monetique`) est-il le même que celui du relevé ?
+18. **TID des bornes** : il faut le saisir sur la fiche de chaque borne (section « Module de paiement »). Sans lui, les lignes du relevé apparaissent en « terminal inconnu ».
+19. **Tolérances de rapprochement** : même montant à 10 minutes près ; montant différent à 2 minutes près = écart de montant ; même n° d'autorisation à 24 h près. Ces valeurs sont à ajuster après un premier relevé réel.
