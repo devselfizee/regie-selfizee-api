@@ -75,7 +75,7 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 - **Agrégats** : `agg_jour` et `agg_heure` sont mis à jour dans la même transaction SQL que l'insertion. `recalculerAgregats()` reconstruit une période, par exemple après la correction d'une affectation.
 - **Temps** : stockage en UTC (`timestamptz`). Le jour et l'heure locaux (Europe/Paris) sont calculés à l'ingestion.
 - **Montants** : en centimes ; les taux sont en points de base (2000 = 20 %).
-- **Hébergement** : Coolify (Docker Compose), serveur en France ou dans l'UE.
+- **Hébergement** : Coolify (Docker Compose), serveur en France ou dans l'UE. La base est une ressource PostgreSQL Coolify séparée, passée par `DATABASE_URL` (activer « Connect to Predefined Network » sur l'API pour joindre son hôte interne).
 
 ## Phasage (CDC §9.3)
 

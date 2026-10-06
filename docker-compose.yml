@@ -1,39 +1,21 @@
 name: regie-selfizee
 
+# Production (Coolify) : la base PostgreSQL est une ressource Coolify séparée,
+# fournie par DATABASE_URL. Pour une base locale, voir docker-compose.local.yml.
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      DATABASE_URL: ${DATABASE_URL}
       PORT: 3003
       NODE_ENV: production
       CORS_ORIGIN: ${CORS_ORIGIN}
       KEYCLOAK_URL: ${KEYCLOAK_URL}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM}
       TVA_DEFAUT_BP: ${TVA_DEFAUT_BP:-2000}
-    depends_on:
-      postgres:
-        condition: service_healthy
+      INGEST_BODY_LIMIT: ${INGEST_BODY_LIMIT:-2mb}
     ports:
       - "${API_PORT:-3003}:3003"
-
-volumes:
-  pgdata:
