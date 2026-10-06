@@ -11,11 +11,13 @@ export interface UtilisateurRequest extends AuthRequest {
 export const authDesactivee = () => !process.env.KEYCLOAK_URL && process.env.NODE_ENV !== "production";
 
 // Comptes créés automatiquement en ADMIN à leur première connexion (amorçage).
-const adminsInitiaux = () =>
-  (process.env.ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
+// Tolérant aux erreurs de saisie courantes dans Coolify : guillemets, "ADMIN_EMAILS=" collé dans la valeur.
+export const adminsInitiaux = (brut = process.env.ADMIN_EMAILS ?? "") =>
+  brut
+    .replace(/^\s*ADMIN_EMAILS\s*=/i, "")
+    .split(/[,;\s]+/)
+    .map((e) => e.trim().replace(/^["']|["']$/g, "").toLowerCase())
+    .filter((e) => e.includes("@"));
 
 const champs = { id: true, email: true, nom: true, prenom: true, role: true, lieuId: true, isActive: true, keycloakSub: true } as const;
 
@@ -71,6 +73,9 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     }
 
     if (!u || !u.isActive) {
+      console.warn(
+        `Accès refusé à ${email ?? "(pas d'e-mail dans le jeton)"} : ${u ? "compte désactivé" : "inconnu"} — ADMIN_EMAILS lu : [${adminsInitiaux().join(", ")}]`
+      );
       return res.status(403).json({
         error: "ACCES_NON_ACCORDE",
         message: "Votre compte n'a pas accès à cette application. Demandez à un administrateur de vous ajouter.",

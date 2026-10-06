@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { jourEtHeureLocaux, offsetMinutes } from "../src/lib/temps.js";
 import { htDepuisTtc, pctVersBp } from "../src/lib/montants.js";
 import { decouperCle, genererCle, verifierSecret } from "../src/lib/cleBorne.js";
+import { adminsInitiaux } from "../src/middleware/utilisateur.js";
 
 describe("temps", () => {
   it("lit le décalage d'un horodatage RFC 3339", () => {
@@ -47,5 +48,15 @@ describe("clé borne", () => {
   });
   it("refuse un format inconnu", () => {
     expect(decouperCle("Bearer n'importe quoi")).toBeNull();
+  });
+});
+
+describe("ADMIN_EMAILS", () => {
+  it("tolère les erreurs de saisie courantes", () => {
+    expect(adminsInitiaux("s.mahe@konitys.fr")).toEqual(["s.mahe@konitys.fr"]);
+    expect(adminsInitiaux('"S.Mahe@konitys.fr"')).toEqual(["s.mahe@konitys.fr"]);
+    expect(adminsInitiaux("ADMIN_EMAILS=s.mahe@konitys.fr")).toEqual(["s.mahe@konitys.fr"]);
+    expect(adminsInitiaux(" a@x.fr , b@x.fr;c@x.fr ")).toEqual(["a@x.fr", "b@x.fr", "c@x.fr"]);
+    expect(adminsInitiaux("")).toEqual([]);
   });
 });
