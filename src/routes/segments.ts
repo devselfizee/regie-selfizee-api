@@ -8,13 +8,14 @@ import {
   croiser, fermetureLaPlusTardive, joursEffectifs, mediane, moyenne, ORDRE_CAPACITE, ORDRE_FERMETURE, tranchesCapacite, tranchesFermeture,
 } from "../stats/segments.js";
 import { classement, filtresAutorises } from "./stats.js";
+import { margeLieu } from "../rentabilite/calcul.js";
 
 // Analyse par segment (CDC §5.3) : « quels lieux valent le coup ? »
 export const segmentsRouter = Router();
 
 const NON_RENSEIGNE = "Non renseigné";
 
-export const INDICATEURS = ["ca", "caJourOuvert", "caHeureOuverture", "caParPlace", "caParVisiteur"] as const;
+export const INDICATEURS = ["ca", "caJourOuvert", "caHeureOuverture", "caParPlace", "caParVisiteur", "margeNette", "margeJourOuvert"] as const;
 type Indicateur = (typeof INDICATEURS)[number];
 
 const refSelect = { select: { libelle: true, ordre: true } } as const;
@@ -29,7 +30,12 @@ const chargerLieux = (ids: number[]) =>
       commercial: { select: { nom: true, prenom: true } },
       clienteles: { select: { refValeur: refSelect } },
       horaires: true, saisons: true, fermetures: true,
-      affectations: { select: { debut: true, fin: true } },
+      affectations: {
+        select: {
+          borneId: true, debut: true, fin: true,
+          borne: { select: { coutAchatCents: true, dureeAmortissementMois: true, dateMiseEnService: true } },
+        },
+      },
     },
   });
 type LieuSegment = Awaited<ReturnType<typeof chargerLieux>>[number];
@@ -110,7 +116,13 @@ segmentsRouter.get(
     const parId = new Map(lieux.map((l) => [l.id, l]));
 
     // Indicateurs normalisés par lieu ; sans jour d'ouverture effectif, le lieu est écarté
+    // Marge : réservée à l'admin (commissions, prix d'achat des bornes)
+    const voitMarge = req.utilisateur?.role === "ADMIN";
     const exclus: string[] = [];
+    const marges = new Map<number, number>();
+    if (voitMarge) {
+      for (const l of lieux) marges.set(l.id, await margeLieu(l, f.du, f.au));
+    }
     const indicateurs = ventes.flatMap((v) => {
       const l = parId.get(v.lieuId)!;
       const eff = joursEffectifs(l, l.affectations, f.du, f.au);
@@ -126,6 +138,8 @@ segmentsRouter.get(
         caHeureOuverture: eff.minutes ? v.caTtcCents / (eff.minutes / 60) : null,
         caParPlace: l.capaciteAccueil ? caJourOuvert / l.capaciteAccueil : null,
         caParVisiteur: frequentationJour ? v.caTtcCents / (frequentationJour * eff.jours) : null,
+        margeNette: voitMarge ? (marges.get(l.id) ?? null) : null,
+        margeJourOuvert: voitMarge && marges.has(l.id) ? marges.get(l.id)! / eff.jours : null,
       };
       return [{ lieu: l, valeurs, joursEffectifs: eff.jours, heuresEffectives: Math.round(eff.minutes / 60), nbVentes: v.nbVentes }];
     });

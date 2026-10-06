@@ -131,3 +131,46 @@ export async function retourInvestissement(borneId: number, aujourdhui: Date) {
     mois,
   };
 }
+
+/**
+ * Marge nette d'un lieu sur [du, au] (analyse par segment) : CA HT net du lieu
+ * − commissions versées au lieu (au prorata des jours communs) − coûts de ses bornes
+ * pendant qu'elles y étaient installées − leur amortissement sur ces jours-là.
+ */
+export async function margeLieu(
+  lieu: {
+    id: number;
+    affectations: {
+      borneId: number;
+      debut: Date;
+      fin: Date | null;
+      borne: { coutAchatCents: number | null; dureeAmortissementMois: number | null; dateMiseEnService: Date | null };
+    }[];
+  },
+  du: Date,
+  au: Date
+) {
+  const [ca, reversements] = await Promise.all([
+    prisma.aggJour.aggregate({ where: { lieuId: lieu.id, jour: { gte: du, lte: au } }, _sum: { caHtCents: true, rembourseHtCents: true } }),
+    prisma.reversement.findMany({ where: { lieuId: lieu.id, periodeDebut: { lte: au }, periodeFin: { gte: du } } }),
+  ]);
+  const commissions = reversements.reduce(
+    (s, r) => s + (r.montantAReverserCents * jours(max(du, r.periodeDebut), min(au, r.periodeFin))) / jours(r.periodeDebut, r.periodeFin),
+    0
+  );
+
+  let couts = 0;
+  let amort = 0;
+  for (const a of lieu.affectations) {
+    // Jours (date de Paris approchée par la date UTC) où la borne était dans ce lieu
+    const debut = max(du, new Date(Date.UTC(a.debut.getUTCFullYear(), a.debut.getUTCMonth(), a.debut.getUTCDate())));
+    const fin = a.fin ? min(au, new Date(Date.UTC(a.fin.getUTCFullYear(), a.fin.getUTCMonth(), a.fin.getUTCDate()) - JOUR)) : au;
+    if (fin < debut) continue;
+    const c = await prisma.coutBorne.aggregate({ where: { borneId: a.borneId, date: { gte: debut, lte: fin } }, _sum: { montantCents: true } });
+    couts += c._sum.montantCents ?? 0;
+    amort += amortissement(a.borne, debut, fin);
+  }
+
+  const caHt = (ca._sum.caHtCents ?? 0) - (ca._sum.rembourseHtCents ?? 0);
+  return Math.round(caHt - commissions - couts - amort);
+}

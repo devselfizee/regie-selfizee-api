@@ -15,7 +15,7 @@ Référence : *CDC — Plateforme de suivi Régie Selfizee / MaTrombine* (2 oct.
 | Synchronisation des bornes (doc pour le développeur des bornes) | [docs/synchronisation-bornes.md](docs/synchronisation-bornes.md) · [version illustrée HTML / PDF](docs/synchronisation-bornes.html) | à jour |
 | Points à arbitrer | [docs/questions-ouvertes.md](docs/questions-ouvertes.md) | à arbitrer |
 | API d'ingestion | [src](src) | en place, 17 tests OK |
-| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 113 tests OK |
+| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 114 tests OK |
 | Front : vue globale, lieux (liste, fiche + stats, formulaire), bornes, file d'erreurs | [regie-selfizee-web](https://github.com/devselfizee/regie-selfizee-web) | en place |
 | Maquettes, chiffrage | — | à faire |
 
@@ -111,6 +111,8 @@ Seuils et niveaux réglables (page Paramètres → Règles d'alerte). Une anomal
 - **Marge nette** d’une borne sur une période = CA HT net des remboursements − commissions (part de la borne dans les reversements calculés, au prorata de son CA dans le lieu et des jours communs) − coûts − amortissement (linéaire au jour sur la durée d’amortissement).
 - **Retour sur investissement** : marge avant amortissement cumulée depuis la mise en service, comparée au prix d’achat ; date de retour, ou mois restants au rythme des 3 derniers mois complets.
 - `GET /api/rentabilite` et `/api/rentabilite/bornes/:id` : réservés à l’admin (prix d’achat, commissions).
+- **Marge par lieu** dans l’analyse par segment (admin) : CA HT − commissions versées au lieu − coûts et amortissement de ses bornes pendant leur présence ; aussi ramenée au jour ouvert.
+- Consommables : saisie manuelle. L’API de stock existante (`stock-management`) gère les pièces de fabrication des bornes, sans mouvement rattaché à une borne en exploitation : pas de lien automatique possible en l’état.
 
 ## Analyse par segment (V2)
 

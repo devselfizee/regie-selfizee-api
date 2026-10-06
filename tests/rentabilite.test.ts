@@ -98,6 +98,21 @@ describe("rentabilité par borne", () => {
     await tech(api.patch(`/api/rentabilite/bornes/${b}/achat`)).send({ coutAchatCents: 1, dureeAmortissementMois: 1, dateMiseEnService: null }).expect(403);
   });
 
+  it("donne la marge du lieu dans l'analyse par segment, réservée à l'admin", async () => {
+    const r = (await api.get("/api/stats/segments?du=2026-09-01&au=2026-09-30&x=typeLieu").expect(200)).body;
+    const lieu = r.lieux[0];
+    // CA HT 750 € − commission 90 € − coûts 55 € − amortissement de A (1 200 € × 30/365)
+    const attendu = Math.round(75000 - 9000 - 5500 - (120000 * 30) / 365);
+    expect(lieu.margeNette).toBe(attendu);
+    expect(lieu.margeJourOuvert).toBeCloseTo(attendu / 30);
+    expect(r.cases[0].stats.margeNette).toMatchObject({ n: 1, mediane: attendu });
+
+    await prisma.user.create({ data: { email: "com@t.fr", nom: "C", prenom: "", role: "COMMERCIAL" } });
+    await prisma.lieu.update({ where: { id: lieuId }, data: { commercial: { connect: { email: "com@t.fr" } } } });
+    const vuParCommercial = (await api.get("/api/stats/segments?du=2026-09-01&au=2026-09-30&x=typeLieu").set("X-Dev-Utilisateur", "com@t.fr").expect(200)).body;
+    expect(vuParCommercial.lieux[0].margeNette).toBeNull();
+  });
+
   it("place les interventions sur la courbe du lieu", async () => {
     const s = (await api.get(`/api/stats/lieux/${lieuId}?du=2026-09-01&au=2026-09-30`).expect(200)).body;
     expect(s.interventions).toEqual([{ jour: "2026-09-20", motif: "Bourrage imprimante", borne: "MT-A" }]);
