@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 
 const KEYCLOAK_URL =
-  process.env.KEYCLOAK_URL || "https://plateformdev-auth.orkessi.com";
+  process.env.KEYCLOAK_URL || "https://plateform-auth.orkessidev.com";
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || "konitys";
 
 const jwksClient = jwksRsa({
