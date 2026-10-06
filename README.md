@@ -15,7 +15,7 @@ Référence : *CDC — Plateforme de suivi Régie Selfizee / MaTrombine* (2 oct.
 | Synchronisation des bornes (doc pour le développeur des bornes) | [docs/synchronisation-bornes.md](docs/synchronisation-bornes.md) · [version illustrée HTML / PDF](docs/synchronisation-bornes.html) | à jour |
 | Points à arbitrer | [docs/questions-ouvertes.md](docs/questions-ouvertes.md) | à arbitrer |
 | API d'ingestion | [src](src) | en place, 17 tests OK |
-| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 106 tests OK |
+| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 113 tests OK |
 | Front : vue globale, lieux (liste, fiche + stats, formulaire), bornes, file d'erreurs | [regie-selfizee-web](https://github.com/devselfizee/regie-selfizee-web) | en place |
 | Maquettes, chiffrage | — | à faire |
 
@@ -104,6 +104,13 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 Seuils et niveaux réglables (page Paramètres → Règles d'alerte). Une anomalie déjà ouverte n'est pas relevée deux fois ; une alerte ignorée ne revient pas avant le lendemain.
 
 **Notifications** (e-mails Mailjet `MAILJET_API_KEY`/`MAILJET_API_SECRET`, SMS SMSEnvoi `SMSENVOI_EMAIL`/`SMSENVOI_APIKEY` — les services du CRM) : critique → e-mail + SMS, warning → e-mail, info → récapitulatif seul. Destinataires : admins ; techniciens pour les alertes techniques ; commercial du lieu pour les alertes de vente. Récapitulatif quotidien à 8 h aux admins. Chaque envoi est tracé (`notifications_alerte`). Sans identifiants, rien n'est envoyé.
+
+## Coûts, interventions et rentabilité (V2)
+
+- **Coûts par borne** (consommables, déplacements, interventions, pièces…) et **interventions SAV** (motif, compte-rendu, panne du… au…, coût enregistré comme coût de la borne), saisis par l’admin ou le technicien. Les interventions apparaissent sur la courbe de CA du lieu.
+- **Marge nette** d’une borne sur une période = CA HT net des remboursements − commissions (part de la borne dans les reversements calculés, au prorata de son CA dans le lieu et des jours communs) − coûts − amortissement (linéaire au jour sur la durée d’amortissement).
+- **Retour sur investissement** : marge avant amortissement cumulée depuis la mise en service, comparée au prix d’achat ; date de retour, ou mois restants au rythme des 3 derniers mois complets.
+- `GET /api/rentabilite` et `/api/rentabilite/bornes/:id` : réservés à l’admin (prix d’achat, commissions).
 
 ## Analyse par segment (V2)
 

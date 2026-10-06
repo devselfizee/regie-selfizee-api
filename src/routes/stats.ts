@@ -269,11 +269,26 @@ statsRouter.get(
       occurrences[((new Date(d).getUTCDay() + 6) % 7) + 1]++;
     }
 
+    // Interventions SAV sur les bornes du lieu : repères sur la courbe de CA (CDC §8)
+    const interventions = await prisma.$queryRaw<{ date: Date; motif: string; identifiant: string }[]>`
+      SELECT i.date, i.motif, b.identifiant
+      FROM interventions i
+      JOIN bornes b ON b.id = i.borne_id
+      JOIN affectations_borne a ON a.borne_id = i.borne_id AND a.lieu_id = ${lieuId}
+        AND i.date >= a.debut AND (a.fin IS NULL OR i.date < a.fin)
+      WHERE i.date >= ${debutParis(f.du)} AND i.date < ${finParis(f.au)}
+      ORDER BY i.date`;
+
     res.json({
       periode: periode(f),
       granularite: gran,
       kpis: kpi,
       serie: s,
+      interventions: interventions.map((i) => ({
+        jour: ymd(new Date(new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(i.date) + "T00:00:00Z")),
+        motif: i.motif,
+        borne: i.identifiant,
+      })),
       heatmap: heatmap.map((h) => ({ jourSemaine: n(h.dow), heure: n(h.heure), nbVentes: n(h.nb), caTtcCents: n(h.ca) })),
       joursSemaine: [1, 2, 3, 4, 5, 6, 7].map((dow) => {
         const r = joursSemaine.find((j) => n(j.dow) === dow);

@@ -20,6 +20,8 @@ export async function viderBase() {
     prisma.importErreur.deleteMany(),
     prisma.importLot.deleteMany(),
     prisma.heartbeat.deleteMany(),
+    prisma.coutBorne.deleteMany(),
+    prisma.intervention.deleteMany(),
     prisma.affectationBorne.deleteMany(),
     prisma.modulePaiement.deleteMany(),
     prisma.borne.deleteMany(),

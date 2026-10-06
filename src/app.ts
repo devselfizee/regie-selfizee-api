@@ -11,6 +11,7 @@ import { utilisateursRouter } from "./routes/utilisateurs.js";
 import { commissionsRouter, reversementsRouter } from "./routes/commissions.js";
 import { alertesRouter } from "./routes/alertes.js";
 import { segmentsRouter } from "./routes/segments.js";
+import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
 
@@ -56,6 +57,10 @@ export function creerApp() {
   app.use("/api/lieux", lieuxRouter);
   app.use("/api/imports", tech, importsRouter);
   app.use("/api/bornes", tech, bornesRouter);
+  app.use("/api/bornes", tech, coutsBornesRouter);
+  app.use("/api/couts", tech, coutsRouter);
+  app.use("/api/interventions", tech, interventionsRouter);
+  app.use("/api/rentabilite", exiger("ADMIN"), rentabiliteRouter);
   app.use("/api/affectations", tech, affectationsRouter);
   app.use("/api/stats/segments", ventes, segmentsRouter);
   app.use("/api/stats", ventes, statsRouter);
