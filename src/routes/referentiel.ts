@@ -91,3 +91,22 @@ referentielRouter.post(
     res.status(201).json(await prisma.typeModulePaiement.create({ data }));
   })
 );
+
+const patchSimple = z.object({ libelle: z.string().trim().min(1).optional(), actif: z.boolean().optional() });
+
+// PATCH /api/referentiel/gammes/:id et /types-module/:id — renommer, désactiver
+referentielRouter.patch(
+  "/gammes/:id",
+  exiger("ADMIN"),
+  asynchrone(async (req, res) => {
+    res.json(await prisma.gamme.update({ where: { id: Number(req.params.id) }, data: patchSimple.parse(req.body) }));
+  })
+);
+
+referentielRouter.patch(
+  "/types-module/:id",
+  exiger("ADMIN"),
+  asynchrone(async (req, res) => {
+    res.json(await prisma.typeModulePaiement.update({ where: { id: Number(req.params.id) }, data: patchSimple.parse(req.body) }));
+  })
+);
