@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone } from "../lib/http.js";
 import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison, ymd, type Filtres } from "../stats/filtres.js";
+import { joursOuverts } from "../alertes/ouverture.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
 function filtresAutorises(req: UtilisateurRequest): Filtres {
@@ -138,6 +139,42 @@ async function commissionsPeriode(f: Filtres) {
     WHERE r.periode_debut >= ${ymd(f.du)}::date AND r.periode_fin <= ${ymd(f.au)}::date AND ${et(conditionsLieu(f))}`;
   return { montantCents: n(r.montant), nbPeriodes: n(r.nb), nbAValider: n(r.a_valider) };
 }
+
+// GET /api/stats/carte?du=&au=&<filtres> — lieux sur la carte, avec leur performance (CDC §8)
+statsRouter.get(
+  "/carte",
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const f = filtresAutorises(req);
+    const { precedente } = periodesComparaison(f);
+    const [courant, avant] = await Promise.all([classement(f), classement({ ...f, ...precedente })]);
+    const caAvant = new Map(avant.map((l) => [l.lieuId, l.caTtcCents]));
+
+    // Jours d'ouverture sur la période : CA par jour ouvert, comparable entre lieux saisonniers et annuels
+    const lieux = await prisma.lieu.findMany({
+      where: { id: { in: courant.map((l) => l.lieuId) } },
+      select: { id: true, latitude: true, longitude: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true },
+    });
+    const parId = new Map(lieux.map((l) => [l.id, l]));
+
+    res.json({
+      periode: { du: ymd(f.du), au: ymd(f.au) },
+      lieux: courant.map((l) => {
+        const lieu = parId.get(l.lieuId)!;
+        const jo = joursOuverts(lieu, f.du, f.au);
+        const precedent = caAvant.get(l.lieuId) ?? 0;
+        return {
+          ...l,
+          latitude: lieu.latitude === null ? null : Number(lieu.latitude),
+          longitude: lieu.longitude === null ? null : Number(lieu.longitude),
+          joursOuverts: jo,
+          caParJourOuvertCents: jo ? Math.round(l.caTtcCents / jo) : null,
+          caPrecedentCents: precedent,
+          evolution: precedent ? (l.caTtcCents - precedent) / precedent : null,
+        };
+      }),
+    });
+  })
+);
 
 // GET /api/stats/global?du=&au=&granularite=&<filtres>
 statsRouter.get(

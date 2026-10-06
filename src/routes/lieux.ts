@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone } from "../lib/http.js";
 import { exiger, perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
+import { geocoder } from "../lib/geocodage.js";
 
 export const lieuxRouter = Router();
 
@@ -199,12 +200,38 @@ const commercialImpose = (req: UtilisateurRequest, champs: { commercialId?: numb
   if (req.utilisateur?.role === "COMMERCIAL") champs.commercialId = req.utilisateur.id;
 };
 
+type Champs = ReturnType<typeof donneesLieu>["champs"];
+type Avant = { adresse: string | null; codePostal: string | null; ville: string | null; latitude: Prisma.Decimal | null; longitude: Prisma.Decimal | null };
+
+/**
+ * Coordonnées pour la carte : celles saisies à la main sont gardées ; sinon (ou si
+ * l'adresse a changé sans que la position soit retouchée) on géocode l'adresse.
+ */
+async function positionner(champs: Champs, avant?: Avant) {
+  const fournies = champs.latitude != null && champs.longitude != null;
+  const adresseChangee = !avant || (["adresse", "codePostal", "ville"] as const).some((k) => (champs[k] ?? null) !== (avant[k] ?? null));
+  const retouchees =
+    fournies && (!avant || Number(avant.latitude) !== champs.latitude || Number(avant.longitude) !== champs.longitude);
+  if (fournies && (retouchees || !adresseChangee)) return;
+
+  const p = await geocoder(champs);
+  if (p) {
+    champs.latitude = Math.round(p.latitude * 1e6) / 1e6;
+    champs.longitude = Math.round(p.longitude * 1e6) / 1e6;
+  } else if (fournies && adresseChangee) {
+    // Ancienne position devenue fausse et nouvelle adresse introuvable : on retire le point
+    champs.latitude = null;
+    champs.longitude = null;
+  }
+}
+
 lieuxRouter.post(
   "/",
   exiger("ADMIN", "COMMERCIAL"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(req.body));
     commercialImpose(req, champs);
+    await positionner(champs);
     const lieu = await prisma.lieu.create({
       data: {
         ...champs,
@@ -228,6 +255,13 @@ lieuxRouter.put(
     await verifierAccesLieu(req.utilisateur, lieuId);
     const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(req.body));
     commercialImpose(req, champs);
+    await positionner(
+      champs,
+      await prisma.lieu.findUniqueOrThrow({
+        where: { id: lieuId },
+        select: { adresse: true, codePostal: true, ville: true, latitude: true, longitude: true },
+      })
+    );
 
     const lieu = await prisma.$transaction(async (db) => {
       if (clienteleIds) await db.lieuClientele.deleteMany({ where: { lieuId } });
@@ -249,5 +283,32 @@ lieuxRouter.put(
       });
     });
     res.json(lieu);
+  })
+);
+
+// POST /api/lieux/geocoder — place sur la carte les lieux qui n'ont pas encore de coordonnées
+lieuxRouter.post(
+  "/geocoder",
+  exiger("ADMIN"),
+  asynchrone(async (_req, res) => {
+    const lieux = await prisma.lieu.findMany({
+      where: { OR: [{ latitude: null }, { longitude: null }] },
+      select: { id: true, enseigne: true, adresse: true, codePostal: true, ville: true },
+    });
+    const introuvables: string[] = [];
+    let places = 0;
+    for (const l of lieux) {
+      const p = await geocoder(l);
+      if (!p) {
+        introuvables.push(l.enseigne);
+        continue;
+      }
+      await prisma.lieu.update({
+        where: { id: l.id },
+        data: { latitude: Math.round(p.latitude * 1e6) / 1e6, longitude: Math.round(p.longitude * 1e6) / 1e6 },
+      });
+      places++;
+    }
+    res.json({ places, introuvables });
   })
 );
