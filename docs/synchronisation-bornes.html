@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synchronisation des bornes — API v1</title>
+<style>
+  :root {
+    --ink: #16161a;
+    --ink-2: #4d4c48;
+    --muted: #7a7873;
+    --line: #e2e0d9;
+    --soft: #f5f4f0;
+    --paper: #ffffff;
+    --accent: #2a78d6;
+    --accent-soft: #e8f1fc;
+    --ok: #0a7a2f;
+    --ok-soft: #e4f4e7;
+    --warn: #8a5a00;
+    --warn-soft: #fff3d6;
+    --crit: #b42626;
+    --crit-soft: #fde8e8;
+    --code-bg: #1d1f24;
+    --code-ink: #e6e6e6;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0;
+    background: #eceae4;
+    color: var(--ink);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .page {
+    max-width: 210mm;
+    margin: 24px auto;
+    background: var(--paper);
+    padding: 18mm 17mm;
+    box-shadow: 0 2px 18px rgba(0,0,0,.08);
+  }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 10px; letter-spacing: -.01em; }
+  h2 {
+    font-size: 19px; margin: 34px 0 12px; padding-top: 6px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  h2 .num {
+    font-size: 13px; font-weight: 700; color: var(--accent);
+    border: 1.5px solid var(--accent); border-radius: 6px; padding: 0 7px;
+  }
+  h3 { font-size: 15px; margin: 22px 0 8px; }
+  p { margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  pre {
+    font-family: var(--mono); font-size: 12px; line-height: 1.5;
+    background: var(--code-bg); color: var(--code-ink);
+    padding: 14px 16px; border-radius: 8px; margin: 8px 0 14px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  pre .k { color: #8cc4ff; }
+  pre .s { color: #b5e08c; }
+  pre .n { color: #ffc27a; }
+  pre .c { color: #8b8f99; }
+  pre .h { color: #f0a0d0; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 13px; }
+  th { text-align: left; font-weight: 600; color: var(--ink-2); background: var(--soft); }
+  th, td { padding: 7px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:first-child { white-space: nowrap; }
+  .req { color: var(--crit); font-weight: 700; }
+  figure { margin: 14px 0 18px; break-inside: avoid; }
+  figcaption { font-size: 12px; color: var(--muted); margin-top: 6px; text-align: center; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .callout {
+    border-left: 4px solid var(--accent); background: var(--accent-soft);
+    padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; break-inside: avoid;
+  }
+  .callout.crit { border-color: var(--crit); background: var(--crit-soft); }
+  .callout.ok { border-color: var(--ok); background: var(--ok-soft); }
+  .callout.warn { border-color: #d99a00; background: var(--warn-soft); }
+  .callout strong:first-child { display: block; margin-bottom: 2px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; break-inside: avoid; }
+  .card h4 { margin: 0 0 6px; font-size: 13.5px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+  .tag.ok { background: var(--ok-soft); color: var(--ok); }
+  .tag.crit { background: var(--crit-soft); color: var(--crit); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.neutre { background: var(--soft); color: var(--ink-2); }
+  .tag.accent { background: var(--accent-soft); color: var(--accent); }
+  .cover { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 8px; }
+  .cover .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  .cover .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; color: var(--ink-2); margin-top: 12px; }
+  .toc { columns: 2; column-gap: 28px; font-size: 13px; padding-left: 18px; margin: 10px 0 0; }
+  .toc li { margin-bottom: 3px; }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 8px 0 14px; }
+  .steps li { counter-increment: s; position: relative; padding: 8px 0 8px 40px; border-bottom: 1px dashed var(--line); break-inside: avoid; }
+  .steps li::before {
+    content: counter(s); position: absolute; left: 0; top: 7px; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center;
+  }
+  /* Maquette de l'écran Bornes */
+  .mock { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; break-inside: avoid; font-size: 12.5px; }
+  .mock-bar { background: var(--soft); padding: 7px 12px; display: flex; gap: 6px; align-items: center; border-bottom: 1px solid var(--line); }
+  .mock-bar i { width: 9px; height: 9px; border-radius: 50%; background: #d4d2cb; display: inline-block; }
+  .mock-bar span { margin-left: 8px; color: var(--muted); font-size: 11.5px; }
+  .mock table { margin: 0; font-size: 12px; }
+  .mock td, .mock th { padding: 8px 10px; }
+  .mock .sub { color: var(--muted); font-size: 11px; }
+  .no-break { break-inside: avoid; }
+
+  @page { size: A4; margin: 14mm 13mm; }
+  @media print {
+    body { background: #fff; font-size: 12.5px; }
+    .page { margin: 0; padding: 0; box-shadow: none; max-width: none; }
+    h2 { break-after: avoid; }
+    h3 { break-after: avoid; }
+    .saut { break-before: page; }
+    pre, table, .card, .callout { break-inside: avoid; }
+  }
+  @media (max-width: 700px) {
+    .page { padding: 20px 16px; margin: 0; }
+    .grid2 { grid-template-columns: 1fr; }
+    .toc { columns: 1; }
+    td:first-child { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+<main class="page">
+
+<!-- ─── Couverture ─────────────────────────────────────── -->
+<header class="cover">
+  <div class="eyebrow">Plateforme de suivi Régie · Selfizee / Ma Trombine</div>
+  <h1>Synchronisation des bornes<br>avec la plateforme de suivi</h1>
+  <p class="muted" style="font-size:15px;margin:0">Spécification de l'API d'ingestion, version 1 — à l'attention du développeur du logiciel des bornes.</p>
+  <div class="meta">
+    <span><strong>Version de l'API :</strong> v1 (schéma <code>1.0</code>)</span>
+    <span><strong>Date :</strong> octobre 2026</span>
+    <span><strong>Gammes :</strong> Ma Trombine, Prestige</span>
+  </div>
+  <ol class="toc">
+    <li>Principe de la synchronisation</li>
+    <li>Authentification de la borne</li>
+    <li>Envoi des ventes</li>
+    <li>Réponse de l'API</li>
+    <li>Remboursements</li>
+    <li>Signal de vie (heartbeat)</li>
+    <li>Fiabilité : file d'attente et rattrapage</li>
+    <li>Codes HTTP : que faire ?</li>
+    <li>Mise en service d'une borne</li>
+    <li>Points encore ouverts</li>
+  </ol>
+</header>
+
+<!-- ─── 1. Principe ─────────────────────────────────────── -->
+<h2><span class="num">1</span> Principe de la synchronisation</h2>
+<p>Chaque borne envoie <strong>directement</strong> à la plateforme de suivi son journal de ventes et son état. Rien ne transite par Pikcloud ni Booth : une panne de la synchronisation photo n'a donc aucun effet sur le chiffre d'affaires, les commissions ou les alertes.</p>
+
+<figure>
+  <svg viewBox="0 0 760 270" role="img" aria-label="Schéma : la borne envoie ventes et heartbeats en HTTPS à l'API d'ingestion de la plateforme de suivi ; les photos continuent de passer par Pikcloud, séparément">
+    <defs>
+      <marker id="fl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/></marker>
+      <marker id="flg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a9a7a0"/></marker>
+    </defs>
+    <!-- Borne -->
+    <rect x="10" y="40" width="200" height="190" rx="14" fill="#f5f4f0" stroke="#cfcdc5"/>
+    <text x="110" y="66" text-anchor="middle" font-size="15" font-weight="700" fill="#16161a">Borne</text>
+    <text x="110" y="84" text-anchor="middle" font-size="11.5" fill="#7a7873">Ma Trombine / Prestige</text>
+    <rect x="28" y="98" width="164" height="34" rx="7" fill="#fff" stroke="#cfcdc5"/>
+    <text x="110" y="119" text-anchor="middle" font-size="12" fill="#16161a">Module de paiement</text>
+    <rect x="28" y="140" width="164" height="34" rx="7" fill="#fff" stroke="#cfcdc5"/>
+    <text x="110" y="161" text-anchor="middle" font-size="12" fill="#16161a">Logiciel borne</text>
+    <rect x="28" y="182" width="164" height="34" rx="7" fill="#e8f1fc" stroke="#2a78d6"/>
+    <text x="110" y="203" text-anchor="middle" font-size="12" font-weight="600" fill="#1c5cab">File d'attente locale</text>
+    <!-- Flèches vers API -->
+    <line x1="214" y1="120" x2="430" y2="120" stroke="#2a78d6" stroke-width="2.5" marker-end="url(#fl)"/>
+    <text x="322" y="108" text-anchor="middle" font-size="12" font-weight="600" fill="#1c5cab">Ventes</text>
+    <text x="322" y="138" text-anchor="middle" font-size="11" fill="#4d4c48">POST /ingest/v1/transactions</text>
+    <line x1="214" y1="180" x2="430" y2="180" stroke="#2a78d6" stroke-width="2.5" marker-end="url(#fl)"/>
+    <text x="322" y="168" text-anchor="middle" font-size="12" font-weight="600" fill="#1c5cab">État, toutes les 5 min</text>
+    <text x="322" y="198" text-anchor="middle" font-size="11" fill="#4d4c48">POST /ingest/v1/heartbeats</text>
+    <rect x="276" y="214" width="92" height="22" rx="11" fill="#e4f4e7"/>
+    <text x="322" y="229" text-anchor="middle" font-size="11" font-weight="600" fill="#0a7a2f">HTTPS + clé</text>
+    <!-- Plateforme -->
+    <rect x="434" y="40" width="316" height="190" rx="14" fill="#fff" stroke="#2a78d6" stroke-width="1.5"/>
+    <text x="592" y="66" text-anchor="middle" font-size="15" font-weight="700" fill="#16161a">Plateforme de suivi Régie</text>
+    <rect x="452" y="84" width="130" height="62" rx="8" fill="#e8f1fc"/>
+    <text x="517" y="110" text-anchor="middle" font-size="12" font-weight="600" fill="#1c5cab">API d'ingestion</text>
+    <text x="517" y="127" text-anchor="middle" font-size="10.5" fill="#4d4c48">contrôle · anti-doublon</text>
+    <rect x="600" y="84" width="132" height="62" rx="8" fill="#f5f4f0"/>
+    <text x="666" y="110" text-anchor="middle" font-size="12" font-weight="600" fill="#16161a">Base de données</text>
+    <text x="666" y="127" text-anchor="middle" font-size="10.5" fill="#4d4c48">ventes · état des bornes</text>
+    <line x1="582" y1="115" x2="598" y2="115" stroke="#2a78d6" stroke-width="2" marker-end="url(#fl)"/>
+    <rect x="452" y="158" width="280" height="56" rx="8" fill="#f5f4f0"/>
+    <text x="592" y="182" text-anchor="middle" font-size="12" font-weight="600" fill="#16161a">CA · commissions · alertes</text>
+    <text x="592" y="199" text-anchor="middle" font-size="10.5" fill="#4d4c48">tableaux de bord Selfizee</text>
+    <!-- Pikcloud séparé -->
+    <text x="110" y="22" text-anchor="middle" font-size="11" fill="#7a7873">Photos (inchangé)</text>
+    <line x1="110" y1="38" x2="110" y2="28" stroke="#a9a7a0" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <rect x="250" y="6" width="150" height="26" rx="13" fill="#fff" stroke="#a9a7a0" stroke-dasharray="4 3"/>
+    <text x="325" y="23" text-anchor="middle" font-size="11.5" fill="#7a7873">Pikcloud → Booth</text>
+    <line x1="160" y1="19" x2="246" y2="19" stroke="#a9a7a0" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#flg)"/>
+  </svg>
+  <figcaption>Figure 1 — Deux envois, directement de la borne vers la plateforme. Les photos continuent de passer par Pikcloud, séparément.</figcaption>
+</figure>
+
+<div class="grid2">
+  <div class="card">
+    <h4>Ce que la borne envoie</h4>
+    <p style="margin:0">Le <strong>journal des ventes</strong> (montant, moyen de paiement, formule, statut) et son <strong>état</strong> (en ligne, papier, ruban, erreurs).</p>
+  </div>
+  <div class="card">
+    <h4>Ce que la borne n'envoie jamais</h4>
+    <p style="margin:0">Ni photo, ni donnée personnelle, ni <strong>donnée de carte bancaire</strong> (numéro, expiration, nom du porteur).</p>
+  </div>
+</div>
+
+<table>
+  <tr><th>Élément</th><th>Valeur</th></tr>
+  <tr><td>URL de base</td><td>Communiquée par Selfizee (ex. <code>https://api-regie.&lt;domaine&gt;</code>). <strong>HTTPS obligatoire</strong> en production.</td></tr>
+  <tr><td>Format</td><td>JSON UTF-8, en-tête <code>Content-Type: application/json</code></td></tr>
+  <tr><td>Taille maximale</td><td>2 Mo par requête · 500 ventes ou 2 000 heartbeats par lot</td></tr>
+  <tr><td>Schémas officiels</td><td><code>schemas/transactions.v1.schema.json</code> et <code>schemas/heartbeat.v1.schema.json</code> (dépôt <code>regie-selfizee-api</code>), à utiliser pour valider côté borne</td></tr>
+</table>
+
+<!-- ─── 2. Authentification ─────────────────────────────── -->
+<h2 class="saut"><span class="num">2</span> Authentification de la borne</h2>
+<p>Chaque borne possède <strong>sa propre clé API</strong>, à envoyer dans chaque requête :</p>
+<pre><span class="h">Authorization:</span> Bearer <span class="s">rgs_k3f9a2mx_8Hq2vW…(43 caractères)</span></pre>
+
+<figure>
+  <svg viewBox="0 0 760 150" role="img" aria-label="Cycle de vie de la clé : générée sur la plateforme, affichée une seule fois, installée sur la borne, vérifiée à chaque envoi">
+    <defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/></marker></defs>
+    <g font-size="12" text-anchor="middle">
+      <rect x="10" y="30" width="160" height="78" rx="10" fill="#f5f4f0" stroke="#cfcdc5"/>
+      <text x="90" y="58" font-weight="700" fill="#16161a">1. Génération</text>
+      <text x="90" y="78" fill="#4d4c48" font-size="11">Plateforme, page Bornes</text>
+      <text x="90" y="94" fill="#4d4c48" font-size="11">« Nouvelle borne »</text>
+      <line x1="172" y1="69" x2="200" y2="69" stroke="#2a78d6" stroke-width="2" marker-end="url(#fa)"/>
+      <rect x="204" y="30" width="160" height="78" rx="10" fill="#fff3d6" stroke="#d99a00"/>
+      <text x="284" y="58" font-weight="700" fill="#8a5a00">2. Affichée 1 fois</text>
+      <text x="284" y="78" fill="#4d4c48" font-size="11">à copier tout de suite :</text>
+      <text x="284" y="94" fill="#4d4c48" font-size="11">elle n'est pas conservée</text>
+      <line x1="366" y1="69" x2="394" y2="69" stroke="#2a78d6" stroke-width="2" marker-end="url(#fa)"/>
+      <rect x="398" y="30" width="160" height="78" rx="10" fill="#f5f4f0" stroke="#cfcdc5"/>
+      <text x="478" y="58" font-weight="700" fill="#16161a">3. Installation</text>
+      <text x="478" y="78" fill="#4d4c48" font-size="11">dans la configuration</text>
+      <text x="478" y="94" fill="#4d4c48" font-size="11">protégée de la borne</text>
+      <line x1="560" y1="69" x2="588" y2="69" stroke="#2a78d6" stroke-width="2" marker-end="url(#fa)"/>
+      <rect x="592" y="30" width="160" height="78" rx="10" fill="#e4f4e7" stroke="#0a7a2f"/>
+      <text x="672" y="58" font-weight="700" fill="#0a7a2f">4. Vérification</text>
+      <text x="672" y="78" fill="#4d4c48" font-size="11">à chaque envoi : clé +</text>
+      <text x="672" y="94" fill="#4d4c48" font-size="11">borne_id doivent concorder</text>
+    </g>
+    <text x="380" y="138" text-anchor="middle" font-size="11.5" fill="#7a7873">Régénérer la clé désactive immédiatement l'ancienne : la borne garde alors ses ventes en attente jusqu'à l'installation de la nouvelle.</text>
+  </svg>
+  <figcaption>Figure 2 — Cycle de vie de la clé API d'une borne.</figcaption>
+</figure>
+
+<div class="callout warn">
+  <strong>Le <code>borne_id</code> doit correspondre à la clé</strong>
+  Le champ <code>borne_id</code> du JSON (ex. <code>MT-0042</code>) doit être exactement l'identifiant de la borne à qui appartient la clé. Sinon la requête est refusée (403 <code>BORNE_DIFFERENTE</code>).
+</div>
+
+<!-- ─── 3. Envoi des ventes ─────────────────────────────── -->
+<h2><span class="num">3</span> Envoi des ventes</h2>
+<p><code>POST /ingest/v1/transactions</code> — un lot de <strong>1 à 500 ventes</strong>, envoyé après chaque vente ou par petits lots.</p>
+
+<pre><span class="c">// Lot de ventes</span>
+{
+  <span class="k">"schema_version"</span>: <span class="s">"1.0"</span>,
+  <span class="k">"borne_id"</span>: <span class="s">"MT-0042"</span>,
+  <span class="k">"envoye_le"</span>: <span class="s">"2026-10-05T23:15:02+02:00"</span>,     <span class="c">// avec fuseau</span>
+  <span class="k">"logiciel_version"</span>: <span class="s">"3.4.1"</span>,
+  <span class="k">"rattrapage"</span>: <span class="n">false</span>,
+  <span class="k">"transactions"</span>: [
+    {
+      <span class="k">"transaction_id"</span>: <span class="s">"ING-20261005-000184"</span>,   <span class="c">// clé anti-doublon</span>
+      <span class="k">"horodatage"</span>: <span class="s">"2026-10-05T22:47:31+02:00"</span>,
+      <span class="k">"montant_ttc_centimes"</span>: <span class="n">800</span>,              <span class="c">// 8,00 € en centimes</span>
+      <span class="k">"devise"</span>: <span class="s">"EUR"</span>,
+      <span class="k">"statut"</span>: <span class="s">"accepte"</span>,
+      <span class="k">"module"</span>: { <span class="k">"type"</span>: <span class="s">"INGENICO_SELF_2000"</span>, <span class="k">"numero_serie"</span>: <span class="s">"SELF2K-19A77310"</span> },
+      <span class="k">"moyen_paiement"</span>: <span class="s">"sans_contact"</span>,
+      <span class="k">"reference_monetique"</span>: <span class="s">"AUT-554821"</span>,
+      <span class="k">"produit"</span>: { <span class="k">"code"</span>: <span class="s">"BANDE_4"</span>, <span class="k">"libelle"</span>: <span class="s">"Bande 4 photos"</span>, <span class="k">"nb_tirages"</span>: <span class="n">2</span> }
+    }
+  ]
+}</pre>
+
+<h3>Enveloppe du lot</h3>
+<table>
+  <tr><th>Champ</th><th>Description</th></tr>
+  <tr><td><code>schema_version</code> <span class="req">*</span></td><td>Toujours <code>"1.0"</code>.</td></tr>
+  <tr><td><code>borne_id</code> <span class="req">*</span></td><td>Identifiant de la borne : majuscules, chiffres, <code>-</code> et <code>_</code> (3 à 64 caractères).</td></tr>
+  <tr><td><code>envoye_le</code> <span class="req">*</span></td><td>Date et heure de l'envoi, avec fuseau.</td></tr>
+  <tr><td><code>logiciel_version</code> <span class="req">*</span></td><td>Version du logiciel de la borne.</td></tr>
+  <tr><td><code>rattrapage</code></td><td><code>true</code> quand la borne renvoie un historique après une coupure.</td></tr>
+  <tr><td><code>transactions</code> <span class="req">*</span></td><td>Liste de 1 à 500 ventes.</td></tr>
+</table>
+
+<h3>Une vente</h3>
+<table>
+  <tr><th>Champ</th><th>Description</th></tr>
+  <tr><td><code>transaction_id</code> <span class="req">*</span></td><td>Identifiant donné par le <strong>module de paiement</strong>, unique pour la borne. C'est la clé anti-doublon.</td></tr>
+  <tr><td><code>horodatage</code> <span class="req">*</span></td><td>Date et heure de la vente, <strong>avec fuseau</strong>.</td></tr>
+  <tr><td><code>montant_ttc_centimes</code> <span class="req">*</span></td><td>Montant TTC en <strong>centimes, nombre entier</strong> (<code>800</code> = 8,00 €). Toujours positif, y compris pour un remboursement.</td></tr>
+  <tr><td><code>taux_tva_pct</code></td><td>Taux de TVA (ex. <code>20</code>). Par défaut : 20 %.</td></tr>
+  <tr><td><code>devise</code> <span class="req">*</span></td><td><code>"EUR"</code> (seule devise gérée).</td></tr>
+  <tr><td><code>statut</code> <span class="req">*</span></td><td><code>accepte</code>, <code>refuse</code>, <code>annule</code> ou <code>rembourse</code>. <strong>Envoyer aussi les refus</strong> : ils servent au taux de refus et aux alertes.</td></tr>
+  <tr><td><code>transaction_origine_id</code></td><td>Pour un remboursement : <code>transaction_id</code> de la vente d'origine. <strong>Obligatoire si <code>statut</code> = <code>rembourse</code>.</strong></td></tr>
+  <tr><td><code>module.type</code> <span class="req">*</span></td><td><code>INGENICO_SELF_2000</code>, <code>MONNAYEUR</code>, <code>STRIPE_TERMINAL</code>… Un code inconnu est rejeté : demander à Selfizee de l'ajouter.</td></tr>
+  <tr><td><code>module.numero_serie</code></td><td>Numéro de série du module de paiement.</td></tr>
+  <tr><td><code>moyen_paiement</code> <span class="req">*</span></td><td><code>cb</code> (carte insérée), <code>sans_contact</code>, <code>especes</code>, <code>mobile</code> (Apple Pay / Google Pay), <code>autre</code>.</td></tr>
+  <tr><td><code>reference_monetique</code></td><td>Référence du prestataire (n° d'autorisation…), pour le rapprochement avec les relevés Ingenico. <strong>Interdite pour les espèces.</strong></td></tr>
+  <tr><td><code>produit.code</code> <span class="req">*</span></td><td>Code de la formule vendue (ex. <code>BANDE_4</code>).</td></tr>
+  <tr><td><code>produit.libelle</code></td><td>Libellé lisible de la formule.</td></tr>
+  <tr><td><code>produit.nb_tirages</code> <span class="req">*</span></td><td>Nombre de tirages imprimés (0 à 100 ; <code>0</code> pour un refus).</td></tr>
+</table>
+<p class="muted" style="font-size:12px"><span class="req">*</span> obligatoire. Tout champ non prévu par le schéma est refusé.</p>
+
+<div class="grid2">
+  <div class="callout crit" style="margin:0">
+    <strong>Aucune donnée de carte bancaire</strong>
+    Numéro de carte, date d'expiration, nom du porteur : interdits. Le schéma refuse tout champ inconnu, ce qui empêche une fuite par erreur.
+  </div>
+  <div class="callout" style="margin:0">
+    <strong>Horodatages avec fuseau, horloge à l'heure</strong>
+    <code>2026-10-05T22:47:31+02:00</code> ou <code>…Z</code>. Sans fuseau : rejeté. Horloge synchronisée par NTP : la date de la vente détermine le lieu auquel elle est attribuée.
+  </div>
+</div>
+
+<!-- ─── 4. Réponse ──────────────────────────────────────── -->
+<h2 class="saut"><span class="num">4</span> Réponse de l'API</h2>
+<p>Un lot traité renvoie <strong><code>200 OK</code>, même si certaines ventes sont rejetées</strong>. Les ventes rejetées sont gardées par la plateforme dans sa file d'erreurs, avec leur motif : la borne n'a <strong>pas</strong> à les renvoyer.</p>
+
+<figure>
+  <svg viewBox="0 0 760 210" role="img" aria-label="Exemple : un lot de 4 ventes donne 3 créées et 1 rejetée ; la réponse est 200 et tout le lot sort de la file locale">
+    <defs><marker id="fr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4d4c48"/></marker></defs>
+    <text x="90" y="20" text-anchor="middle" font-size="12" font-weight="700" fill="#16161a">Lot envoyé</text>
+    <g font-size="11.5">
+      <rect x="20" y="32" width="140" height="30" rx="6" fill="#f5f4f0" stroke="#cfcdc5"/><text x="34" y="51" fill="#16161a">#0  8,00 € accepté</text>
+      <rect x="20" y="68" width="140" height="30" rx="6" fill="#f5f4f0" stroke="#cfcdc5"/><text x="34" y="87" fill="#16161a">#1  8,00 € refusé</text>
+      <rect x="20" y="104" width="140" height="30" rx="6" fill="#f5f4f0" stroke="#cfcdc5"/><text x="34" y="123" fill="#16161a">#2  5,00 € espèces</text>
+      <rect x="20" y="140" width="140" height="30" rx="6" fill="#f5f4f0" stroke="#cfcdc5"/><text x="34" y="159" fill="#16161a">#3  6,00 € accepté</text>
+    </g>
+    <line x1="166" y1="101" x2="250" y2="101" stroke="#4d4c48" stroke-width="2" marker-end="url(#fr)"/>
+    <rect x="254" y="64" width="150" height="74" rx="10" fill="#e8f1fc" stroke="#2a78d6"/>
+    <text x="329" y="94" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1c5cab">API d'ingestion</text>
+    <text x="329" y="113" text-anchor="middle" font-size="11" fill="#4d4c48">contrôle chaque vente</text>
+    <line x1="408" y1="101" x2="470" y2="60" stroke="#0a7a2f" stroke-width="2" marker-end="url(#fr)"/>
+    <line x1="408" y1="101" x2="470" y2="150" stroke="#b42626" stroke-width="2" marker-end="url(#fr)"/>
+    <rect x="474" y="30" width="276" height="58" rx="10" fill="#e4f4e7" stroke="#0a7a2f"/>
+    <text x="490" y="53" font-size="12" font-weight="700" fill="#0a7a2f">creees : 3</text>
+    <text x="490" y="72" font-size="11" fill="#16161a">#0, #1 et #3 enregistrées (le refus compte aussi)</text>
+    <rect x="474" y="118" width="276" height="62" rx="10" fill="#fde8e8" stroke="#b42626"/>
+    <text x="490" y="141" font-size="12" font-weight="700" fill="#b42626">rejetees : 1 → file d'erreurs plateforme</text>
+    <text x="490" y="160" font-size="11" fill="#16161a">#2 : MODULE_INCONNU (« MONNAYEUR_X »)</text>
+    <text x="380" y="203" text-anchor="middle" font-size="11.5" fill="#4d4c48">Réponse <tspan font-weight="700" fill="#0a7a2f">200 OK</tspan> : la borne retire les 4 ventes de sa file locale.</text>
+  </svg>
+  <figcaption>Figure 3 — Une vente invalide ne bloque pas le reste du lot.</figcaption>
+</figure>
+
+<pre>{
+  <span class="k">"import_id"</span>: <span class="s">"1824"</span>,
+  <span class="k">"recues"</span>: <span class="n">4</span>, <span class="k">"creees"</span>: <span class="n">3</span>, <span class="k">"doublons"</span>: <span class="n">0</span>, <span class="k">"rejetees"</span>: <span class="n">1</span>, <span class="k">"non_affectees"</span>: <span class="n">0</span>,
+  <span class="k">"erreurs"</span>: [
+    { <span class="k">"index"</span>: <span class="n">2</span>, <span class="k">"transaction_id"</span>: <span class="s">"MON-000912"</span>, <span class="k">"code"</span>: <span class="s">"MODULE_INCONNU"</span>,
+      <span class="k">"message"</span>: <span class="s">"Type de module \"MONNAYEUR_X\" absent du référentiel"</span> }
+  ]
+}</pre>
+
+<table>
+  <tr><th>Champ</th><th>Signification</th></tr>
+  <tr><td><code>creees</code></td><td>Ventes nouvelles enregistrées.</td></tr>
+  <tr><td><code>doublons</code></td><td>Ventes déjà reçues à l'identique : ignorées, sans effet.</td></tr>
+  <tr><td><code>rejetees</code> / <code>erreurs</code></td><td>Ventes refusées, avec leur position dans le lot (<code>index</code>, à partir de 0) et le motif.</td></tr>
+  <tr><td><code>non_affectees</code></td><td>Ventes reçues alors que la borne n'est affectée à aucun lieu à cette date : gardées et signalées à Selfizee. Rien à faire côté borne.</td></tr>
+</table>
+
+<table>
+  <tr><th>Code d'erreur (par vente)</th><th>Cause</th></tr>
+  <tr><td><code>SCHEMA_INVALIDE</code></td><td>Champ manquant, mauvais format, champ non prévu (le message précise lequel).</td></tr>
+  <tr><td><code>MODULE_INCONNU</code></td><td><code>module.type</code> absent du référentiel de la plateforme.</td></tr>
+  <tr><td><code>DEVISE_NON_GEREE</code></td><td>Devise autre que <code>EUR</code>.</td></tr>
+  <tr><td><code>CONFLIT_DOUBLON</code></td><td>Ce <code>transaction_id</code> a déjà été reçu <strong>avec un contenu différent</strong>. La vente d'origine n'est jamais écrasée.</td></tr>
+</table>
+
+<!-- ─── 5. Remboursements ───────────────────────────────── -->
+<h2><span class="num">5</span> Remboursements</h2>
+<p>Un remboursement est une <strong>nouvelle vente</strong>, avec son propre identifiant, qui pointe vers la vente d'origine. La vente d'origine ne doit jamais être renvoyée avec un statut modifié : elle serait rejetée (<code>CONFLIT_DOUBLON</code>).</p>
+
+<figure>
+  <svg viewBox="0 0 760 150" role="img" aria-label="Le remboursement ING-000186 référence la vente d'origine ING-000184 via transaction_origine_id">
+    <defs><marker id="fo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/></marker></defs>
+    <rect x="20" y="20" width="300" height="108" rx="12" fill="#fff" stroke="#cfcdc5"/>
+    <text x="40" y="46" font-size="12.5" font-weight="700" fill="#16161a">Vente d'origine</text>
+    <rect x="236" y="32" width="68" height="20" rx="10" fill="#e4f4e7"/><text x="270" y="46" text-anchor="middle" font-size="11" font-weight="600" fill="#0a7a2f">accepte</text>
+    <text x="40" y="74" font-size="11.5" fill="#4d4c48" font-family="ui-monospace,Consolas,monospace">transaction_id : ING-000184</text>
+    <text x="40" y="94" font-size="11.5" fill="#4d4c48" font-family="ui-monospace,Consolas,monospace">montant : 800 · 22:47</text>
+    <text x="40" y="114" font-size="11" fill="#7a7873">envoyée une fois, jamais modifiée</text>
+    <rect x="440" y="20" width="300" height="108" rx="12" fill="#fff" stroke="#2a78d6"/>
+    <text x="460" y="46" font-size="12.5" font-weight="700" fill="#16161a">Remboursement</text>
+    <rect x="646" y="32" width="80" height="20" rx="10" fill="#fff3d6"/><text x="686" y="46" text-anchor="middle" font-size="11" font-weight="600" fill="#8a5a00">rembourse</text>
+    <text x="460" y="74" font-size="11.5" fill="#4d4c48" font-family="ui-monospace,Consolas,monospace">transaction_id : ING-000186</text>
+    <text x="460" y="94" font-size="11.5" fill="#1c5cab" font-weight="600" font-family="ui-monospace,Consolas,monospace">transaction_origine_id : ING-000184</text>
+    <text x="460" y="114" font-size="11.5" fill="#4d4c48" font-family="ui-monospace,Consolas,monospace">montant : 800 (positif) · 23:05</text>
+    <line x1="438" y1="90" x2="324" y2="74" stroke="#2a78d6" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fo)"/>
+    <text x="380" y="66" text-anchor="middle" font-size="11" fill="#1c5cab">référence</text>
+  </svg>
+  <figcaption>Figure 4 — Un remboursement est un nouvel envoi qui référence la vente d'origine.</figcaption>
+</figure>
+
+<!-- ─── 6. Heartbeat ────────────────────────────────────── -->
+<h2 class="saut"><span class="num">6</span> Signal de vie (heartbeat)</h2>
+<p><code>POST /ingest/v1/heartbeats</code> — <strong>toutes les 5 minutes, même sans vente</strong>. C'est ce qui permet de distinguer « pas de client » de « borne en panne ».</p>
+
+<figure>
+  <svg viewBox="0 0 760 190" role="img" aria-label="Frise : heartbeats toutes les 5 minutes, borne en ligne ; quand ils s'arrêtent, la borne passe en muette et une alerte est levée, même sans vente attendue">
+    <line x1="30" y1="96" x2="740" y2="96" stroke="#cfcdc5" stroke-width="2"/>
+    <g fill="#2a78d6">
+      <circle cx="50" cy="96" r="7"/><circle cx="105" cy="96" r="7"/><circle cx="160" cy="96" r="7"/><circle cx="215" cy="96" r="7"/>
+      <circle cx="270" cy="96" r="7"/><circle cx="325" cy="96" r="7"/><circle cx="380" cy="96" r="7"/>
+    </g>
+    <g fill="#0a7a2f"><rect x="122" y="56" width="22" height="22" rx="4"/><rect x="288" y="56" width="22" height="22" rx="4"/></g>
+    <text x="133" y="48" text-anchor="middle" font-size="11" fill="#0a7a2f">vente</text>
+    <text x="299" y="48" text-anchor="middle" font-size="11" fill="#0a7a2f">vente</text>
+    <g fill="none" stroke="#b42626" stroke-width="2" stroke-dasharray="3 4">
+      <circle cx="435" cy="96" r="7"/><circle cx="490" cy="96" r="7"/><circle cx="545" cy="96" r="7"/>
+      <circle cx="600" cy="96" r="7"/><circle cx="655" cy="96" r="7"/><circle cx="710" cy="96" r="7"/>
+    </g>
+    <rect x="30" y="120" width="368" height="26" rx="13" fill="#e4f4e7"/>
+    <text x="214" y="137" text-anchor="middle" font-size="12" font-weight="600" fill="#0a7a2f">● En ligne : un heartbeat toutes les 5 min</text>
+    <rect x="412" y="120" width="328" height="26" rx="13" fill="#fde8e8"/>
+    <text x="576" y="137" text-anchor="middle" font-size="12" font-weight="600" fill="#b42626">■ Muette : plus de signal → alerte</text>
+    <text x="50" y="176" font-size="11" fill="#7a7873">20:00</text>
+    <text x="380" y="176" text-anchor="middle" font-size="11" fill="#7a7873">20:30 · dernier signal</text>
+    <text x="710" y="176" text-anchor="end" font-size="11" fill="#7a7873">21:00</text>
+    <text x="30" y="22" font-size="11.5" fill="#4d4c48"><tspan fill="#2a78d6" font-weight="700">●</tspan> heartbeat reçu   <tspan fill="#0a7a2f" font-weight="700">■</tspan> vente   <tspan fill="#b42626" font-weight="700">○</tspan> heartbeat attendu mais absent</text>
+  </svg>
+  <figcaption>Figure 5 — Sans heartbeat, la plateforme ne pourrait pas savoir si une borne sans vente est en panne ou simplement sans client.</figcaption>
+</figure>
+
+<pre>{
+  <span class="k">"schema_version"</span>: <span class="s">"1.0"</span>,
+  <span class="k">"borne_id"</span>: <span class="s">"MT-0042"</span>,
+  <span class="k">"heartbeats"</span>: [
+    {
+      <span class="k">"horodatage"</span>: <span class="s">"2026-10-05T23:15:00+02:00"</span>,
+      <span class="k">"logiciel_version"</span>: <span class="s">"3.4.1"</span>,
+      <span class="k">"papier_restant"</span>: <span class="n">310</span>,  <span class="k">"ruban_restant"</span>: <span class="n">316</span>,
+      <span class="k">"imprimante_ok"</span>: <span class="n">false</span>, <span class="k">"module_paiement_ok"</span>: <span class="n">true</span>,
+      <span class="k">"erreurs"</span>: [ { <span class="k">"code"</span>: <span class="s">"PRN_JAM"</span>, <span class="k">"message"</span>: <span class="s">"Bourrage papier"</span>, <span class="k">"composant"</span>: <span class="s">"imprimante"</span> } ]
+    }
+  ]
+}</pre>
+
+<table>
+  <tr><th>Champ</th><th>Description</th></tr>
+  <tr><td><code>horodatage</code> <span class="req">*</span></td><td>Moment de la mesure, avec fuseau.</td></tr>
+  <tr><td><code>logiciel_version</code> <span class="req">*</span></td><td>Version du logiciel.</td></tr>
+  <tr><td><code>papier_restant</code>, <code>ruban_restant</code></td><td>Nombre de tirages restants (alertes consommables).</td></tr>
+  <tr><td><code>imprimante_ok</code>, <code>module_paiement_ok</code></td><td>État des périphériques.</td></tr>
+  <tr><td><code>erreurs</code></td><td>Erreurs en cours : <code>code</code>, <code>message</code>, <code>composant</code> (<code>imprimante</code>, <code>module_paiement</code>, <code>camera</code>, <code>ecran</code>, <code>reseau</code>, <code>logiciel</code>, <code>autre</code>).</td></tr>
+</table>
+<p>Jusqu'à <strong>2 000</strong> heartbeats par lot (rattrapage). Réponse : <code>200 OK</code> avec <code>{ "recus": 2, "crees": 2, "doublons": 0 }</code>. Un heartbeat déjà reçu (même borne, même horodatage) est ignoré.</p>
+
+<!-- ─── 7. Fiabilité ────────────────────────────────────── -->
+<h2 class="saut"><span class="num">7</span> Fiabilité : file d'attente et rattrapage</h2>
+<div class="callout ok">
+  <strong>Objectif : aucune vente perdue</strong>
+  La plateforme calcule ce qui est reversé à chaque lieu. Une vente perdue, c'est une commission fausse.
+</div>
+
+<figure>
+  <svg viewBox="0 0 760 300" role="img" aria-label="Cycle d'une vente : écrite dans la file locale, envoyée ; si 200, retirée de la file ; si échec réseau ou 5xx, attente croissante puis renvoi">
+    <defs>
+      <marker id="fb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/></marker>
+      <marker id="fv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#0a7a2f"/></marker>
+      <marker id="fx" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#b42626"/></marker>
+    </defs>
+    <g font-size="12" text-anchor="middle">
+      <rect x="10" y="40" width="140" height="64" rx="10" fill="#f5f4f0" stroke="#cfcdc5"/>
+      <text x="80" y="68" font-weight="700" fill="#16161a">Vente</text>
+      <text x="80" y="87" font-size="11" fill="#4d4c48">au module de paiement</text>
+      <line x1="152" y1="72" x2="188" y2="72" stroke="#2a78d6" stroke-width="2" marker-end="url(#fb)"/>
+      <rect x="192" y="40" width="160" height="64" rx="10" fill="#e8f1fc" stroke="#2a78d6"/>
+      <text x="272" y="66" font-weight="700" fill="#1c5cab">① Écrite sur disque</text>
+      <text x="272" y="85" font-size="11" fill="#4d4c48">file d'attente locale</text>
+      <line x1="354" y1="72" x2="390" y2="72" stroke="#2a78d6" stroke-width="2" marker-end="url(#fb)"/>
+      <rect x="394" y="40" width="150" height="64" rx="10" fill="#fff" stroke="#2a78d6"/>
+      <text x="469" y="66" font-weight="700" fill="#16161a">② Envoi</text>
+      <text x="469" y="85" font-size="11" fill="#4d4c48">POST, délai max 30 s</text>
+      <line x1="546" y1="72" x2="590" y2="72" stroke="#0a7a2f" stroke-width="2" marker-end="url(#fv)"/>
+      <text x="568" y="62" font-size="11" font-weight="700" fill="#0a7a2f">200</text>
+      <rect x="594" y="40" width="156" height="64" rx="10" fill="#e4f4e7" stroke="#0a7a2f"/>
+      <text x="672" y="66" font-weight="700" fill="#0a7a2f">③ Retirée de la file</text>
+      <text x="672" y="85" font-size="11" fill="#4d4c48">seulement après un 200</text>
+      <line x1="469" y1="106" x2="469" y2="160" stroke="#b42626" stroke-width="2" marker-end="url(#fx)"/>
+      <text x="545" y="138" font-size="11" fill="#b42626" text-anchor="start">réseau coupé, délai dépassé, 5xx</text>
+      <rect x="364" y="164" width="210" height="76" rx="10" fill="#fde8e8" stroke="#b42626"/>
+      <text x="469" y="189" font-weight="700" fill="#b42626">Attente croissante</text>
+      <text x="469" y="208" font-size="11" fill="#4d4c48">30 s → 1 min → 2 min → 5 min</text>
+      <text x="469" y="225" font-size="11" fill="#4d4c48">puis toutes les 15 min (+ aléa)</text>
+      <path d="M 362 202 C 300 202, 300 120, 420 108" fill="none" stroke="#b42626" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fx)"/>
+      <text x="300" y="168" font-size="11" fill="#b42626">renvoi</text>
+    </g>
+    <text x="380" y="282" text-anchor="middle" font-size="11.5" fill="#4d4c48">En cas de doute (réponse non reçue), <tspan font-weight="700">renvoyer</tspan> : la plateforme ignore les doublons, une vente ne peut pas être comptée deux fois.</text>
+  </svg>
+  <figcaption>Figure 6 — Cycle d'envoi d'une vente.</figcaption>
+</figure>
+
+<h3>Rattrapage après une coupure</h3>
+<figure>
+  <svg viewBox="0 0 760 210" role="img" aria-label="Pendant la coupure, la file grossit ; au retour du réseau, elle est vidée par lots de 500 dans l'ordre chronologique, un lot à la fois">
+    <defs><marker id="fc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/></marker></defs>
+    <rect x="10" y="20" width="250" height="150" rx="12" fill="#fde8e8"/>
+    <text x="135" y="44" text-anchor="middle" font-size="12.5" font-weight="700" fill="#b42626">Coupure réseau (3 jours)</text>
+    <g fill="#e8a3a3">
+      <rect x="40" y="132" width="26" height="22" rx="3"/><rect x="72" y="118" width="26" height="36" rx="3"/>
+      <rect x="104" y="100" width="26" height="54" rx="3"/><rect x="136" y="86" width="26" height="68" rx="3"/>
+      <rect x="168" y="70" width="26" height="84" rx="3"/><rect x="200" y="58" width="26" height="96" rx="3"/>
+    </g>
+    <text x="135" y="166" text-anchor="middle" font-size="11" fill="#4d4c48">la file locale grossit : 1 340 ventes</text>
+    <line x1="266" y1="95" x2="320" y2="95" stroke="#2a78d6" stroke-width="2.5" marker-end="url(#fc)"/>
+    <text x="293" y="85" text-anchor="middle" font-size="11" fill="#1c5cab">retour</text>
+    <g font-size="11.5">
+      <rect x="326" y="40" width="130" height="58" rx="10" fill="#e8f1fc" stroke="#2a78d6"/>
+      <text x="391" y="64" text-anchor="middle" font-weight="700" fill="#1c5cab">Lot 1</text>
+      <text x="391" y="82" text-anchor="middle" fill="#4d4c48">ventes 1 → 500</text>
+      <rect x="474" y="40" width="130" height="58" rx="10" fill="#e8f1fc" stroke="#2a78d6"/>
+      <text x="539" y="64" text-anchor="middle" font-weight="700" fill="#1c5cab">Lot 2</text>
+      <text x="539" y="82" text-anchor="middle" fill="#4d4c48">ventes 501 → 1 000</text>
+      <rect x="622" y="40" width="130" height="58" rx="10" fill="#e8f1fc" stroke="#2a78d6"/>
+      <text x="687" y="64" text-anchor="middle" font-weight="700" fill="#1c5cab">Lot 3</text>
+      <text x="687" y="82" text-anchor="middle" fill="#4d4c48">ventes 1 001 → 1 340</text>
+      <line x1="458" y1="69" x2="470" y2="69" stroke="#2a78d6" stroke-width="2" marker-end="url(#fc)"/>
+      <line x1="606" y1="69" x2="618" y2="69" stroke="#2a78d6" stroke-width="2" marker-end="url(#fc)"/>
+    </g>
+    <text x="539" y="128" text-anchor="middle" font-size="11.5" fill="#16161a">Ordre chronologique · un lot à la fois · <tspan font-family="ui-monospace,Consolas,monospace">"rattrapage": true</tspan></text>
+    <text x="539" y="150" text-anchor="middle" font-size="11.5" fill="#16161a">Lot suivant seulement après le <tspan font-weight="700" fill="#0a7a2f">200</tspan> du précédent</text>
+    <text x="539" y="172" text-anchor="middle" font-size="11" fill="#7a7873">Heartbeats en retard : renvoyés de la même façon, ou abandonnés au-delà de 24 h</text>
+  </svg>
+  <figcaption>Figure 7 — Rattrapage : la file est vidée par lots de 500, dans l'ordre.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>File d'attente persistante.</strong> Chaque vente est écrite sur le disque de la borne (SQLite, fichier…) <strong>avant</strong> toute tentative d'envoi. Elle survit à un redémarrage ou à une coupure de courant.</li>
+  <li><strong>Retrait seulement après un <code>200</code>.</strong> Tant que la plateforme n'a pas répondu <code>200</code>, la vente reste en file.</li>
+  <li><strong>Renvois sans risque.</strong> Même <code>borne_id</code> + même <code>transaction_id</code> + même contenu = doublon ignoré.</li>
+  <li><strong>Attente croissante entre les essais</strong> (30 s, 1 min, 2 min, 5 min, puis toutes les 15 min), avec un peu d'aléatoire pour que toutes les bornes ne réessaient pas en même temps.</li>
+  <li><strong><code>transaction_id</code> stable.</strong> Le même identifiant désigne toujours la même vente, avec les mêmes valeurs. Ne jamais le réutiliser pour une autre vente.</li>
+</ol>
+
+<!-- ─── 8. Codes HTTP ───────────────────────────────────── -->
+<h2 class="saut"><span class="num">8</span> Codes HTTP : que doit faire la borne ?</h2>
+
+<figure>
+  <svg viewBox="0 0 760 330" role="img" aria-label="Arbre de décision selon le code HTTP : 200 retirer le lot ; 400 ne pas renvoyer en boucle ; 401 ou 403 garder en file et signaler ; 413 découper ; 5xx ou réseau réessayer plus tard">
+    <rect x="300" y="10" width="160" height="44" rx="22" fill="#16161a"/>
+    <text x="380" y="37" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Réponse reçue ?</text>
+    <g stroke="#a9a7a0" stroke-width="1.5" fill="none">
+      <path d="M380 54 V 78"/>
+      <path d="M86 78 H 674"/>
+      <path d="M86 78 V 100"/><path d="M233 78 V 100"/><path d="M380 78 V 100"/><path d="M527 78 V 100"/><path d="M674 78 V 100"/>
+    </g>
+    <g text-anchor="middle">
+      <rect x="16" y="100" width="140" height="44" rx="10" fill="#e4f4e7" stroke="#0a7a2f"/>
+      <text x="86" y="127" font-size="14" font-weight="700" fill="#0a7a2f">200</text>
+      <rect x="163" y="100" width="140" height="44" rx="10" fill="#fff3d6" stroke="#d99a00"/>
+      <text x="233" y="127" font-size="14" font-weight="700" fill="#8a5a00">400</text>
+      <rect x="310" y="100" width="140" height="44" rx="10" fill="#fde8e8" stroke="#b42626"/>
+      <text x="380" y="127" font-size="14" font-weight="700" fill="#b42626">401 · 403</text>
+      <rect x="457" y="100" width="140" height="44" rx="10" fill="#fff3d6" stroke="#d99a00"/>
+      <text x="527" y="127" font-size="14" font-weight="700" fill="#8a5a00">413</text>
+      <rect x="604" y="100" width="140" height="44" rx="10" fill="#e8f1fc" stroke="#2a78d6"/>
+      <text x="674" y="121" font-size="13" font-weight="700" fill="#1c5cab">5xx · réseau</text>
+      <text x="674" y="137" font-size="11" fill="#1c5cab">· délai dépassé</text>
+    </g>
+    <g font-size="11.5" fill="#16161a">
+      <text x="16" y="170" font-weight="700">Lot traité</text>
+      <text x="16" y="190">Retirer tout le lot</text>
+      <text x="16" y="207">de la file locale.</text>
+      <text x="16" y="230" fill="#4d4c48">Les lignes rejetées sont</text>
+      <text x="16" y="247" fill="#4d4c48">déjà gardées par la</text>
+      <text x="16" y="264" fill="#4d4c48">plateforme.</text>
+
+      <text x="163" y="170" font-weight="700">Lot mal formé</text>
+      <text x="163" y="190">Ne pas renvoyer</text>
+      <text x="163" y="207">en boucle.</text>
+      <text x="163" y="230" fill="#4d4c48">Journaliser et corriger</text>
+      <text x="163" y="247" fill="#4d4c48">le logiciel.</text>
+
+      <text x="310" y="170" font-weight="700">Clé ou borne refusée</text>
+      <text x="310" y="190">Garder les ventes</text>
+      <text x="310" y="207">en file. Signaler.</text>
+      <text x="310" y="230" fill="#4d4c48">403 BORNE_REFORMEE :</text>
+      <text x="310" y="247" fill="#4d4c48">arrêter les envois.</text>
+
+      <text x="457" y="170" font-weight="700">Lot trop gros</text>
+      <text x="457" y="190">Découper en lots</text>
+      <text x="457" y="207">plus petits.</text>
+      <text x="457" y="230" fill="#4d4c48">Limite : 2 Mo,</text>
+      <text x="457" y="247" fill="#4d4c48">500 ventes par lot.</text>
+
+      <text x="604" y="170" font-weight="700">Problème temporaire</text>
+      <text x="604" y="190">Réessayer plus tard</text>
+      <text x="604" y="207">(attente croissante).</text>
+      <text x="604" y="230" fill="#4d4c48">Le renvoi est sans</text>
+      <text x="604" y="247" fill="#4d4c48">risque de doublon.</text>
+    </g>
+    <text x="380" y="310" text-anchor="middle" font-size="11.5" fill="#7a7873">Le corps de chaque réponse d'erreur contient <tspan font-family="ui-monospace,Consolas,monospace">{"error": "CODE"}</tspan>, et souvent un <tspan font-family="ui-monospace,Consolas,monospace">message</tspan> explicatif.</text>
+  </svg>
+  <figcaption>Figure 8 — Comportement attendu selon le code de réponse.</figcaption>
+</figure>
+
+<table>
+  <tr><th>Code</th><th>Erreur</th><th>Signification</th></tr>
+  <tr><td><span class="tag ok">200</span></td><td>—</td><td>Lot traité. Voir <code>erreurs</code> pour les lignes rejetées.</td></tr>
+  <tr><td><span class="tag warn">400</span></td><td><code>SCHEMA_INVALIDE</code></td><td>Enveloppe invalide (ex. <code>transactions</code> vide, <code>borne_id</code> mal formé). Le lot est conservé dans la file d'erreurs de la plateforme.</td></tr>
+  <tr><td><span class="tag warn">400</span></td><td><code>JSON_INVALIDE</code></td><td>Corps illisible (JSON mal formé). Non conservé.</td></tr>
+  <tr><td><span class="tag crit">401</span></td><td><code>CLE_INVALIDE</code></td><td>Clé absente ou invalide.</td></tr>
+  <tr><td><span class="tag crit">403</span></td><td><code>BORNE_DIFFERENTE</code></td><td>Le <code>borne_id</code> ne correspond pas à la clé.</td></tr>
+  <tr><td><span class="tag crit">403</span></td><td><code>BORNE_REFORMEE</code></td><td>Borne désactivée sur la plateforme.</td></tr>
+  <tr><td><span class="tag warn">413</span></td><td><code>LOT_TROP_GROS</code></td><td>Requête de plus de 2 Mo.</td></tr>
+  <tr><td><span class="tag accent">500</span></td><td><code>ERREUR_INTERNE</code></td><td>Erreur côté plateforme : réessayer plus tard.</td></tr>
+</table>
+
+<h3>Exemples avec curl</h3>
+<pre><span class="c"># Ventes</span>
+curl -X POST https://&lt;url-api&gt;/ingest/v1/transactions \
+  -H <span class="s">"Authorization: Bearer &lt;clé de la borne&gt;"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  --data @transactions.json
+
+<span class="c"># Heartbeat</span>
+curl -X POST https://&lt;url-api&gt;/ingest/v1/heartbeats \
+  -H <span class="s">"Authorization: Bearer &lt;clé de la borne&gt;"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  --data @heartbeat.json</pre>
+
+<!-- ─── 9. Mise en service ──────────────────────────────── -->
+<h2 class="saut"><span class="num">9</span> Mise en service d'une borne</h2>
+<ol class="steps">
+  <li><strong>Création sur la plateforme</strong> (Selfizee) : identifiant, gamme, module de paiement. La clé API s'affiche une seule fois.</li>
+  <li><strong>Installation</strong> de l'identifiant et de la clé dans la configuration de la borne.</li>
+  <li><strong>Affectation au lieu</strong> (Selfizee), avec la date de début. Les ventes sont rattachées au lieu actif à leur date.</li>
+  <li><strong>Vérification</strong> : la borne passe « En ligne » dans les 5 minutes (heartbeat), puis une vente test apparaît dans les statistiques du lieu.</li>
+</ol>
+
+<figure>
+  <div class="mock" role="img" aria-label="Maquette de la page Bornes de la plateforme : une borne en ligne, une borne muette, une borne jamais connectée">
+    <div class="mock-bar"><i></i><i></i><i></i><span>Plateforme de suivi Régie — Bornes</span></div>
+    <table>
+      <tr><th>Borne</th><th>Connexion</th><th>Lieu actuel</th><th>Dernière vente</th></tr>
+      <tr>
+        <td><strong>MT-0101</strong><div class="sub">Ma Trombine · v3.4.1</div></td>
+        <td><span class="tag ok">● En ligne</span><div class="sub">signal il y a 3 min</div></td>
+        <td>Camping Les Flots Bleus</td><td>il y a 12 min</td>
+      </tr>
+      <tr>
+        <td><strong>MT-0103</strong><div class="sub">Ma Trombine · v3.4.1</div></td>
+        <td><span class="tag crit">■ Muette</span><div class="sub">signal il y a 6 h</div></td>
+        <td>Bar Le Comptoir</td><td>il y a 34 h</td>
+      </tr>
+      <tr>
+        <td><strong>MT-0199</strong><div class="sub">Ma Trombine</div></td>
+        <td><span class="tag neutre">○ Jamais connectée</span><div class="sub">clé à installer</div></td>
+        <td><span class="tag warn">▲ Non affectée</span></td><td>jamais</td>
+      </tr>
+    </table>
+  </div>
+  <figcaption>Figure 9 — Ce que Selfizee voit sur la plateforme : l'état de chaque borne, d'après ses heartbeats et ses ventes.</figcaption>
+</figure>
+
+<!-- ─── 10. Points ouverts ──────────────────────────────── -->
+<h2><span class="num">10</span> Points encore ouverts</h2>
+<table>
+  <tr><th>Sujet</th><th>À définir</th></tr>
+  <tr><td>Lien avec Pikcloud</td><td>Champ optionnel avec l'identifiant de la session ou de l'événement Pikcloud, pour relier une vente à ses photos. Selon les identifiants dont la borne dispose au moment de la vente.</td></tr>
+  <tr><td>Journal Ingenico Self 2000</td><td>À confirmer sur un exemple réel : identifiant de transaction, distinction carte insérée / sans contact / mobile, numéro d'autorisation.</td></tr>
+  <tr><td>HTTPS et URL définitive</td><td>Obligatoire avant la mise en service des vraies bornes. L'URL sera communiquée par Selfizee.</td></tr>
+</table>
+
+<p class="muted" style="margin-top:28px;font-size:12px;border-top:1px solid var(--line);padding-top:10px">
+  Source de référence : dépôt <code>regie-selfizee-api</code> — <code>docs/synchronisation-bornes.md</code> et schémas JSON <code>schemas/*.v1.schema.json</code>. En cas d'écart, les schémas JSON font foi.
+</p>
+
+</main>
+</body>
+</html>
