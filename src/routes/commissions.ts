@@ -11,6 +11,7 @@ import { estDebutDePeriode } from "../commissions/periodes.js";
 import { calculerReversements, commissionEnCours, regleDe, STATUTS_FIGES } from "../commissions/service.js";
 import { chargerReleve, destinatairesParDefaut, detailDe, genererPdfReleve, nomFichierReleve, type Releve } from "../commissions/releve.js";
 import { emailConfigure, envoyerEmail } from "../lib/envoi.js";
+import { envoyerClasseur, euros as eurosExcel } from "../lib/excel.js";
 
 export const commissionsRouter = Router();
 export const reversementsRouter = Router();
@@ -245,6 +246,38 @@ reversementsRouter.get(
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="reversements_${ymd(new Date())}.csv"`);
     res.send("﻿" + csv);
+  })
+);
+
+// GET /api/reversements/export.xlsx — export comptable au format Excel
+reversementsRouter.get(
+  "/export.xlsx",
+  exiger("ADMIN"),
+  asynchrone(async (req, res) => {
+    const statuts = (req.query.statut ? String(req.query.statut).split(",") : [...STATUTS_FIGES]) as ReversementStatut[];
+    const lignes = await prisma.reversement.findMany({
+      where: { statut: { in: statuts } },
+      include: { lieu: { select: { enseigne: true, raisonSociale: true, siret: true, crmClientId: true } } },
+      orderBy: [{ periodeDebut: "asc" }, { lieuId: "asc" }],
+    });
+    type L = (typeof lignes)[number];
+    await prisma.reversement.updateMany({ where: { id: { in: lignes.map((l) => l.id) } }, data: { exporteComptaLe: new Date() } });
+    await envoyerClasseur(res, `reversements_${ymd(new Date())}.xlsx`, "Reversements", [
+      { entete: "Lieu", valeur: (r: L) => r.lieu.enseigne, largeur: 28 },
+      { entete: "Raison sociale", valeur: (r) => r.lieu.raisonSociale, largeur: 26 },
+      { entete: "SIRET", valeur: (r) => r.lieu.siret, largeur: 16 },
+      { entete: "ID client CRM", valeur: (r) => r.lieu.crmClientId, format: "nombre" },
+      { entete: "Début", valeur: (r) => r.periodeDebut, format: "date" },
+      { entete: "Fin", valeur: (r) => r.periodeFin, format: "date" },
+      { entete: "Base de calcul", valeur: (r) => eurosExcel(r.baseCalculCents), format: "euros", largeur: 15 },
+      { entete: "Commission calculée", valeur: (r) => eurosExcel(r.commissionCalculeeCents), format: "euros", largeur: 19 },
+      { entete: "Ajustements", valeur: (r) => eurosExcel(r.ajustementsCents), format: "euros", largeur: 14 },
+      { entete: "Montant à reverser", valeur: (r) => eurosExcel(r.montantAReverserCents), format: "euros", largeur: 18 },
+      { entete: "Statut", valeur: (r) => r.statut, largeur: 16 },
+      { entete: "N° facture", valeur: (r) => r.numeroFacture, largeur: 14 },
+      { entete: "Validé le", valeur: (r) => r.valideLe, format: "date" },
+      { entete: "Payé le", valeur: (r) => r.payeLe, format: "date" },
+    ], lignes);
   })
 );
 

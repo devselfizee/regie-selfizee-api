@@ -189,6 +189,9 @@ describe("statuts, droits et export", () => {
     const csv = (await api.get("/api/reversements/export.csv").expect(200)).text;
     expect(csv).toContain("Camping;SARL Camping;12345678900012;;01/08/2026;31/08/2026;800,00;75,00;0,00;75,00;VALIDE");
     expect(csv.trim().split("\r\n")).toHaveLength(2); // en-tête + août (septembre n'est pas validé)
+    const xlsx = await api.get("/api/reversements/export.xlsx").expect(200);
+    expect(xlsx.headers["content-type"]).toContain("spreadsheetml");
+    expect(xlsx.headers["content-disposition"]).toMatch(/reversements_.*\.xlsx/);
   });
 
   it("simule un contrat pour l'aperçu du formulaire", async () => {

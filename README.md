@@ -67,7 +67,7 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 | `GET/POST/PUT /api/bornes` · `POST /api/bornes/:id/cle` | bornes et clés API |
 | `POST/PATCH/DELETE /api/affectations` | affectation / déplacement / retrait ; les ventes sont réattribuées et les agrégats recalculés |
 | `GET /api/stats/global` · `GET /api/stats/lieux/:id` | vues globale et par lieu, filtrables (période, gamme, module, moyen, tout champ de la fiche lieu) |
-| `GET /api/export/transactions.csv` · `/classement.csv` | exports CSV (séparateur ;, ouvrables dans Excel) |
+| `GET /api/export/transactions.csv|.xlsx` · `/classement.csv|.xlsx` | exports CSV (séparateur ;) et Excel (vrais nombres et dates, format €, filtres) |
 
 - **Authentification** : chaque borne a sa propre clé (`Authorization: Bearer rgs_…`), dont seul le hash est stocké. Le `borne_id` du JSON doit correspondre à la clé.
 - **Idempotence** : un renvoi identique est compté comme doublon et ne modifie rien. Un même `transaction_id` renvoyé avec un contenu différent va dans la file d'erreurs (`CONFLIT_DOUBLON`) et n'est jamais écrasé.
@@ -84,7 +84,7 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 - **Modèles** : aucune commission, pourcentage, pourcentage après seuil (taux **au-delà** du seuil ou sur **tout le CA dès le seuil atteint**), paliers (**chaque tranche à son taux** ou **taux du palier atteint sur tout le CA**), forfait (+ % optionnel). Le **minimum garanti** se combine avec tous les modèles.
 - **Base** : CA TTC ou HT, net des remboursements ou non. **Seuil cumulé** depuis la date d'effet : commission de la période = calcul sur le cumul à la fin de la période − calcul sur le cumul au début (la somme des périodes égale le calcul sur le total).
 - **Reversements** : calculés automatiquement chaque heure pour les périodes terminées (`POST /api/reversements/calculer` pour forcer). Tant qu'une période n'est pas validée, elle est recalculée si des ventes arrivent en retard ; les **corrections manuelles** (montant, motif, auteur) sont conservées. Statuts : à valider → validé → facturé par le lieu / autofacturé → payé.
-- **Relevé PDF** par période (détail du calcul et des ventes par jour), téléchargeable et **envoyé par e-mail** au lieu (Mailjet, PDF en pièce jointe) une fois validé : un par un (destinataires choisis) ou en groupe (contacts de la fiche : comptabilité, sinon gérant). Date d’envoi tracée. **Export compta** CSV des reversements validés.
+- **Relevé PDF** par période (détail du calcul et des ventes par jour), téléchargeable et **envoyé par e-mail** au lieu (Mailjet, PDF en pièce jointe) une fois validé : un par un (destinataires choisis) ou en groupe (contacts de la fiche : comptabilité, sinon gérant). Date d’envoi tracée. **Export compta** des reversements validés, en CSV ou Excel.
 - Moteur : [src/commissions/moteur.ts](src/commissions/moteur.ts) (fonctions pures, testées sur chaque exemple du CDC).
 
 ## Alertes (V1.1)

@@ -2,6 +2,7 @@ import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { creerApp } from "../src/app.js";
 import { prisma } from "../src/lib/prisma.js";
+import ExcelJS from "exceljs";
 import { exemple, viderBase } from "./aide.js";
 
 const app = creerApp();
@@ -204,6 +205,34 @@ describe("statistiques", () => {
     expect(s.moyensPaiement.find((m: { moyen: string }) => m.moyen === "CB").nbRefusees).toBe(1);
     expect(s.meilleuresDates[0]).toEqual({ jour: "2026-10-05", caTtcCents: 1300, nbVentes: 2 });
     expect(s.bornes.map((b: { identifiant: string }) => b.identifiant)).toEqual(["MT-0042"]);
+  });
+
+  it("exporte les ventes et le classement au format Excel (.xlsx)", async () => {
+    const binaire = (r: request.Test) =>
+      r.buffer(true).parse((res, cb) => {
+        const m: Buffer[] = [];
+        res.on("data", (x: Buffer) => m.push(x));
+        res.on("end", () => cb(null, Buffer.concat(m)));
+      });
+    const lire = async (url: string) => {
+      const res = await binaire(api.get(url)).expect(200);
+      expect(res.headers["content-type"]).toContain("spreadsheetml");
+      const classeur = new ExcelJS.Workbook();
+      await classeur.xlsx.load(res.body as unknown as ArrayBuffer);
+      return classeur.worksheets[0];
+    };
+
+    const ventes = await lire("/api/export/transactions.xlsx?du=2026-10-01&au=2026-10-31");
+    expect(ventes.rowCount).toBe(5); // en-tête + 4 transactions
+    const premiere = ventes.getRow(2);
+    expect(premiere.getCell(2).value).toBe("Camping");
+    expect(premiere.getCell(9).value).toBe(8); // montant TTC : un vrai nombre
+    expect(premiere.getCell(1).value).toBeInstanceOf(Date); // une vraie date Excel
+    expect((premiere.getCell(1).value as Date).toISOString()).toBe("2026-10-05T22:47:31.000Z"); // 22 h 47, heure de Paris
+
+    const classement = await lire("/api/export/classement.xlsx?du=2026-10-01&au=2026-10-31");
+    const l = classement.getRow(2);
+    expect([1, 2, 4, 5, 6, 7, 8].map((c) => l.getCell(c).value)).toEqual([1, "Camping", "Camping", 13, 2, 1, 13]);
   });
 
   it("laisse le front lire le nom du fichier exporté (CORS)", async () => {
