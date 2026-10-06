@@ -3,6 +3,7 @@ import { jourEtHeureLocaux, offsetMinutes } from "../src/lib/temps.js";
 import { htDepuisTtc, pctVersBp } from "../src/lib/montants.js";
 import { decouperCle, genererCle, verifierSecret } from "../src/lib/cleBorne.js";
 import { adminsInitiaux } from "../src/middleware/utilisateur.js";
+import { numeroInternational } from "../src/lib/envoi.js";
 
 describe("temps", () => {
   it("lit le décalage d'un horodatage RFC 3339", () => {
@@ -58,5 +59,13 @@ describe("ADMIN_EMAILS", () => {
     expect(adminsInitiaux("ADMIN_EMAILS=s.mahe@konitys.fr")).toEqual(["s.mahe@konitys.fr"]);
     expect(adminsInitiaux(" a@x.fr , b@x.fr;c@x.fr ")).toEqual(["a@x.fr", "b@x.fr", "c@x.fr"]);
     expect(adminsInitiaux("")).toEqual([]);
+  });
+});
+
+describe("numéros de téléphone", () => {
+  it("passe au format international attendu par SMSEnvoi", () => {
+    expect(numeroInternational("06 12 34 56 78")).toBe("33612345678");
+    expect(numeroInternational("+33 6 12 34 56 78")).toBe("33612345678");
+    expect(numeroInternational("0033612345678")).toBe("33612345678");
   });
 });

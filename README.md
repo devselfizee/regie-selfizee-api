@@ -103,7 +103,7 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 
 Seuils et niveaux réglables (page Paramètres → Règles d'alerte). Une anomalie déjà ouverte n'est pas relevée deux fois ; une alerte ignorée ne revient pas avant le lendemain.
 
-**Notifications** (Brevo, `BREVO_API_KEY`) : critique → e-mail + SMS, warning → e-mail, info → récapitulatif seul. Destinataires : admins ; techniciens pour les alertes techniques ; commercial du lieu pour les alertes de vente. Récapitulatif quotidien à 8 h aux admins. Chaque envoi est tracé (`notifications_alerte`). Sans clé Brevo, rien n'est envoyé.
+**Notifications** (e-mails Mailjet `MAILJET_API_KEY`/`MAILJET_API_SECRET`, SMS SMSEnvoi `SMSENVOI_EMAIL`/`SMSENVOI_APIKEY` — les services du CRM) : critique → e-mail + SMS, warning → e-mail, info → récapitulatif seul. Destinataires : admins ; techniciens pour les alertes techniques ; commercial du lieu pour les alertes de vente. Récapitulatif quotidien à 8 h aux admins. Chaque envoi est tracé (`notifications_alerte`). Sans identifiants, rien n'est envoyé.
 
 ## Utilisateurs et droits
 

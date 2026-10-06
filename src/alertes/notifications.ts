@@ -1,9 +1,10 @@
 import type { Alerte, NiveauAlerte, TypeAlerte, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { envoyerEmail, envoyerSms } from "../lib/envoi.js";
 
 // Notifications des alertes (CDC §7) : e-mail et/ou SMS selon le niveau, plus un
-// récapitulatif quotidien. Envoi par l'API Brevo ; sans BREVO_API_KEY, les envois
-// sont seulement journalisés (dev, ou tant que le compte n'est pas configuré).
+// récapitulatif quotidien. E-mails par Mailjet, SMS par SMSEnvoi (comme le CRM) ;
+// sans identifiants, les envois sont seulement journalisés.
 
 export const LIBELLES: Record<TypeAlerte, string> = {
   BAISSE_CA: "Baisse de CA",
@@ -40,53 +41,6 @@ async function destinataires(a: Pick<Alerte, "type" | "lieuId">) {
 
 const APP_URL = () => (process.env.APP_URL ?? "").replace(/\/+$/, "");
 const echapper = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-
-async function envoyerEmail(destinataire: string, sujet: string, html: string): Promise<string | null> {
-  const cle = process.env.BREVO_API_KEY;
-  if (!cle) {
-    console.log(`[notification e-mail non envoyée — BREVO_API_KEY absente] ${destinataire} : ${sujet}`);
-    return "Envoi désactivé (BREVO_API_KEY non configurée)";
-  }
-  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: { "api-key": cle, "Content-Type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      sender: { email: process.env.NOTIF_EXPEDITEUR_EMAIL ?? "alertes@selfizee.fr", name: process.env.NOTIF_EXPEDITEUR_NOM ?? "Régie Selfizee" },
-      to: [{ email: destinataire }],
-      subject: sujet,
-      htmlContent: html,
-    }),
-  });
-  return res.ok ? null : `Brevo ${res.status} : ${(await res.text()).slice(0, 300)}`;
-}
-
-/** Numéro français → format international sans « + » attendu par Brevo (0612… → 33612…). */
-export const numeroInternational = (tel: string) => {
-  const chiffres = tel.replace(/[^\d+]/g, "");
-  if (chiffres.startsWith("+")) return chiffres.slice(1);
-  if (chiffres.startsWith("00")) return chiffres.slice(2);
-  if (chiffres.startsWith("0")) return `33${chiffres.slice(1)}`;
-  return chiffres;
-};
-
-async function envoyerSms(telephone: string, texte: string): Promise<string | null> {
-  const cle = process.env.BREVO_API_KEY;
-  if (!cle) {
-    console.log(`[notification SMS non envoyée — BREVO_API_KEY absente] ${telephone} : ${texte}`);
-    return "Envoi désactivé (BREVO_API_KEY non configurée)";
-  }
-  const res = await fetch("https://api.brevo.com/v3/transactionalSMS/sms", {
-    method: "POST",
-    headers: { "api-key": cle, "Content-Type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      sender: (process.env.SMS_EXPEDITEUR ?? "Selfizee").slice(0, 11),
-      recipient: numeroInternational(telephone),
-      content: texte.slice(0, 300),
-      type: "transactional",
-    }),
-  });
-  return res.ok ? null : `Brevo ${res.status} : ${(await res.text()).slice(0, 300)}`;
-}
 
 /** Notifie les alertes nouvellement créées, selon leur niveau. Chaque envoi est tracé. */
 export async function notifierAlertes(alertes: Alerte[]) {

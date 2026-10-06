@@ -202,7 +202,7 @@ describe("notifications et droits", () => {
     const notifs = await prisma.notificationAlerte.findMany();
     // Critique : e-mail admin + technicien, SMS à l'admin (qui a un téléphone) ; pas le commercial
     expect(notifs.map((x) => `${x.canal}:${x.destinataire}`).sort()).toEqual(["EMAIL:admin@t.fr", "EMAIL:tech@t.fr", "SMS:06 12 34 56 78"]);
-    expect(notifs[0].erreur).toContain("BREVO_API_KEY"); // pas d'envoi réel sans clé
+    expect(notifs.every((x) => x.erreur?.includes("non configurés"))).toBe(true); // pas d'envoi réel sans identifiants
     expect(admin).toBeDefined();
   });
 
