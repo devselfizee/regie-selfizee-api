@@ -3,6 +3,7 @@ import { RefCategorie } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone } from "../lib/http.js";
+import { exiger } from "../middleware/utilisateur.js";
 
 export const referentielRouter = Router();
 
@@ -33,6 +34,7 @@ const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z0-9_]{2,64}$/, "C
 // POST /api/referentiel/valeurs — ajouter une valeur à une liste administrable
 referentielRouter.post(
   "/valeurs",
+  exiger("ADMIN"),
   asynchrone(async (req, res) => {
     const data = z
       .object({
@@ -50,6 +52,7 @@ referentielRouter.post(
 // PATCH /api/referentiel/valeurs/:id — renommer, réordonner, désactiver (jamais supprimer : historique)
 referentielRouter.patch(
   "/valeurs/:id",
+  exiger("ADMIN"),
   asynchrone(async (req, res) => {
     const data = z
       .object({
@@ -66,6 +69,7 @@ referentielRouter.patch(
 // POST /api/referentiel/gammes et /types-module — nouvelles gammes / modules sans développement
 referentielRouter.post(
   "/gammes",
+  exiger("ADMIN"),
   asynchrone(async (req, res) => {
     const data = z.object({ code: codeSchema, libelle: z.string().trim().min(1) }).parse(req.body);
     res.status(201).json(await prisma.gamme.create({ data }));
@@ -74,6 +78,7 @@ referentielRouter.post(
 
 referentielRouter.post(
   "/types-module",
+  exiger("ADMIN"),
   asynchrone(async (req, res) => {
     const data = z
       .object({

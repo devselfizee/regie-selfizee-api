@@ -7,6 +7,8 @@ import { referentielRouter } from "./routes/referentiel.js";
 import { lieuxRouter } from "./routes/lieux.js";
 import { affectationsRouter, bornesRouter } from "./routes/bornes.js";
 import { exportRouter, statsRouter } from "./routes/stats.js";
+import { utilisateursRouter } from "./routes/utilisateurs.js";
+import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
 
 // BigInt (ids des transactions, lots…) sérialisé en chaîne dans les réponses JSON
@@ -37,15 +39,21 @@ export function creerApp() {
       credentials: true,
     }),
     express.json(),
-    authMiddleware
+    authMiddleware,
+    utilisateurCourant
   );
-  app.use("/api/imports", importsRouter);
+  // Droits par rôle (CDC §9.2). Les lieux, stats et exports filtrent en plus
+  // selon le périmètre de l'utilisateur (ses lieux pour un commercial).
+  const tech = exiger("ADMIN", "TECHNICIEN");
+  const ventes = exiger("ADMIN", "COMMERCIAL", "PARTENAIRE");
+  app.use("/api/utilisateurs", utilisateursRouter);
   app.use("/api/referentiel", referentielRouter);
   app.use("/api/lieux", lieuxRouter);
-  app.use("/api/bornes", bornesRouter);
-  app.use("/api/affectations", affectationsRouter);
-  app.use("/api/stats", statsRouter);
-  app.use("/api/export", exportRouter);
+  app.use("/api/imports", tech, importsRouter);
+  app.use("/api/bornes", tech, bornesRouter);
+  app.use("/api/affectations", tech, affectationsRouter);
+  app.use("/api/stats", ventes, statsRouter);
+  app.use("/api/export", ventes, exportRouter);
 
   app.use((err: Error & { type?: string; status?: number }, _req: Request, res: Response, _next: NextFunction) => {
     if (err.type === "entity.parse.failed") {

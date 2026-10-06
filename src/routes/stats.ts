@@ -3,7 +3,17 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone } from "../lib/http.js";
+import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison, ymd, type Filtres } from "../stats/filtres.js";
+
+/** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
+function filtresAutorises(req: UtilisateurRequest): Filtres {
+  const f = lireFiltres(req.query);
+  const p = perimetreLieux(req.utilisateur);
+  if (p?.commercialId !== undefined) f.commercialId = [p.commercialId];
+  if (p?.lieuId !== undefined) f.lieuId = [p.lieuId];
+  return f;
+}
 
 export const statsRouter = Router();
 
@@ -122,8 +132,8 @@ async function parc(f: Filtres) {
 // GET /api/stats/global?du=&au=&granularite=&<filtres>
 statsRouter.get(
   "/global",
-  asynchrone(async (req, res) => {
-    const f = lireFiltres(req.query);
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const f = filtresAutorises(req);
     const gran = granularite.parse(req.query.granularite);
     const { n1 } = periodesComparaison(f);
 
@@ -142,7 +152,7 @@ statsRouter.get(
       serie: s,
       serieN1: sN1,
       classement: cl,
-      parc: p,
+      parc: perimetreLieux(req.utilisateur) ? { ...p, bornesNonAffectees: 0 } : p,
       commissions: null, // V1.1 : moteur de commissions
     });
   })
@@ -151,8 +161,9 @@ statsRouter.get(
 // GET /api/stats/lieux/:id?du=&au=&granularite=&gammeId=&typeModuleId=&moyenPaiement=
 statsRouter.get(
   "/lieux/:id",
-  asynchrone(async (req, res) => {
+  asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
+    await verifierAccesLieu(req.utilisateur, lieuId);
     const f: Filtres = { ...lireFiltres(req.query), lieuId: [lieuId] };
     const gran = granularite.parse(req.query.granularite);
     const ventes = et([...conditionsVentes(f), ...conditionsLieu(f)]);
@@ -258,8 +269,8 @@ export const exportRouter = Router();
 // GET /api/export/transactions.csv?<filtres>
 exportRouter.get(
   "/transactions.csv",
-  asynchrone(async (req, res) => {
-    const f = lireFiltres(req.query);
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const f = filtresAutorises(req);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="transactions_${ymd(f.du)}_${ymd(f.au)}.csv"`);
     res.write("﻿");
@@ -304,8 +315,8 @@ exportRouter.get(
 // GET /api/export/classement.csv?<filtres> — classement des lieux de la vue globale
 exportRouter.get(
   "/classement.csv",
-  asynchrone(async (req, res) => {
-    const f = lireFiltres(req.query);
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const f = filtresAutorises(req);
     const lignes = await classement(f);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="classement_lieux_${ymd(f.du)}_${ymd(f.au)}.csv"`);

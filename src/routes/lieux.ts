@@ -3,6 +3,7 @@ import { ContactRole, InterieurExterieur, LieuStatut, Prisma, Saisonnalite } fro
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone } from "../lib/http.js";
+import { exiger, perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 
 export const lieuxRouter = Router();
@@ -93,15 +94,18 @@ function donneesLieu(input: LieuInput) {
 
 // ─── Lecture ────────────────────────────────────────────────
 
-// GET /api/lieux?q=&statut=&typeLieuId=&commercialId=
+// GET /api/lieux?q=&statut=&typeLieuId=&commercialId= — limité au périmètre de l'utilisateur
 lieuxRouter.get(
   "/",
-  asynchrone(async (req, res) => {
+  asynchrone<UtilisateurRequest>(async (req, res) => {
     const q = String(req.query.q ?? "").trim();
+    const perimetre = perimetreLieux(req.utilisateur);
     const where: Prisma.LieuWhereInput = {
+      ...(perimetre?.lieuId !== undefined ? { id: perimetre.lieuId } : {}),
       ...(req.query.statut ? { statut: req.query.statut as LieuStatut } : { statut: { not: "PROSPECT" } }),
       ...(req.query.typeLieuId ? { typeLieuId: Number(req.query.typeLieuId) } : {}),
       ...(req.query.commercialId ? { commercialId: Number(req.query.commercialId) } : {}),
+      ...(perimetre?.commercialId !== undefined ? { commercialId: perimetre.commercialId } : {}),
       ...(q
         ? {
             OR: [
@@ -138,12 +142,13 @@ lieuxRouter.get(
     });
     const caParLieu = new Map(ca.map((c) => [c.lieuId, c._sum]));
 
+    const voitCa = req.utilisateur?.role !== "TECHNICIEN";
     res.json(
       lieux.map(({ affectations, ...l }) => ({
         ...l,
         bornes: affectations.map((a) => a.borne),
-        ca30jCents: caParLieu.get(l.id)?.caTtcCents ?? 0,
-        ventes30j: caParLieu.get(l.id)?.nbAcceptees ?? 0,
+        ca30jCents: voitCa ? (caParLieu.get(l.id)?.caTtcCents ?? 0) : null,
+        ventes30j: voitCa ? (caParLieu.get(l.id)?.nbAcceptees ?? 0) : null,
       }))
     );
   })
@@ -154,7 +159,8 @@ const hhmm = (d: Date) => d.toISOString().slice(11, 16);
 // GET /api/lieux/:id — fiche complète
 lieuxRouter.get(
   "/:id",
-  asynchrone(async (req, res) => {
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    await verifierAccesLieu(req.utilisateur, Number(req.params.id));
     const lieu = await prisma.lieu.findUniqueOrThrow({
       where: { id: Number(req.params.id) },
       include: {
@@ -188,10 +194,17 @@ lieuxRouter.get(
 // ─── Écriture ───────────────────────────────────────────────
 
 // POST /api/lieux
+// Un commercial ne peut créer / modifier que ses propres lieux : il en reste le commercial responsable.
+const commercialImpose = (req: UtilisateurRequest, champs: { commercialId?: number | null }) => {
+  if (req.utilisateur?.role === "COMMERCIAL") champs.commercialId = req.utilisateur.id;
+};
+
 lieuxRouter.post(
   "/",
-  asynchrone(async (req, res) => {
+  exiger("ADMIN", "COMMERCIAL"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
     const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(req.body));
+    commercialImpose(req, champs);
     const lieu = await prisma.lieu.create({
       data: {
         ...champs,
@@ -209,9 +222,12 @@ lieuxRouter.post(
 // PUT /api/lieux/:id — les sous-listes fournies remplacent les existantes
 lieuxRouter.put(
   "/:id",
-  asynchrone(async (req, res) => {
+  exiger("ADMIN", "COMMERCIAL"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
+    await verifierAccesLieu(req.utilisateur, lieuId);
     const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(req.body));
+    commercialImpose(req, champs);
 
     const lieu = await prisma.$transaction(async (db) => {
       if (clienteleIds) await db.lieuClientele.deleteMany({ where: { lieuId } });

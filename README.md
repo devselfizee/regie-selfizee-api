@@ -15,7 +15,7 @@ Référence : *CDC — Plateforme de suivi Régie Selfizee / MaTrombine* (2 oct.
 | Synchronisation des bornes (doc pour le développeur des bornes) | [docs/synchronisation-bornes.md](docs/synchronisation-bornes.md) · [version illustrée HTML / PDF](docs/synchronisation-bornes.html) | à jour |
 | Points à arbitrer | [docs/questions-ouvertes.md](docs/questions-ouvertes.md) | à arbitrer |
 | API d'ingestion | [src](src) | en place, 17 tests OK |
-| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 30 tests OK |
+| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 42 tests OK |
 | Front : vue globale, lieux (liste, fiche + stats, formulaire), bornes, file d'erreurs | [regie-selfizee-web](https://github.com/devselfizee/regie-selfizee-web) | en place |
 | Maquettes, chiffrage | — | à faire |
 
@@ -77,6 +77,19 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 - **Temps** : stockage en UTC (`timestamptz`). Le jour et l'heure locaux (Europe/Paris) sont calculés à l'ingestion.
 - **Montants** : en centimes ; les taux sont en points de base (2000 = 20 %).
 - **Hébergement** : Coolify (Docker Compose), serveur en France ou dans l'UE. La base est une ressource PostgreSQL Coolify séparée, passée par `DATABASE_URL` (activer « Connect to Predefined Network » sur l'API pour joindre son hôte interne).
+
+## Utilisateurs et droits
+
+Le realm Keycloak `konitys` est partagé : être connecté ne suffit pas. Un admin ajoute chaque personne (e-mail + rôle) dans la page **Utilisateurs** ; le compte Keycloak est rattaché par e-mail à la première connexion. Les adresses de `ADMIN_EMAILS` deviennent ADMIN automatiquement (amorçage).
+
+| | Admin | Commercial | Technicien | Partenaire |
+|---|---|---|---|---|
+| Lieux | tous | ses lieux (création, modification) | lecture, sans CA | son lieu, lecture |
+| Stats et exports | tout | ses lieux | — | son lieu |
+| Bornes, affectations, clés, imports | ✓ | — | ✓ | — |
+| Listes administrables, utilisateurs | ✓ | — | — | — |
+
+En local sans Keycloak, l'API considère l'appelant comme admin ; l'en-tête `X-Dev-Utilisateur: <email>` permet de tester un autre rôle (ignoré en production).
 
 ## Phasage (CDC §9.3)
 
