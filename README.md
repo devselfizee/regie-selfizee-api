@@ -15,7 +15,7 @@ Référence : *CDC — Plateforme de suivi Régie Selfizee / MaTrombine* (2 oct.
 | Synchronisation des bornes (doc pour le développeur des bornes) | [docs/synchronisation-bornes.md](docs/synchronisation-bornes.md) · [version illustrée HTML / PDF](docs/synchronisation-bornes.html) | à jour |
 | Points à arbitrer | [docs/questions-ouvertes.md](docs/questions-ouvertes.md) | à arbitrer |
 | API d'ingestion | [src](src) | en place, 17 tests OK |
-| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 42 tests OK |
+| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 72 tests OK |
 | Front : vue globale, lieux (liste, fiche + stats, formulaire), bornes, file d'erreurs | [regie-selfizee-web](https://github.com/devselfizee/regie-selfizee-web) | en place |
 | Maquettes, chiffrage | — | à faire |
 
@@ -77,6 +77,15 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 - **Temps** : stockage en UTC (`timestamptz`). Le jour et l'heure locaux (Europe/Paris) sont calculés à l'ingestion.
 - **Montants** : en centimes ; les taux sont en points de base (2000 = 20 %).
 - **Hébergement** : Coolify (Docker Compose), serveur en France ou dans l'UE. La base est une ressource PostgreSQL Coolify séparée, passée par `DATABASE_URL` (activer « Connect to Predefined Network » sur l'API pour joindre son hôte interne).
+
+## Commissions et reversements (V1.1)
+
+- **Contrat versionné par lieu** : chaque avenant crée une nouvelle version, avec une date d'effet au **début d'une période** (mois, trimestre, année ; ou une saison de la fiche lieu). Un avenant ne peut pas prendre effet sur une période déjà validée.
+- **Modèles** : aucune commission, pourcentage, pourcentage après seuil (taux **au-delà** du seuil ou sur **tout le CA dès le seuil atteint**), paliers (**chaque tranche à son taux** ou **taux du palier atteint sur tout le CA**), forfait (+ % optionnel). Le **minimum garanti** se combine avec tous les modèles.
+- **Base** : CA TTC ou HT, net des remboursements ou non. **Seuil cumulé** depuis la date d'effet : commission de la période = calcul sur le cumul à la fin de la période − calcul sur le cumul au début (la somme des périodes égale le calcul sur le total).
+- **Reversements** : calculés automatiquement chaque heure pour les périodes terminées (`POST /api/reversements/calculer` pour forcer). Tant qu'une période n'est pas validée, elle est recalculée si des ventes arrivent en retard ; les **corrections manuelles** (montant, motif, auteur) sont conservées. Statuts : à valider → validé → facturé par le lieu / autofacturé → payé.
+- **Relevé** imprimable par période (détail du calcul et des ventes par jour) et **export compta** CSV des reversements validés.
+- Moteur : [src/commissions/moteur.ts](src/commissions/moteur.ts) (fonctions pures, testées sur chaque exemple du CDC).
 
 ## Utilisateurs et droits
 

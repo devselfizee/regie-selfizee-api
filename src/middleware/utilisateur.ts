@@ -30,7 +30,13 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
       // Dev / tests sans Keycloak : admin par défaut, ou un utilisateur précis via X-Dev-Utilisateur
       const email = req.header("X-Dev-Utilisateur")?.toLowerCase();
       if (!email) {
-        req.utilisateur = { id: 0, email: "dev@local", nom: "Développeur", prenom: "", role: "ADMIN", lieuId: null };
+        // Utilisateur réel en base : les actions tracées (corrections, contrats) y font référence
+        req.utilisateur = await prisma.user.upsert({
+          where: { email: "dev@local" },
+          update: {},
+          create: { email: "dev@local", nom: "Développeur", prenom: "", role: "ADMIN" },
+          select: champs,
+        });
         return next();
       }
       const u = await prisma.user.findUnique({ where: { email }, select: champs });

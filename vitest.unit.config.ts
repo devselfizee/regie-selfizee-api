@@ -1,4 +1,4 @@
 import { defineConfig } from "vitest/config";
 
 // Tests sans base de données
-export default defineConfig({ test: { include: ["tests/unitaires.test.ts"] } });
+export default defineConfig({ test: { include: ["tests/unitaires.test.ts", "tests/commissions.test.ts"] } });

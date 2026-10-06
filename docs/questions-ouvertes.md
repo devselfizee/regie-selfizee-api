@@ -4,6 +4,8 @@ Chaque point indique **le choix retenu par défaut dans les schémas**. Il suffi
 
 ## Commissions
 
+> Implémenté : les points 1 à 3 sont réglables par contrat ; le point 4 suit la règle par défaut (date d'effet au début d'une période). À confirmer quand même avec Sébastien pour les contrats existants.
+
 1. **« Pourcentage après seuil » : au-delà, ou dès qu'il est atteint ?** (le CDC note « à préciser »)
    → Les deux sont gérés, au choix pour chaque contrat (`seuil_mode` = `AU_DELA` | `DES_ATTEINTE`).
    Exemple pour 25 % au-delà de 500 € avec un CA de 800 € : `AU_DELA` donne 75 €, `DES_ATTEINTE` donne 200 €.

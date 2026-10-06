@@ -129,6 +129,16 @@ async function parc(f: Filtres) {
   };
 }
 
+/** Commissions des périodes calculées comprises dans la période affichée (réservé admin). */
+async function commissionsPeriode(f: Filtres) {
+  const [r] = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT coalesce(sum(r.montant_a_reverser_cents), 0)::float8 montant, count(*)::int nb,
+           count(*) FILTER (WHERE r.statut IN ('A_CALCULER', 'CALCULE'))::int a_valider
+    FROM reversements r JOIN lieux l ON l.id = r.lieu_id
+    WHERE r.periode_debut >= ${ymd(f.du)}::date AND r.periode_fin <= ${ymd(f.au)}::date AND ${et(conditionsLieu(f))}`;
+  return { montantCents: n(r.montant), nbPeriodes: n(r.nb), nbAValider: n(r.a_valider) };
+}
+
 // GET /api/stats/global?du=&au=&granularite=&<filtres>
 statsRouter.get(
   "/global",
@@ -137,12 +147,13 @@ statsRouter.get(
     const gran = granularite.parse(req.query.granularite);
     const { n1 } = periodesComparaison(f);
 
-    const [kpi, s, sN1, cl, p] = await Promise.all([
+    const [kpi, s, sN1, cl, p, commissions] = await Promise.all([
       comparaisons(f),
       serie(f, gran),
       serie({ ...f, ...n1 }, gran, 1),
       classement(f),
       parc(f),
+      req.utilisateur?.role === "ADMIN" ? commissionsPeriode(f) : Promise.resolve(null),
     ]);
 
     res.json({
@@ -153,7 +164,7 @@ statsRouter.get(
       serieN1: sN1,
       classement: cl,
       parc: perimetreLieux(req.utilisateur) ? { ...p, bornesNonAffectees: 0 } : p,
-      commissions: null, // V1.1 : moteur de commissions
+      commissions,
     });
   })
 );
