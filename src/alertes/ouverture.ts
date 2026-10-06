@@ -29,7 +29,8 @@ const isoDow = (jour: Date) => ((jour.getUTCDay() + 6) % 7) + 1;
 
 /** Le lieu ouvre-t-il ce jour-là (saison, fermetures, jour d'ouverture) ? */
 export function jourOuvert(l: OuvertureLieu, jour: Date): boolean {
-  if (l.saisonnalite === "SAISONNIER" && !l.saisons.some((s) => dansPeriode(jour, s))) return false;
+  // Saisonnier sans saison saisie : on ne peut pas savoir, on le considère ouvert (la fiche le signale)
+  if (l.saisonnalite === "SAISONNIER" && l.saisons.length && !l.saisons.some((s) => dansPeriode(jour, s))) return false;
   if (l.fermetures.some((f) => dansPeriode(jour, f))) return false;
   if (!l.horaires.length) return true;
   return l.horaires.some((h) => h.jourSemaine === isoDow(jour));

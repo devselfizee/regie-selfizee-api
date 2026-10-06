@@ -15,7 +15,7 @@ Référence : *CDC — Plateforme de suivi Régie Selfizee / MaTrombine* (2 oct.
 | Synchronisation des bornes (doc pour le développeur des bornes) | [docs/synchronisation-bornes.md](docs/synchronisation-bornes.md) · [version illustrée HTML / PDF](docs/synchronisation-bornes.html) | à jour |
 | Points à arbitrer | [docs/questions-ouvertes.md](docs/questions-ouvertes.md) | à arbitrer |
 | API d'ingestion | [src](src) | en place, 17 tests OK |
-| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 99 tests OK |
+| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 106 tests OK |
 | Front : vue globale, lieux (liste, fiche + stats, formulaire), bornes, file d'erreurs | [regie-selfizee-web](https://github.com/devselfizee/regie-selfizee-web) | en place |
 | Maquettes, chiffrage | — | à faire |
 
@@ -104,6 +104,10 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 Seuils et niveaux réglables (page Paramètres → Règles d'alerte). Une anomalie déjà ouverte n'est pas relevée deux fois ; une alerte ignorée ne revient pas avant le lendemain.
 
 **Notifications** (e-mails Mailjet `MAILJET_API_KEY`/`MAILJET_API_SECRET`, SMS SMSEnvoi `SMSENVOI_EMAIL`/`SMSENVOI_APIKEY` — les services du CRM) : critique → e-mail + SMS, warning → e-mail, info → récapitulatif seul. Destinataires : admins ; techniciens pour les alertes techniques ; commercial du lieu pour les alertes de vente. Récapitulatif quotidien à 8 h aux admins. Chaque envoi est tracé (`notifications_alerte`). Sans identifiants, rien n'est envoyé.
+
+## Analyse par segment (V2)
+
+`GET /api/stats/segments?x=<critère>&y=<critère>` (CDC §5.3) : indicateurs **normalisés** par lieu — CA par jour d’ouverture effectif (lieu ouvert d’après sa fiche **et** équipé d’une borne : un lieu installé en cours de période n’est pas pénalisé), CA par heure d’ouverture, CA par place (capacité), CA par visiteur (fréquentation) — et croisement de deux critères de la fiche (type, zone, standing, clientèle, emplacement, heure de fermeture, capacité, commercial…) avec **moyenne, médiane et nombre de lieux** par case. Un lieu saisonnier sans saison saisie est considéré ouvert toute l’année (signalé sur sa fiche).
 
 ## Carte des lieux (V2)
 

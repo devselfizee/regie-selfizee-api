@@ -8,7 +8,7 @@ import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison,
 import { joursOuverts } from "../alertes/ouverture.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
-function filtresAutorises(req: UtilisateurRequest): Filtres {
+export function filtresAutorises(req: UtilisateurRequest): Filtres {
   const f = lireFiltres(req.query);
   const p = perimetreLieux(req.utilisateur);
   if (p?.commercialId !== undefined) f.commercialId = [p.commercialId];
@@ -70,7 +70,7 @@ const periode = (p: { du: Date; au: Date }) => ({ du: ymd(p.du), au: ymd(p.au) }
 const debutParis = (d: Date) => Prisma.sql`(${ymd(d)}::date::timestamp AT TIME ZONE 'Europe/Paris')`;
 const finParis = (d: Date) => Prisma.sql`((${ymd(d)}::date + 1)::timestamp AT TIME ZONE 'Europe/Paris')`;
 
-async function classement(f: Filtres) {
+export async function classement(f: Filtres) {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     WITH ventes AS (
       SELECT a.lieu_id, sum(a.ca_ttc_cents) ca, sum(a.nb_acceptees) nb,
