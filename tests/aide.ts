@@ -7,6 +7,7 @@ export const exemple = (nom: string) =>
 // DELETE plutôt que TRUNCATE : TRUNCATE prend ~12 s sur Postgres sous Docker Desktop (Windows)
 export async function viderBase() {
   await prisma.$transaction([
+    prisma.auditLog.deleteMany(),
     prisma.reversementAjustement.deleteMany(),
     prisma.reversement.deleteMany(),
     prisma.contratPalier.deleteMany(),

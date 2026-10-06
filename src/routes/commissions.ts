@@ -9,6 +9,8 @@ import { exiger, perimetreLieux, verifierAccesLieu, type UtilisateurRequest } fr
 import { calculerPeriode, decrireContrat, type RegleContrat } from "../commissions/moteur.js";
 import { estDebutDePeriode } from "../commissions/periodes.js";
 import { calculerReversements, commissionEnCours, regleDe, STATUTS_FIGES } from "../commissions/service.js";
+import { chargerReleve, destinatairesParDefaut, detailDe, genererPdfReleve, nomFichierReleve, type Releve } from "../commissions/releve.js";
+import { emailConfigure, envoyerEmail } from "../lib/envoi.js";
 
 export const commissionsRouter = Router();
 export const reversementsRouter = Router();
@@ -251,23 +253,108 @@ reversementsRouter.get(
   "/:id",
   exiger("ADMIN", "PARTENAIRE"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
-    const r = await prisma.reversement.findUniqueOrThrow({
-      where: { id: Number(req.params.id) },
-      include: {
-        lieu: { select: { id: true, enseigne: true, raisonSociale: true, siret: true, adresse: true, codePostal: true, ville: true } },
-        contrat: { select: { version: true, dateEffet: true } },
-        ajustements: { include: { user: { select: { nom: true, prenom: true } } }, orderBy: { createdAt: "asc" } },
-      },
-    });
+    const r = await chargerReleve(Number(req.params.id));
     await verifierAccesLieu(req.utilisateur, r.lieuId);
-    const parJour = await prisma.$queryRaw<{ jour: Date; nb: number; ca: number; rembourse: number }[]>`
-      SELECT jour, sum(nb_acceptees)::int nb, sum(ca_ttc_cents)::float8 ca, sum(rembourse_ttc_cents)::float8 rembourse
-      FROM agg_jour WHERE lieu_id = ${r.lieuId} AND jour BETWEEN ${ymd(r.periodeDebut)}::date AND ${ymd(r.periodeFin)}::date
-      GROUP BY jour ORDER BY jour`;
+    const { contacts, ...lieu } = r.lieu;
     res.json({
       ...r,
-      ventesParJour: parJour.map((j) => ({ jour: ymd(j.jour), nbVentes: j.nb, caTtcCents: Number(j.ca), rembourseTtcCents: Number(j.rembourse) })),
+      lieu,
+      // Destinataires proposés pour l'envoi par e-mail (admin seulement)
+      destinatairesParDefaut: req.utilisateur?.role === "ADMIN" ? destinatairesParDefaut(r) : undefined,
+      contactsEmail: req.utilisateur?.role === "ADMIN" ? contacts.filter((c) => c.email) : undefined,
     });
+  })
+);
+
+// GET /api/reversements/:id/releve.pdf — relevé PDF (CDC §6)
+reversementsRouter.get(
+  "/:id/releve.pdf",
+  exiger("ADMIN", "PARTENAIRE"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const r = await chargerReleve(Number(req.params.id));
+    await verifierAccesLieu(req.utilisateur, r.lieuId);
+    const pdf = await genererPdfReleve(r);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${nomFichierReleve(r)}"`);
+    res.send(pdf);
+  })
+);
+
+const ENVOYABLES = ["VALIDE", "FACTURE_PAR_LIEU", "AUTOFACTURE", "PAYE"] as const;
+
+/** Envoie le relevé PDF par e-mail ; renvoie le motif d'échec ou null. */
+async function envoyerReleve(r: Releve, destinataires: string[], message: string | null, userId: number) {
+  const d = detailDe(r);
+  const pdf = await genererPdfReleve(r);
+  const echapper = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  const html = [
+    "<p>Bonjour,</p>",
+    message ? `<p>${echapper(message).replace(/\n/g, "<br>")}</p>` : "",
+    `<p>Veuillez trouver ci-joint le relevé de commission de <strong>${echapper(r.lieu.enseigne)}</strong> pour la période <strong>${echapper(d.periode ?? "")}</strong>.</p>`,
+    `<p>Montant à reverser : <strong>${(r.montantAReverserCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</strong>.</p>`,
+    "<p>Cordialement,<br>L'équipe Selfizee</p>",
+  ].join("");
+  const erreur = await envoyerEmail(destinataires, `Relevé de commission — ${r.lieu.enseigne} — ${d.periode ?? ""}`, html, [
+    { nom: nomFichierReleve(r), type: "application/pdf", contenu: pdf },
+  ]);
+  if (!erreur) {
+    await prisma.$transaction([
+      prisma.reversement.update({ where: { id: r.id }, data: { envoyeLe: new Date() } }),
+      prisma.auditLog.create({
+        data: { userId: userId || null, entite: "reversement", entiteId: String(r.id), action: "ENVOI_RELEVE", apres: { destinataires } },
+      }),
+    ]);
+  }
+  return erreur;
+}
+
+// POST /api/reversements/envoyer-valides — envoie les relevés validés jamais envoyés, aux contacts par défaut
+reversementsRouter.post(
+  "/envoyer-valides",
+  exiger("ADMIN"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    if (!emailConfigure()) throw new HttpError(503, "ENVOI_NON_CONFIGURE", "L'envoi d'e-mails n'est pas configuré (identifiants Mailjet)");
+    const aEnvoyer = await prisma.reversement.findMany({
+      where: { statut: { in: [...ENVOYABLES] }, envoyeLe: null },
+      select: { id: true },
+      orderBy: { periodeDebut: "asc" },
+    });
+    const resultat = { envoyes: 0, sansDestinataire: [] as string[], echecs: [] as { lieu: string; erreur: string }[] };
+    for (const { id } of aEnvoyer) {
+      const r = await chargerReleve(id);
+      const destinataires = destinatairesParDefaut(r);
+      const libelle = `${r.lieu.enseigne} (${detailDe(r).periode ?? ymd(r.periodeDebut)})`;
+      if (!destinataires.length) {
+        resultat.sansDestinataire.push(libelle);
+        continue;
+      }
+      const erreur = await envoyerReleve(r, destinataires, null, req.utilisateur!.id);
+      if (erreur) resultat.echecs.push({ lieu: libelle, erreur });
+      else resultat.envoyes++;
+    }
+    res.json(resultat);
+  })
+);
+
+// POST /api/reversements/:id/envoyer { destinataires, message? } — envoi du relevé PDF par e-mail
+reversementsRouter.post(
+  "/:id/envoyer",
+  exiger("ADMIN"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const { destinataires, message } = z
+      .object({
+        destinataires: z.array(z.email().transform((e) => e.toLowerCase())).min(1, "Au moins un destinataire"),
+        message: z.string().trim().max(2000).nullable().optional(),
+      })
+      .parse(req.body);
+    const r = await chargerReleve(Number(req.params.id));
+    if (!(ENVOYABLES as readonly string[]).includes(r.statut)) {
+      throw new HttpError(400, "STATUT", "Le relevé doit être validé avant d'être envoyé au lieu");
+    }
+    if (!emailConfigure()) throw new HttpError(503, "ENVOI_NON_CONFIGURE", "L'envoi d'e-mails n'est pas configuré (identifiants Mailjet)");
+    const erreur = await envoyerReleve(r, destinataires, message ?? null, req.utilisateur!.id);
+    if (erreur) throw new HttpError(502, "ENVOI_ECHEC", erreur);
+    res.json({ envoye: true, destinataires });
   })
 );
 

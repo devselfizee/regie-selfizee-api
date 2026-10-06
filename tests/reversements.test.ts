@@ -1,5 +1,5 @@
 import request from "supertest";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { creerApp } from "../src/app.js";
 import { prisma } from "../src/lib/prisma.js";
 import { genererCle } from "../src/lib/cleBorne.js";
@@ -202,5 +202,91 @@ describe("statuts, droits et export", () => {
     const data = (await api.get(`/api/commissions/lieux/${lieuId}`).expect(200)).body;
     expect(data.contrats[0].description).toContain("25 %");
     expect(data.enCours.seuil.seuilCents).toBe(50000);
+  });
+});
+
+describe("relevé PDF et envoi par e-mail", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.MAILJET_API_KEY;
+    delete process.env.MAILJET_API_SECRET;
+  });
+
+  async function moisValide() {
+    await api.post(`/api/commissions/lieux/${lieuId}/contrats`).send(contratSeuil).expect(201);
+    await calculerReversements({ jusquA: FIN_SEPTEMBRE });
+    const [aout] = await reversements();
+    return aout;
+  }
+
+  it("génère le relevé en PDF, accessible au partenaire du lieu", async () => {
+    const aout = await moisValide();
+    const res = await api.get(`/api/reversements/${aout.id}/releve.pdf`).buffer(true).parse((r, cb) => {
+      const morceaux: Buffer[] = [];
+      r.on("data", (m: Buffer) => morceaux.push(m));
+      r.on("end", () => cb(null, Buffer.concat(morceaux)));
+    }).expect(200);
+    expect(res.headers["content-type"]).toBe("application/pdf");
+    expect(res.headers["content-disposition"]).toContain("releve_camping_2026-08.pdf");
+    expect((res.body as Buffer).subarray(0, 5).toString()).toBe("%PDF-");
+
+    await prisma.user.create({ data: { email: "p@test.fr", nom: "P", prenom: "", role: "PARTENAIRE", lieuId } });
+    await api.get(`/api/reversements/${aout.id}/releve.pdf`).set("X-Dev-Utilisateur", "p@test.fr").expect(200);
+  });
+
+  it("refuse d'envoyer un relevé non validé, ou sans Mailjet configuré", async () => {
+    const aout = await moisValide();
+    const envoi = () => api.post(`/api/reversements/${aout.id}/envoyer`).send({ destinataires: ["compta@camping.fr"] });
+    expect((await envoi()).body.error).toBe("STATUT");
+    await api.patch(`/api/reversements/${aout.id}/statut`).send({ statut: "VALIDE" }).expect(200);
+    const res = await envoi();
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("ENVOI_NON_CONFIGURE");
+    expect((await prisma.reversement.findUniqueOrThrow({ where: { id: aout.id } })).envoyeLe).toBeNull();
+  });
+
+  it("envoie le PDF en pièce jointe via Mailjet et trace l'envoi", async () => {
+    process.env.MAILJET_API_KEY = "cle";
+    process.env.MAILJET_API_SECRET = "secret";
+    const appels: { url: string; corps: { Messages: { To: { Email: string }[]; Subject: string; Attachments: { Filename: string; Base64Content: string }[] }[] } }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: { body: string }) => {
+      appels.push({ url, corps: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ Messages: [{ Status: "success" }] }), { status: 200 });
+    }));
+
+    const aout = await moisValide();
+    await api.patch(`/api/reversements/${aout.id}/statut`).send({ statut: "VALIDE" }).expect(200);
+    await api.post(`/api/reversements/${aout.id}/envoyer`).send({ destinataires: ["Compta@Camping.fr"], message: "Bonne réception" }).expect(200);
+
+    const m = appels[0].corps.Messages[0];
+    expect(appels[0].url).toBe("https://api.mailjet.com/v3.1/send");
+    expect(m.To).toEqual([{ Email: "compta@camping.fr" }]);
+    expect(m.Subject).toContain("Camping");
+    expect(m.Attachments[0].Filename).toBe("releve_camping_2026-08.pdf");
+    expect(Buffer.from(m.Attachments[0].Base64Content, "base64").subarray(0, 5).toString()).toBe("%PDF-");
+    expect((await prisma.reversement.findUniqueOrThrow({ where: { id: aout.id } })).envoyeLe).not.toBeNull();
+    expect(await prisma.auditLog.count({ where: { action: "ENVOI_RELEVE" } })).toBe(1);
+  });
+
+  it("envoi groupé aux contacts de la fiche ; signale les lieux sans e-mail", async () => {
+    process.env.MAILJET_API_KEY = "cle";
+    process.env.MAILJET_API_SECRET = "secret";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ Messages: [{ Status: "success" }] }), { status: 200 })));
+    const aout = await moisValide();
+    await api.patch(`/api/reversements/${aout.id}/statut`).send({ statut: "VALIDE" }).expect(200);
+
+    const sans = (await api.post("/api/reversements/envoyer-valides").expect(200)).body;
+    expect(sans).toMatchObject({ envoyes: 0, sansDestinataire: ["Camping (août 2026)"] });
+
+    await prisma.lieuContact.createMany({
+      data: [
+        { lieuId, role: "GERANT", nom: "Gérant", email: "gerant@camping.fr" },
+        { lieuId, role: "COMPTABILITE", nom: "Compta", email: "compta@camping.fr" },
+      ],
+    });
+    const releve = (await api.get(`/api/reversements/${aout.id}`).expect(200)).body;
+    expect(releve.destinatairesParDefaut).toEqual(["compta@camping.fr"]);
+    expect((await api.post("/api/reversements/envoyer-valides").expect(200)).body.envoyes).toBe(1);
+    expect((await api.post("/api/reversements/envoyer-valides").expect(200)).body.envoyes).toBe(0); // déjà envoyé
   });
 });

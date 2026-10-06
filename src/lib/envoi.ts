@@ -2,12 +2,24 @@
 // Sans identifiants configurés, rien n'est envoyé : l'envoi est seulement journalisé,
 // et la fonction renvoie le motif (tracé dans notifications_alerte).
 
+export interface PieceJointe {
+  nom: string;
+  type: string;
+  contenu: Buffer;
+}
+
 /** Envoie un e-mail. Renvoie null si l'envoi a réussi, sinon le motif de l'échec. */
-export async function envoyerEmail(destinataire: string, sujet: string, html: string): Promise<string | null> {
+export async function envoyerEmail(
+  destinataire: string | string[],
+  sujet: string,
+  html: string,
+  piecesJointes: PieceJointe[] = []
+): Promise<string | null> {
+  const destinataires = Array.isArray(destinataire) ? destinataire : [destinataire];
   const cle = process.env.MAILJET_API_KEY;
   const secret = process.env.MAILJET_API_SECRET;
   if (!cle || !secret) {
-    console.log(`[e-mail non envoyé — MAILJET_API_KEY / MAILJET_API_SECRET absents] ${destinataire} : ${sujet}`);
+    console.log(`[e-mail non envoyé — MAILJET_API_KEY / MAILJET_API_SECRET absents] ${destinataires.join(", ")} : ${sujet}`);
     return "Envoi désactivé (MAILJET_API_KEY / MAILJET_API_SECRET non configurés)";
   }
   const res = await fetch("https://api.mailjet.com/v3.1/send", {
@@ -20,9 +32,12 @@ export async function envoyerEmail(destinataire: string, sujet: string, html: st
       Messages: [
         {
           From: { Email: process.env.NOTIF_EXPEDITEUR_EMAIL ?? "alertes@selfizee.fr", Name: process.env.NOTIF_EXPEDITEUR_NOM ?? "Régie Selfizee" },
-          To: [{ Email: destinataire }],
+          To: destinataires.map((Email) => ({ Email })),
           Subject: sujet,
           HTMLPart: html,
+          ...(piecesJointes.length
+            ? { Attachments: piecesJointes.map((p) => ({ ContentType: p.type, Filename: p.nom, Base64Content: p.contenu.toString("base64") })) }
+            : {}),
         },
       ],
     }),
@@ -32,6 +47,9 @@ export async function envoyerEmail(destinataire: string, sujet: string, html: st
   const m = corps.Messages?.[0];
   return m?.Status === "success" ? null : `Mailjet : ${m?.Errors?.map((e) => e.ErrorMessage).join(", ") ?? "échec"}`;
 }
+
+/** L'envoi d'e-mails est-il configuré ? */
+export const emailConfigure = () => Boolean(process.env.MAILJET_API_KEY && process.env.MAILJET_API_SECRET);
 
 /** Numéro français → format international sans « + » (0612… → 33612…), comme le CRM. */
 export const numeroInternational = (tel: string) => {

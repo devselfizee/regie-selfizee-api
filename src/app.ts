@@ -39,6 +39,8 @@ export function creerApp() {
     cors({
       origin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? "*",
       credentials: true,
+      // Nom des fichiers exportés (CSV, PDF) : sinon le navigateur cache cet en-tête au front
+      exposedHeaders: ["Content-Disposition"],
     }),
     express.json(),
     authMiddleware,

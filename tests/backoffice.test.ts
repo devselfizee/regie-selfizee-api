@@ -206,6 +206,11 @@ describe("statistiques", () => {
     expect(s.bornes.map((b: { identifiant: string }) => b.identifiant)).toEqual(["MT-0042"]);
   });
 
+  it("laisse le front lire le nom du fichier exporté (CORS)", async () => {
+    const res = await api.get("/api/export/classement.csv?du=2026-10-01&au=2026-10-31").set("Origin", "http://localhost:3000").expect(200);
+    expect(res.headers["access-control-expose-headers"]).toContain("Content-Disposition");
+  });
+
   it("exporte les transactions en CSV lisible par Excel", async () => {
     const res = await api.get("/api/export/transactions.csv?du=2026-10-01&au=2026-10-31").expect(200);
     expect(res.headers["content-type"]).toContain("text/csv");
