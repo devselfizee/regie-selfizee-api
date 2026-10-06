@@ -40,5 +40,5 @@ Chaque point indique **le choix retenu par défaut dans les schémas**. Il suffi
 14. **Journée d'exploitation des lieux de nuit.** Aujourd'hui, une vente faite à 1 h du matin dans la nuit du vendredi au samedi est comptée le **samedi**, comme dans un calendrier. Pour une boîte de nuit, on raisonne plutôt en « soirée du vendredi ».
     → Proposition : une heure de bascule réglable dans la fiche lieu (par exemple 6 h), utilisée pour le jour des statistiques et pour les commissions.
 15. **Ventes datées dans le futur** (horloge de la borne décalée) : elles sont aujourd'hui acceptées telles quelles.
-    → Proposition : au-delà de 1 h dans le futur, les envoyer dans la file d'erreurs (`HORODATAGE_FUTUR`) au lieu de les intégrer.
-16. **Débit d'ingestion** : environ 45 ms par vente en local (Docker Desktop), soit environ 20 s pour un rattrapage de 500 ventes. C'est suffisant pour le flux normal ; un traitement par lot est à prévoir avant de raccorder beaucoup de bornes.
+    → **Fait** : au-delà de 1 h dans le futur, la vente part dans la file d'erreurs (`HORODATAGE_FUTUR`).
+16. **Débit d'ingestion** : **fait**, traitement par lot (une transaction SQL par lot) : un rattrapage de 500 ventes prend environ 1,2 s en local, contre environ 20 s auparavant.

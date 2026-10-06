@@ -385,7 +385,8 @@
   <tr><td><code>SCHEMA_INVALIDE</code></td><td>Champ manquant, mauvais format, champ non prévu (le message précise lequel).</td></tr>
   <tr><td><code>MODULE_INCONNU</code></td><td><code>module.type</code> absent du référentiel de la plateforme.</td></tr>
   <tr><td><code>DEVISE_NON_GEREE</code></td><td>Devise autre que <code>EUR</code>.</td></tr>
-  <tr><td><code>CONFLIT_DOUBLON</code></td><td>Ce <code>transaction_id</code> a déjà été reçu <strong>avec un contenu différent</strong>. La vente d'origine n'est jamais écrasée.</td></tr>
+  <tr><td><code>CONFLIT_DOUBLON</code></td><td>Ce <code>transaction_id</code> a déjà été reçu (ou figure deux fois dans le lot) <strong>avec un contenu différent</strong>. La vente d'origine n'est jamais écrasée.</td></tr>
+  <tr><td><code>HORODATAGE_FUTUR</code></td><td>Vente datée de plus d'une heure dans le futur : horloge de la borne à resynchroniser (NTP).</td></tr>
 </table>
 
 <!-- ─── 5. Remboursements ───────────────────────────────── -->

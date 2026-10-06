@@ -134,7 +134,8 @@ Codes d'erreur par vente :
 | `SCHEMA_INVALIDE` | Champ manquant, mauvais format, champ non prévu (le `message` précise lequel). |
 | `MODULE_INCONNU` | `module.type` absent du référentiel de la plateforme. |
 | `DEVISE_NON_GEREE` | Devise autre que `EUR`. |
-| `CONFLIT_DOUBLON` | Ce `transaction_id` a déjà été reçu **avec un contenu différent** (montant, statut, date…). La vente d'origine n'est jamais écrasée. |
+| `CONFLIT_DOUBLON` | Ce `transaction_id` a déjà été reçu (ou figure deux fois dans le lot) **avec un contenu différent**. La vente d'origine n'est jamais écrasée. |
+| `HORODATAGE_FUTUR` | Vente datée de plus d'une heure dans le futur : horloge de la borne à resynchroniser (NTP). |
 
 ## 4. Envoi du heartbeat (état de la borne)
 

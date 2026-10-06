@@ -115,6 +115,45 @@ describe("POST /ingest/v1/transactions", () => {
     expect(lot.erreurs[0].code).toBe("SCHEMA_INVALIDE");
   });
 
+  it("rejette une vente datée dans le futur (horloge de borne déréglée)", async () => {
+    const lot = exemple("transactions.ok.json");
+    const demain = new Date(Date.now() + 26 * 3_600_000).toISOString().replace("Z", "+00:00").replace(/.d+/, "");
+    lot.transactions = [{ ...lot.transactions[0], horodatage: demain }, lot.transactions[2]];
+    const res = await envoyer(lot);
+    expect(res.body).toMatchObject({ creees: 1, rejetees: 1 });
+    expect(res.body.erreurs[0].code).toBe("HORODATAGE_FUTUR");
+  });
+
+  it("gère un même transaction_id deux fois dans le lot", async () => {
+    const lot = exemple("transactions.ok.json");
+    const [a] = lot.transactions;
+    lot.transactions = [a, { ...a }, { ...a, montant_ttc_centimes: 1 }];
+    const res = await envoyer(lot);
+    expect(res.body).toMatchObject({ creees: 1, doublons: 1, rejetees: 1 });
+    expect(res.body.erreurs[0].code).toBe("CONFLIT_DOUBLON");
+  });
+
+  it("intègre un rattrapage de 500 ventes rapidement et sans erreur de comptage", async () => {
+    const lot = exemple("transactions.ok.json");
+    const modele = lot.transactions[0];
+    lot.rattrapage = true;
+    lot.transactions = Array.from({ length: 500 }, (_, i) => ({
+      ...modele,
+      transaction_id: `R-${i}`,
+      horodatage: new Date(Date.UTC(2026, 8, 1 + (i % 28), 8 + (i % 12), i % 60)).toISOString().replace(/.d+Z/, "Z"),
+      montant_ttc_centimes: 600,
+    }));
+    const debut = Date.now();
+    const res = await envoyer(lot);
+    const duree = Date.now() - debut;
+    expect(res.body).toMatchObject({ creees: 500, rejetees: 0 });
+    const agg = await prisma.aggJour.aggregate({ _sum: { caTtcCents: true, nbAcceptees: true } });
+    expect(agg._sum).toEqual({ caTtcCents: 300000, nbAcceptees: 500 });
+    expect((await prisma.aggHeure.aggregate({ _sum: { nbAcceptees: true } }))._sum.nbAcceptees).toBe(500);
+    console.log(`Rattrapage de 500 ventes : ${duree} ms`);
+    expect(duree).toBeLessThan(10_000);
+  });
+
   it("refuse une clé invalide ou une clé d'une autre borne", async () => {
     const k = genererCle().cle;
     expect((await envoyer(exemple("transactions.ok.json"), k)).status).toBe(401);

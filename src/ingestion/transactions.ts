@@ -2,7 +2,7 @@ import { Prisma, type Borne, type MoyenPaiement, type TransactionStatut } from "
 import { prisma } from "../lib/prisma.js";
 import { htDepuisTtc, pctVersBp } from "../lib/montants.js";
 import { jourEtHeureLocaux, offsetMinutes } from "../lib/temps.js";
-import { incrementerAgregats } from "./agregats.js";
+import { ajouterAuxAgregats, type LigneAgregee } from "./agregats.js";
 import { sha256Payload } from "./journal.js";
 import {
   formaterErreurs,
@@ -19,6 +19,8 @@ const STATUTS: Record<TransactionJson["statut"], TransactionStatut> = {
 };
 
 const TVA_DEFAUT_BP = Number(process.env.TVA_DEFAUT_BP ?? 2000);
+// Au-delà, une date dans le futur trahit une horloge de borne déréglée : la vente est rejetée
+const TOLERANCE_FUTUR_MS = 60 * 60_000;
 
 export interface ErreurLigne {
   index: number;
@@ -37,9 +39,33 @@ export interface ResultatLot {
   erreurs: ErreurLigne[];
 }
 
+interface Candidate {
+  index: number;
+  t: TransactionJson;
+  horodatage: Date;
+  statut: TransactionStatut;
+  moyenPaiement: MoyenPaiement;
+  typeModuleId: number;
+  tauxTvaBp: number;
+}
+
+/** Deux envois d'une même transaction sont-ils identiques ? (sinon : conflit, jamais écrasé) */
+const identique = (
+  a: { horodatage: Date; montantTtcCents: number; statut: TransactionStatut; moyenPaiement: MoyenPaiement; typeModuleId: number; produitCode: string },
+  c: Candidate
+) =>
+  a.horodatage.getTime() === c.horodatage.getTime() &&
+  a.montantTtcCents === c.t.montant_ttc_centimes &&
+  a.statut === c.statut &&
+  a.moyenPaiement === c.moyenPaiement &&
+  a.typeModuleId === c.typeModuleId &&
+  a.produitCode === c.t.produit.code;
+
 /**
  * Intègre un lot de transactions déjà authentifié (borne) et dont l'enveloppe est valide.
  * Idempotent : (borne, transaction_id) existant et identique → doublon, sans effet.
+ * Les vérifications se font en mémoire, puis le lot est écrit en une seule transaction SQL
+ * (insertions et agrégats), ce qui garde un rattrapage de 500 ventes rapide.
  */
 export async function ingererLotTransactions(
   borne: Borne,
@@ -60,17 +86,13 @@ export async function ingererLotTransactions(
     },
   });
 
-  const typesModule = new Map(
-    (await prisma.typeModulePaiement.findMany({ where: { actif: true } })).map((t) => [t.code, t])
-  );
-
+  const typesModule = new Map((await prisma.typeModulePaiement.findMany({ where: { actif: true } })).map((t) => [t.code, t]));
   const erreurs: ErreurLigne[] = [];
-  let creees = 0;
   let doublons = 0;
-  let nonAffectees = 0;
-  const joursNonAffectes = new Set<string>();
-  let derniereVente: Date | null = null;
+  const limiteFutur = Date.now() + TOLERANCE_FUTUR_MS;
 
+  // ─── 1. Vérifications ligne par ligne (en mémoire) ───
+  const candidates = new Map<string, Candidate>(); // par transaction_id
   for (const [index, brut] of lot.transactions.entries()) {
     const rejeter = (code: string, message: string) =>
       erreurs.push({ index, transaction_id: (brut as { transaction_id?: string })?.transaction_id, code, message });
@@ -80,7 +102,6 @@ export async function ingererLotTransactions(
       continue;
     }
     const t = brut as TransactionJson;
-
     const typeModule = typesModule.get(t.module.type);
     if (!typeModule) {
       rejeter("MODULE_INCONNU", `Type de module "${t.module.type}" absent du référentiel`);
@@ -90,127 +111,149 @@ export async function ingererLotTransactions(
       rejeter("DEVISE_NON_GEREE", `Devise ${t.devise} non gérée`);
       continue;
     }
-
     const horodatage = new Date(t.horodatage);
-    const statut = STATUTS[t.statut];
-    const moyenPaiement = t.moyen_paiement.toUpperCase() as MoyenPaiement;
-    const tauxTvaBp = t.taux_tva_pct !== undefined ? pctVersBp(t.taux_tva_pct) : TVA_DEFAUT_BP;
-
-    const existante = await prisma.transaction.findUnique({
-      where: { borneId_transactionIdModule: { borneId: borne.id, transactionIdModule: t.transaction_id } },
-    });
-    if (existante) {
-      const identique =
-        existante.horodatage.getTime() === horodatage.getTime() &&
-        existante.montantTtcCents === t.montant_ttc_centimes &&
-        existante.statut === statut &&
-        existante.moyenPaiement === moyenPaiement &&
-        existante.typeModuleId === typeModule.id &&
-        existante.produitCode === t.produit.code;
-      if (identique) doublons++;
-      else
-        rejeter(
-          "CONFLIT_DOUBLON",
-          `transaction_id déjà reçu (#${existante.id}) avec un contenu différent : non écrasé`
-        );
+    if (horodatage.getTime() > limiteFutur) {
+      rejeter("HORODATAGE_FUTUR", `Vente datée du ${t.horodatage}, dans le futur : horloge de la borne à vérifier (NTP)`);
       continue;
     }
-
-    // Lieu actif à la date de la transaction (CDC §3.2)
-    const affectation = await prisma.affectationBorne.findFirst({
-      where: {
-        borneId: borne.id,
-        debut: { lte: horodatage },
-        OR: [{ fin: null }, { fin: { gt: horodatage } }],
-      },
-    });
-
-    const module = t.module.numero_serie
-      ? await prisma.modulePaiement.findUnique({
-          where: { typeId_numeroSerie: { typeId: typeModule.id, numeroSerie: t.module.numero_serie } },
-        })
-      : null;
-
-    const origine = t.transaction_origine_id
-      ? await prisma.transaction.findUnique({
-          where: {
-            borneId_transactionIdModule: { borneId: borne.id, transactionIdModule: t.transaction_origine_id },
-          },
-          select: { id: true },
-        })
-      : null;
-
-    const { jour, heure } = jourEtHeureLocaux(horodatage);
-    const montantHtCents = htDepuisTtc(t.montant_ttc_centimes, tauxTvaBp);
-
-    try {
-      await prisma.$transaction(async (db) => {
-        await db.transaction.create({
-          data: {
-            borneId: borne.id,
-            transactionIdModule: t.transaction_id,
-            lieuId: affectation?.lieuId,
-            affectationId: affectation?.id,
-            horodatage,
-            offsetMinutes: offsetMinutes(t.horodatage),
-            jourLocal: jour,
-            montantTtcCents: t.montant_ttc_centimes,
-            tauxTvaBp,
-            montantHtCents,
-            devise: t.devise,
-            statut,
-            typeModuleId: typeModule.id,
-            moduleId: module?.id,
-            moyenPaiement,
-            referenceMonetique: t.reference_monetique,
-            produitCode: t.produit.code,
-            produitLibelle: t.produit.libelle,
-            nbTirages: t.produit.nb_tirages,
-            transactionOrigineId: origine?.id,
-            logicielVersion: lot.logiciel_version,
-            importId: importLot.id,
-            rapprochement: moyenPaiement === "ESPECES" ? "NON_APPLICABLE" : "NON_RAPPROCHE",
-          },
-        });
-
-        if (affectation) {
-          await incrementerAgregats(db, {
-            jour,
-            heure,
-            lieuId: affectation.lieuId,
-            borneId: borne.id,
-            typeModuleId: typeModule.id,
-            moyenPaiement,
-            statut,
-            montantTtcCents: t.montant_ttc_centimes,
-            montantHtCents,
-            nbTirages: t.produit.nb_tirages,
-          });
-        }
-      });
-    } catch (err) {
-      // Même transaction insérée en parallèle par un autre envoi : c'est un doublon
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        doublons++;
-        continue;
-      }
-      throw err;
+    const c: Candidate = {
+      index,
+      t,
+      horodatage,
+      statut: STATUTS[t.statut],
+      moyenPaiement: t.moyen_paiement.toUpperCase() as MoyenPaiement,
+      typeModuleId: typeModule.id,
+      tauxTvaBp: t.taux_tva_pct !== undefined ? pctVersBp(t.taux_tva_pct) : TVA_DEFAUT_BP,
+    };
+    // Même transaction_id deux fois dans le lot
+    const deja = candidates.get(t.transaction_id);
+    if (deja) {
+      if (identique({ ...deja, montantTtcCents: deja.t.montant_ttc_centimes, produitCode: deja.t.produit.code }, c)) doublons++;
+      else rejeter("CONFLIT_DOUBLON", "transaction_id présent deux fois dans le lot avec un contenu différent");
+      continue;
     }
-
-    creees++;
-    if (!affectation) {
-      nonAffectees++;
-      joursNonAffectes.add(jour.toISOString().slice(0, 10));
-    }
-    if (statut === "ACCEPTEE" && (!derniereVente || horodatage > derniereVente)) derniereVente = horodatage;
+    candidates.set(t.transaction_id, c);
   }
+
+  // ─── 2. Recherches groupées : déjà reçues, affectations, modules, ventes d'origine ───
+  const ids = [...candidates.keys()];
+  const [existantes, affectations, modules] = await Promise.all([
+    prisma.transaction.findMany({ where: { borneId: borne.id, transactionIdModule: { in: ids } } }),
+    prisma.affectationBorne.findMany({ where: { borneId: borne.id } }),
+    prisma.modulePaiement.findMany({
+      where: { numeroSerie: { in: [...candidates.values()].map((c) => c.t.module.numero_serie).filter((n): n is string => !!n) } },
+    }),
+  ]);
+  for (const e of existantes) {
+    const c = candidates.get(e.transactionIdModule)!;
+    if (identique(e, c)) doublons++;
+    else erreurs.push({ index: c.index, transaction_id: e.transactionIdModule, code: "CONFLIT_DOUBLON", message: `transaction_id déjà reçu (#${e.id}) avec un contenu différent : non écrasé` });
+    candidates.delete(e.transactionIdModule);
+  }
+  const idsOrigine = [...new Set([...candidates.values()].map((c) => c.t.transaction_origine_id).filter((x): x is string => !!x))];
+  const origines = new Map(
+    (await prisma.transaction.findMany({ where: { borneId: borne.id, transactionIdModule: { in: idsOrigine } }, select: { id: true, transactionIdModule: true } })).map(
+      (o) => [o.transactionIdModule, o.id]
+    )
+  );
+
+  // Lieu actif à la date de chaque transaction (CDC §3.2)
+  const affectationA = (h: Date) => affectations.find((a) => a.debut <= h && (!a.fin || a.fin > h));
+  const lignes = [...candidates.values()].map((c) => {
+    const affectation = affectationA(c.horodatage);
+    const { jour, heure } = jourEtHeureLocaux(c.horodatage);
+    const module = c.t.module.numero_serie ? modules.find((m) => m.typeId === c.typeModuleId && m.numeroSerie === c.t.module.numero_serie) : undefined;
+    return {
+      c,
+      heure,
+      data: {
+        borneId: borne.id,
+        transactionIdModule: c.t.transaction_id,
+        lieuId: affectation?.lieuId ?? null,
+        affectationId: affectation?.id ?? null,
+        horodatage: c.horodatage,
+        offsetMinutes: offsetMinutes(c.t.horodatage),
+        jourLocal: jour,
+        montantTtcCents: c.t.montant_ttc_centimes,
+        tauxTvaBp: c.tauxTvaBp,
+        montantHtCents: htDepuisTtc(c.t.montant_ttc_centimes, c.tauxTvaBp),
+        devise: c.t.devise,
+        statut: c.statut,
+        typeModuleId: c.typeModuleId,
+        moduleId: module?.id ?? null,
+        moyenPaiement: c.moyenPaiement,
+        referenceMonetique: c.t.reference_monetique ?? null,
+        produitCode: c.t.produit.code,
+        produitLibelle: c.t.produit.libelle ?? null,
+        nbTirages: c.t.produit.nb_tirages,
+        transactionOrigineId: c.t.transaction_origine_id ? (origines.get(c.t.transaction_origine_id) ?? null) : null,
+        logicielVersion: lot.logiciel_version,
+        importId: importLot.id,
+        rapprochement: c.moyenPaiement === "ESPECES" ? ("NON_APPLICABLE" as const) : ("NON_RAPPROCHE" as const),
+      } satisfies Prisma.TransactionCreateManyInput,
+    };
+  });
+
+  // ─── 3. Écriture en une transaction : insertions + agrégats ───
+  const inserees = lignes.length
+    ? await prisma.$transaction(
+        async (db) => {
+          // skipDuplicates : un envoi concurrent du même lot ne compte rien deux fois
+          const creees = await db.transaction.createManyAndReturn({
+            data: lignes.map((l) => l.data),
+            skipDuplicates: true,
+            select: { id: true, transactionIdModule: true },
+          });
+          const parId = new Map(creees.map((x) => [x.transactionIdModule, x.id]));
+
+          // Remboursement envoyé dans le même lot que la vente d'origine
+          for (const l of lignes) {
+            const o = l.c.t.transaction_origine_id;
+            const id = parId.get(l.data.transactionIdModule);
+            if (o && id && !l.data.transactionOrigineId && parId.has(o)) {
+              await db.transaction.update({ where: { id }, data: { transactionOrigineId: parId.get(o) } });
+            }
+          }
+
+          const nouvelles = lignes.filter((l) => parId.has(l.data.transactionIdModule));
+          await ajouterAuxAgregats(
+            db,
+            nouvelles
+              .filter((l) => l.data.lieuId !== null)
+              .map(
+                (l): LigneAgregee => ({
+                  jour: l.data.jourLocal,
+                  heure: l.heure,
+                  lieuId: l.data.lieuId!,
+                  borneId: borne.id,
+                  typeModuleId: l.data.typeModuleId,
+                  moyenPaiement: l.data.moyenPaiement,
+                  statut: l.data.statut,
+                  montantTtcCents: l.data.montantTtcCents,
+                  montantHtCents: l.data.montantHtCents,
+                  nbTirages: l.data.nbTirages,
+                })
+              )
+          );
+          return nouvelles;
+        },
+        { timeout: 60_000 }
+      )
+    : [];
+  doublons += lignes.length - inserees.length;
+
+  const nonAffectees = inserees.filter((l) => l.data.lieuId === null);
+  const joursNonAffectes = new Set(nonAffectees.map((l) => l.data.jourLocal.toISOString().slice(0, 10)));
+  const derniereVente = inserees
+    .filter((l) => l.data.statut === "ACCEPTEE")
+    .reduce<Date | null>((m, l) => (!m || l.data.horodatage > m ? l.data.horodatage : m), null);
 
   await prisma.importLot.update({
     where: { id: importLot.id },
     data: {
       statut: erreurs.length === 0 ? "OK" : erreurs.length === lot.transactions.length ? "REJETE" : "PARTIEL",
       nbRecues: lot.transactions.length,
-      nbCreees: creees,
+      nbCreees: inserees.length,
       nbDoublons: doublons,
       nbRejetees: erreurs.length,
       erreurs: {
@@ -229,9 +272,7 @@ export async function ingererLotTransactions(
     where: { id: borne.id },
     data: {
       logicielVersion: lot.logiciel_version,
-      ...(derniereVente && (!borne.derniereVente || derniereVente > borne.derniereVente)
-        ? { derniereVente }
-        : {}),
+      ...(derniereVente && (!borne.derniereVente || derniereVente > borne.derniereVente) ? { derniereVente } : {}),
     },
   });
 
@@ -252,10 +293,10 @@ export async function ingererLotTransactions(
   return {
     import_id: importLot.id.toString(),
     recues: lot.transactions.length,
-    creees,
+    creees: inserees.length,
     doublons,
     rejetees: erreurs.length,
-    non_affectees: nonAffectees,
+    non_affectees: nonAffectees.length,
     erreurs,
   };
 }
