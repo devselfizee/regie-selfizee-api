@@ -6,6 +6,7 @@ import { asynchrone } from "../lib/http.js";
 import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison, ymd, type Filtres } from "../stats/filtres.js";
 import { joursOuverts } from "../alertes/ouverture.js";
+import { disponibilite } from "../stats/disponibilite.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
 export function filtresAutorises(req: UtilisateurRequest): Filtres {
@@ -279,6 +280,38 @@ statsRouter.get(
       WHERE i.date >= ${debutParis(f.du)} AND i.date < ${finParis(f.au)}
       ORDER BY i.date`;
 
+    // Disponibilité de chaque borne : temps en ligne pendant l'ouverture, coupures, pannes déclarées
+    const ouverture = await prisma.lieu.findUniqueOrThrow({
+      where: { id: lieuId },
+      select: { saisonnalite: true, horaires: true, saisons: true, fermetures: true },
+    });
+    const debutPeriode = new Date(f.du.getTime() - 86_400_000);
+    const finPeriode = new Date(f.au.getTime() + 2 * 86_400_000);
+    const dispos = await Promise.all(
+      bornes.map(async (b) => {
+        const borneId = n(b.id);
+        const [hbs, pannes] = await Promise.all([
+          prisma.heartbeat.findMany({
+            where: { borneId, horodatage: { gte: debutPeriode, lt: finPeriode } },
+            select: { horodatage: true },
+            orderBy: { horodatage: "asc" },
+          }),
+          prisma.intervention.findMany({
+            where: { borneId, enPanneDepuis: { not: null, lt: finPeriode }, OR: [{ resolueLe: null }, { resolueLe: { gte: debutPeriode } }] },
+            select: { enPanneDepuis: true, resolueLe: true },
+          }),
+        ]);
+        const presence = { debut: b.debut as Date, fin: b.fin as Date | null };
+        return {
+          ...disponibilite(ouverture, presence, f.du, f.au, hbs.map((h) => h.horodatage)),
+          pannes: pannes.length,
+          minutesPanne: Math.round(
+            pannes.reduce((t, p) => t + ((p.resolueLe ?? new Date()).getTime() - p.enPanneDepuis!.getTime()) / 60_000, 0)
+          ),
+        };
+      })
+    );
+
     res.json({
       periode: periode(f),
       granularite: gran,
@@ -305,7 +338,8 @@ statsRouter.get(
       modulesPaiement: modules.map((m) => ({ libelle: m.libelle as string, caTtcCents: n(m.ca), nbVentes: n(m.nb), nbRefusees: n(m.refus) })),
       formules: formules.map((p) => ({ code: p.code as string, libelle: p.libelle as string | null, nbVentes: n(p.nb), caTtcCents: n(p.ca) })),
       montants: montants.map((m) => ({ montantCents: n(m.montant), nbVentes: n(m.nb) })),
-      bornes: bornes.map((b) => ({
+      bornes: bornes.map((b, i) => ({
+        disponibilite: dispos[i],
         borneId: n(b.id),
         identifiant: b.identifiant as string,
         gamme: b.gamme as string,

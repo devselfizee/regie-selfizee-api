@@ -117,3 +117,31 @@ describe("GET /api/stats/segments", () => {
     await api.get(`/api/stats/segments?${PERIODE}&x=inexistant`).expect(400);
   });
 });
+
+describe("disponibilité d'une borne", () => {
+  const lieu = { saisonnalite: "ANNUEL" as const, saisons: [], fermetures: [], horaires: [1, 2, 3, 4, 5, 6, 7].map((j) => ({ jourSemaine: j, ouverture: heure("10:00"), fermeture: heure("22:00") })) };
+  // Mercredi 7 octobre 2026 (Paris = UTC+2) : un heartbeat toutes les 5 min de 10 h à 22 h, sauf de 14 h à 15 h
+  const hbs: Date[] = [];
+  for (let m = 0; m < 12 * 60; m += 5) {
+    const t = new Date(Date.UTC(2026, 9, 7, 8, 0) + m * 60_000);
+    const heureParis = 10 + Math.floor(m / 60);
+    if (heureParis !== 14) hbs.push(t);
+  }
+  hbs.push(new Date("2026-10-07T23:00:00Z"), new Date("2026-10-08T08:05:00Z")); // la nuit (ignoré), puis le lendemain matin
+
+  it("rapporte le temps en ligne au temps d'ouverture et repère les coupures", async () => {
+    const { disponibilite } = await import("../src/stats/disponibilite.js");
+    const r = disponibilite(lieu, { debut: d("2026-01-01"), fin: null }, d("2026-10-07"), d("2026-10-07"), hbs, new Date("2026-10-07T23:59:00Z"));
+    expect(r.minutesAttendues).toBe(720);
+    expect(r.minutesEnLigne).toBe(660);
+    expect(r.taux).toBeCloseTo(660 / 720);
+    expect(r.coupures).toBe(1); // le silence de la nuit ne compte pas
+    expect(r.plusLongueCoupureMin).toBe(65); // de 13 h 55 à 15 h
+  });
+
+  it("ne compte que les jours où la borne était dans le lieu", async () => {
+    const { disponibilite } = await import("../src/stats/disponibilite.js");
+    const r = disponibilite(lieu, { debut: d("2026-10-07"), fin: d("2026-10-08") }, d("2026-10-01"), d("2026-10-10"), hbs, new Date("2026-10-31T00:00:00Z"));
+    expect(r.minutesAttendues).toBe(720); // seulement le 7
+  });
+});
