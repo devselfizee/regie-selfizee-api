@@ -9,6 +9,7 @@ import { affectationsRouter, bornesRouter } from "./routes/bornes.js";
 import { exportRouter, statsRouter } from "./routes/stats.js";
 import { utilisateursRouter } from "./routes/utilisateurs.js";
 import { commissionsRouter, reversementsRouter } from "./routes/commissions.js";
+import { alertesRouter } from "./routes/alertes.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
 
@@ -57,6 +58,7 @@ export function creerApp() {
   app.use("/api/export", ventes, exportRouter);
   app.use("/api/commissions", commissionsRouter);
   app.use("/api/reversements", reversementsRouter);
+  app.use("/api/alertes", alertesRouter);
 
   app.use((err: Error & { type?: string; status?: number }, _req: Request, res: Response, _next: NextFunction) => {
     if (err.type === "entity.parse.failed") {

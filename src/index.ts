@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { creerApp } from "./app.js";
-import { demarrerPlanificateur } from "./commissions/planificateur.js";
+import { demarrerPlanificateur } from "./taches.js";
 import { initialiserReferentiel } from "./referentiel/initial.js";
 
 const PORT = process.env.PORT || 3003;

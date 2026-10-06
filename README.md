@@ -15,7 +15,7 @@ Référence : *CDC — Plateforme de suivi Régie Selfizee / MaTrombine* (2 oct.
 | Synchronisation des bornes (doc pour le développeur des bornes) | [docs/synchronisation-bornes.md](docs/synchronisation-bornes.md) · [version illustrée HTML / PDF](docs/synchronisation-bornes.html) | à jour |
 | Points à arbitrer | [docs/questions-ouvertes.md](docs/questions-ouvertes.md) | à arbitrer |
 | API d'ingestion | [src](src) | en place, 17 tests OK |
-| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 72 tests OK |
+| Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 86 tests OK |
 | Front : vue globale, lieux (liste, fiche + stats, formulaire), bornes, file d'erreurs | [regie-selfizee-web](https://github.com/devselfizee/regie-selfizee-web) | en place |
 | Maquettes, chiffrage | — | à faire |
 
@@ -86,6 +86,24 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 - **Reversements** : calculés automatiquement chaque heure pour les périodes terminées (`POST /api/reversements/calculer` pour forcer). Tant qu'une période n'est pas validée, elle est recalculée si des ventes arrivent en retard ; les **corrections manuelles** (montant, motif, auteur) sont conservées. Statuts : à valider → validé → facturé par le lieu / autofacturé → payé.
 - **Relevé** imprimable par période (détail du calcul et des ventes par jour) et **export compta** CSV des reversements validés.
 - Moteur : [src/commissions/moteur.ts](src/commissions/moteur.ts) (fonctions pures, testées sur chaque exemple du CDC).
+
+## Alertes (V1.1)
+
+Évaluées toutes les 15 minutes ([src/alertes/evaluation.ts](src/alertes/evaluation.ts)), chaque lieu comparé à son propre historique, **uniquement sur ses jours et heures d'ouverture** (saisons, fermetures, horaires de la fiche ; sans horaires : 10 h–22 h) pour éviter les fausses alertes.
+
+| Alerte | Par défaut | Résolution |
+|---|---|---|
+| Borne muette | pas de heartbeat depuis 2 h, lieu ouvert depuis au moins 2 h — critique | automatique |
+| Zéro vente inhabituel | aucune vente depuis 3 h sur un créneau qui vend (≥ 3 ventes en moyenne, même jour/heures, 4 semaines) | automatique |
+| Baisse de CA | CA par jour ouvert sur 7 j < 60 % des 28 j précédents (< 30 % : critique) | manuelle |
+| Taux de refus | > 20 % de refus sur 24 h (≥ 10 tentatives) | manuelle |
+| Pic suspect | CA de la veille > 3 × la moyenne et ≥ 100 € | manuelle |
+| Vente hors horaires | ≥ 3 ventes de la veille hors horaires de la fiche — info | manuelle |
+| Consommables | papier ou ruban < 50 tirages | automatique |
+
+Seuils et niveaux réglables (page Paramètres → Règles d'alerte). Une anomalie déjà ouverte n'est pas relevée deux fois ; une alerte ignorée ne revient pas avant le lendemain.
+
+**Notifications** (Brevo, `BREVO_API_KEY`) : critique → e-mail + SMS, warning → e-mail, info → récapitulatif seul. Destinataires : admins ; techniciens pour les alertes techniques ; commercial du lieu pour les alertes de vente. Récapitulatif quotidien à 8 h aux admins. Chaque envoi est tracé (`notifications_alerte`). Sans clé Brevo, rien n'est envoyé.
 
 ## Utilisateurs et droits
 

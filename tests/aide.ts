@@ -13,6 +13,7 @@ export async function viderBase() {
     prisma.contratCommission.deleteMany(),
     prisma.aggJour.deleteMany(),
     prisma.aggHeure.deleteMany(),
+    prisma.notificationAlerte.deleteMany(),
     prisma.alerte.deleteMany(),
     prisma.transaction.deleteMany(),
     prisma.importErreur.deleteMany(),
