@@ -48,7 +48,10 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     }
 
     const sub = req.user?.sub;
-    const email = req.user?.email?.toLowerCase();
+    // Sans le scope "email" sur le client Keycloak, le jeton n'a pas de champ email :
+    // on se rabat sur l'identifiant de connexion s'il s'agit d'une adresse e-mail.
+    const identifiant = req.user?.preferred_username;
+    const email = (req.user?.email ?? (identifiant?.includes("@") ? identifiant : undefined))?.toLowerCase();
     if (!sub) return res.status(401).json({ error: "Token invalide" });
 
     let u = await prisma.user.findUnique({ where: { keycloakSub: sub }, select: champs });
