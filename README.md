@@ -12,6 +12,7 @@ Référence : *CDC — Plateforme de suivi Régie Selfizee / MaTrombine* (2 oct.
 |---|---|---|
 | Schéma de base de données | [prisma/schema.prisma](prisma/schema.prisma) + [contraintes SQL](prisma/sql/contraintes.sql) | proposé, `prisma validate` OK |
 | Schéma JSON d'ingestion v1 | [transactions](schemas/transactions.v1.schema.json), [heartbeat](schemas/heartbeat.v1.schema.json), [exemples](schemas/examples/) | proposé, validé avec ajv |
+| Synchronisation des bornes (doc pour le développeur des bornes) | [docs/synchronisation-bornes.md](docs/synchronisation-bornes.md) | à jour |
 | Points à arbitrer | [docs/questions-ouvertes.md](docs/questions-ouvertes.md) | à arbitrer |
 | API d'ingestion | [src](src) | en place, 17 tests OK |
 | Back-office API (lieux, bornes, affectations, stats, exports) | [src/routes](src/routes) | en place, 30 tests OK |
