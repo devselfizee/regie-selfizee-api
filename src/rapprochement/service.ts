@@ -35,11 +35,15 @@ async function bornesDesTerminaux(terminaux: string[]) {
   return parTerminal;
 }
 
-/** Ventes susceptibles de figurer sur un relevé : carte (pas espèces), acceptées ou remboursées. */
+/**
+ * Ventes susceptibles de figurer sur un relevé de terminal : acceptées ou remboursées, et rapprochables
+ * (pas les espèces, les séances gratuites ni le QR Stripe, marqués NON_APPLICABLE à l'ingestion).
+ * Les ventes « offertes » (schéma 1.1) n'ont pas été débitées : elles ne doivent pas y être.
+ */
 const ventesCarte = (borneIds: number[]): Prisma.TransactionWhereInput => ({
   borneId: { in: borneIds },
   statut: { in: ["ACCEPTEE", "REMBOURSEE"] },
-  moyenPaiement: { not: "ESPECES" },
+  rapprochement: { not: "NON_APPLICABLE" },
 });
 
 /** Apparie les lignes encore libres du relevé (relançable quand des ventes arrivent en retard). */
@@ -163,7 +167,7 @@ export async function rapport(id: number, { complet = false } = {}) {
   const nonEncaissees = await prisma.transaction.findMany({
     where: { ...ventesCarte(borneIds), rapprochement: "NON_RAPPROCHE", jourLocal: { gte: releve.periodeDebut, lte: releve.periodeFin } },
     orderBy: { horodatage: "asc" },
-    select: { id: true, borneId: true, horodatage: true, statut: true, montantTtcCents: true, transactionIdModule: true, lieu: { select: { id: true, enseigne: true } } },
+    select: { id: true, borneId: true, horodatage: true, statut: true, montantTtcCents: true, transactionIdModule: true, encaissement: true, lieu: { select: { id: true, enseigne: true } } },
   });
 
   const borneDuTerminal = (t: string) => {
@@ -216,6 +220,8 @@ export async function rapport(id: number, { complet = false } = {}) {
     return {
       id: t.id.toString(), terminal: p.terminal, borne: bornes.get(t.borneId) ?? null, lieu: t.lieu,
       horodatage: t.horodatage, montantCents: montantSigne(t), transactionId: t.transactionIdModule,
+      // Schéma 1.1 : enregistrement non confirmé par le terminal, l'explication la plus probable de l'écart
+      incertain: t.encaissement === "INCERTAIN",
     };
   });
 
@@ -237,6 +243,7 @@ export async function rapport(id: number, { complet = false } = {}) {
       nonRemonteesCents: somme((p) => p.nonRemonteesCents, connu),
       nonEncaissees: somme((p) => p.nonEncaissees),
       nonEncaisseesCents: somme((p) => p.nonEncaisseesCents),
+      nonEncaisseesIncertaines: nonEncaisseesDetail.filter((v) => v.incertain).length,
       terminauxInconnus: terminauxListe.filter((p) => !connu(p)).map((p) => ({ terminal: p.terminal, lignes: p.lignes, montantCents: p.montantCents })),
     },
     parTerminal: terminauxListe,

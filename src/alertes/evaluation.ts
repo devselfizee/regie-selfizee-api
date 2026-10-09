@@ -145,7 +145,8 @@ export async function evaluerAlertes(maintenant = new Date()) {
     const rZero = regle("ZERO_VENTE", lieu.id);
     const debutFenetre = new Date(maintenant.getTime() - rZero.parametres.heures * HEURE);
     const ventesRecentes = await prisma.transaction.count({
-      where: { lieuId: lieu.id, statut: "ACCEPTEE", horodatage: { gte: debutFenetre, lte: maintenant } },
+      // Ventes payées seulement : une séance gratuite (schéma 1.1) n'est pas une vente
+      where: { lieuId: lieu.id, statut: "ACCEPTEE", montantTtcCents: { gt: 0 }, horodatage: { gte: debutFenetre, lte: maintenant } },
     });
     if (ventesRecentes > 0) {
       resolues += await resoudre("ZERO_VENTE", { lieuId: lieu.id }, "Résolue automatiquement : les ventes ont repris", maintenant);
@@ -157,6 +158,7 @@ export async function evaluerAlertes(maintenant = new Date()) {
           where: {
             lieuId: lieu.id,
             statut: "ACCEPTEE",
+            montantTtcCents: { gt: 0 },
             horodatage: { gte: new Date(debutFenetre.getTime() - k * 7 * JOUR), lt: new Date(maintenant.getTime() - k * 7 * JOUR) },
           },
         });

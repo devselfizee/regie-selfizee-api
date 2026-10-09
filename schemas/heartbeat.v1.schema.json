@@ -5,52 +5,97 @@
   "description": "Envoyé par chaque borne sur POST /ingest/v1/heartbeats toutes les 5 minutes, même sans vente. Permet de distinguer « pas de client » de « machine en panne ». En rattrapage, la borne peut envoyer plusieurs heartbeats d'un coup ; (borne_id, horodatage) est unique.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "borne_id", "heartbeats"],
+  "required": [
+    "schema_version",
+    "borne_id",
+    "heartbeats"
+  ],
   "properties": {
-    "schema_version": { "const": "1.0" },
-    "borne_id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9_-]{2,63}$" },
+    "schema_version": {
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
+    },
+    "borne_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_-]{2,63}$"
+    },
     "heartbeats": {
       "type": "array",
       "minItems": 1,
       "maxItems": 2000,
-      "items": { "$ref": "#/$defs/heartbeat" }
+      "items": {
+        "$ref": "#/$defs/heartbeat"
+      }
     }
   },
   "$defs": {
     "heartbeat": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["horodatage", "logiciel_version"],
+      "required": [
+        "horodatage",
+        "logiciel_version"
+      ],
       "properties": {
         "horodatage": {
           "type": "string",
           "format": "date-time",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|[+-]\\d{2}:\\d{2})$"
         },
-        "logiciel_version": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "logiciel_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
         "papier_restant": {
-          "description": "Nombre de tirages restants (papier).",
+          "description": "Feuilles (tirages) restantes.",
           "type": "integer",
           "minimum": 0
         },
         "ruban_restant": {
-          "description": "Nombre de tirages restants (ruban).",
+          "description": "Facultatif : absent sur les imprimantes qui comptent par kit papier + ruban (DNP).",
           "type": "integer",
           "minimum": 0
         },
-        "imprimante_ok": { "type": "boolean" },
-        "module_paiement_ok": { "type": "boolean" },
+        "imprimante_ok": {
+          "type": "boolean"
+        },
+        "module_paiement_ok": {
+          "type": "boolean"
+        },
         "erreurs": {
           "type": "array",
           "maxItems": 50,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["code"],
+            "required": [
+              "code"
+            ],
             "properties": {
-              "code": { "type": "string", "maxLength": 64 },
-              "message": { "type": "string", "maxLength": 500 },
-              "composant": { "type": "string", "enum": ["imprimante", "module_paiement", "camera", "ecran", "reseau", "logiciel", "autre"] }
+              "code": {
+                "type": "string",
+                "maxLength": 64,
+                "description": "Code libre (un code inconnu est accepté et conservé). Référentiel publié : PRN_ABSENTE, PRN_HORS_LIGNE, PRN_PAPIER_FIN, PRN_PAPIER_ERREUR, PRN_CAPOT, PRN_ERREUR, TPE_NON_PRET, TPE_MUET, TPE_OCCUPE, CAM_ABSENTE, NET_INTERNET_KO, NET_PORTAIL_CAPTIF, SW_MODE_DEGRADE, SW_ECRAN_ADMIN, ALIM_BATTERIE."
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "composant": {
+                "type": "string",
+                "enum": [
+                  "imprimante",
+                  "module_paiement",
+                  "camera",
+                  "ecran",
+                  "reseau",
+                  "logiciel",
+                  "autre"
+                ]
+              }
             }
           }
         }

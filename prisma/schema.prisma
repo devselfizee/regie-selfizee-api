@@ -437,6 +437,7 @@ enum ImportSource {
   API
   DEPOT_FICHIER
   RATTRAPAGE_MANUEL
+  BACKOFFICE // remboursement saisi dans l'application (la borne ne rembourse jamais)
 }
 
 enum ImportType {
@@ -501,6 +502,11 @@ model Transaction {
   moduleId           Int?          @map("module_id")
   moyenPaiement      MoyenPaiement @map("moyen_paiement")
   referenceMonetique String?       @map("reference_monetique") // n° autorisation, pas de donnée carte
+  referenceSequence  String?       @map("reference_sequence") // schéma 1.1 : n° de séquence du terminal
+  encaissement       Encaissement? // schéma 1.1, ventes acceptées
+  motif              MotifStatut? // schéma 1.1 : précise annulé / expiré / refusé
+  gratuite           Gratuite? // schéma 1.1 : séance à 0 €
+  pikcloudUuid       String?       @map("pikcloud_uuid") @db.Uuid // séance côté serveur web
 
   produitCode    String  @map("produit_code")
   produitLibelle String? @map("produit_libelle")
@@ -538,6 +544,28 @@ enum TransactionStatut {
   REFUSEE
   ANNULEE
   REMBOURSEE
+  EXPIREE // schéma 1.1 : aucune réponse du terminal (ni refus ni annulation), indicateur de panne
+  OFFERTE // schéma 1.1 : accepté, tirage sorti, enregistrement abandonné : aucun débit, pas de CA
+}
+
+// Schéma 1.1 : un paiement accepté dont l'enregistrement n'a pas été confirmé
+enum Encaissement {
+  CONFIRME
+  INCERTAIN // compté dans le CA, à vérifier au rapprochement
+}
+
+enum MotifStatut {
+  INVITE
+  BANQUE
+  TERMINAL
+}
+
+// Schéma 1.1 : séances à 0 €
+enum Gratuite {
+  MODE_GRATUIT
+  CODE_STAFF
+  DEGRADE
+  REIMPRESSION
 }
 
 enum MoyenPaiement {
@@ -546,6 +574,8 @@ enum MoyenPaiement {
   ESPECES
   MOBILE // Apple Pay / Google Pay
   AUTRE
+  WEB // schéma 1.1 : paiement sur téléphone par QR (Stripe, débité par le serveur web)
+  AUCUN // schéma 1.1 : séance à 0 €
 }
 
 enum RapprochementStatut {
@@ -617,16 +647,23 @@ model AggJour {
   typeModuleId  Int           @map("type_module_id")
   moyenPaiement MoyenPaiement @map("moyen_paiement")
 
-  nbAcceptees       Int      @default(0) @map("nb_acceptees")
-  nbRefusees        Int      @default(0) @map("nb_refusees")
-  nbAnnulees        Int      @default(0) @map("nb_annulees")
-  nbRemboursees     Int      @default(0) @map("nb_remboursees")
-  caTtcCents        Int      @default(0) @map("ca_ttc_cents") // acceptées
-  caHtCents         Int      @default(0) @map("ca_ht_cents")
-  rembourseTtcCents Int      @default(0) @map("rembourse_ttc_cents")
-  rembourseHtCents  Int      @default(0) @map("rembourse_ht_cents")
-  nbTirages         Int      @default(0) @map("nb_tirages")
-  majLe             DateTime @updatedAt @map("maj_le") @db.Timestamptz(3)
+  nbAcceptees         Int      @default(0) @map("nb_acceptees")
+  nbRefusees          Int      @default(0) @map("nb_refusees")
+  nbAnnulees          Int      @default(0) @map("nb_annulees")
+  nbRemboursees       Int      @default(0) @map("nb_remboursees")
+  caTtcCents          Int      @default(0) @map("ca_ttc_cents") // acceptées
+  caHtCents           Int      @default(0) @map("ca_ht_cents")
+  rembourseTtcCents   Int      @default(0) @map("rembourse_ttc_cents")
+  rembourseHtCents    Int      @default(0) @map("rembourse_ht_cents")
+  nbTirages           Int      @default(0) @map("nb_tirages")
+  // Schéma 1.1 : activité sans chiffre d'affaires, et CA à confirmer
+  nbExpirees          Int      @default(0) @map("nb_expirees")
+  nbOffertes          Int      @default(0) @map("nb_offertes")
+  nbGratuites         Int      @default(0) @map("nb_gratuites")
+  tiragesNonFactures  Int      @default(0) @map("tirages_non_factures")
+  nbIncertaines       Int      @default(0) @map("nb_incertaines")
+  caIncertainTtcCents Int      @default(0) @map("ca_incertain_ttc_cents")
+  majLe               DateTime @updatedAt @map("maj_le") @db.Timestamptz(3)
 
   lieu       Lieu               @relation(fields: [lieuId], references: [id])
   borne      Borne              @relation(fields: [borneId], references: [id])

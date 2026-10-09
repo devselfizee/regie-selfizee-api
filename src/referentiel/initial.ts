@@ -59,7 +59,12 @@ export async function initialiserReferentiel() {
     });
   }
 
-  for (const [code, libelle] of [["MA_TROMBINE", "Ma Trombine"], ["PRESTIGE", "Prestige (Selfizee)"]]) {
+  const gammes = [
+    ["MA_TROMBINE", "Ma Trombine"], ["PRESTIGE", "Prestige (Selfizee)"],
+    // Gammes du logiciel des bornes (avenant synchro du 07/10/2026)
+    ["SPHERIK", "Spherik"], ["KALIFUN", "Kalifun"], ["CLASSIC", "Classic"],
+  ];
+  for (const [code, libelle] of gammes) {
     await prisma.gamme.upsert({ where: { code }, update: {}, create: { code, libelle } });
   }
 
@@ -67,6 +72,9 @@ export async function initialiserReferentiel() {
     { code: "INGENICO_SELF_2000", libelle: "Ingenico Self 2000", fournisseur: "Ingenico", rapprochable: true },
     { code: "MONNAYEUR", libelle: "Monnayeur", fournisseur: null, rapprochable: false },
     { code: "STRIPE_TERMINAL", libelle: "Stripe Terminal", fournisseur: "Stripe", rapprochable: true },
+    // Avenant synchro : terminal piloté par Hexapay, et paiement sur téléphone par QR (débité par le serveur web via Stripe)
+    { code: "HEXAPAY", libelle: "Terminal Hexapay", fournisseur: "Hexapay", rapprochable: true },
+    { code: "STRIPE_QR", libelle: "Paiement QR (Stripe)", fournisseur: "Stripe", rapprochable: false },
   ];
   for (const t of typesModule) {
     await prisma.typeModulePaiement.upsert({ where: { code: t.code }, update: {}, create: t });

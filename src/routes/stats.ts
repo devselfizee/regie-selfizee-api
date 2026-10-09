@@ -31,6 +31,8 @@ async function kpis(f: Filtres) {
   const [r] = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT sum(a.ca_ttc_cents) ca_ttc, sum(a.ca_ht_cents) ca_ht, sum(a.nb_acceptees) nb,
            sum(a.nb_refusees) refus, sum(a.nb_annulees) annul, sum(a.rembourse_ttc_cents) rembourse,
+           sum(a.nb_expirees) expirees, sum(a.nb_offertes) offertes, sum(a.nb_gratuites) gratuites,
+           sum(a.tirages_non_factures) tirages_non_factures, sum(a.nb_incertaines) incertaines, sum(a.ca_incertain_ttc_cents) ca_incertain,
            count(DISTINCT a.lieu_id) FILTER (WHERE a.nb_acceptees > 0) lieux_actifs
     ${FROM_AGG}
     WHERE ${et([...conditionsVentes(f), ...conditionsLieu(f)])}`;
@@ -45,6 +47,13 @@ async function kpis(f: Filtres) {
     nbRefusees: refus,
     nbAnnulees: n(r.annul),
     tauxRefus: nb + refus ? refus / (nb + refus) : 0,
+    // Schéma 1.1 : expirées (terminal muet, hors taux de refus), offertes (imprimées sans débit), séances gratuites
+    nbExpirees: n(r.expirees),
+    nbOffertes: n(r.offertes),
+    nbGratuites: n(r.gratuites),
+    tiragesNonFactures: n(r.tirages_non_factures),
+    nbIncertaines: n(r.incertaines),
+    caIncertainTtcCents: n(r.ca_incertain),
     lieuxAvecVentes: n(r.lieux_actifs),
   };
 }
@@ -246,10 +255,10 @@ statsRouter.get(
           WHERE ${ventes} GROUP BY 1 ORDER BY ca DESC`,
         prisma.$queryRaw<Record<string, unknown>[]>`
           SELECT a.produit_code code, max(a.produit_libelle) libelle, count(*) nb, sum(a.montant_ttc_cents) ca
-          ${FROM_TX} WHERE a.statut = 'ACCEPTEE' AND ${ventesTx} GROUP BY 1 ORDER BY ca DESC`,
+          ${FROM_TX} WHERE a.statut = 'ACCEPTEE' AND a.montant_ttc_cents > 0 AND ${ventesTx} GROUP BY 1 ORDER BY ca DESC`,
         prisma.$queryRaw<Record<string, unknown>[]>`
           SELECT a.montant_ttc_cents montant, count(*) nb
-          ${FROM_TX} WHERE a.statut = 'ACCEPTEE' AND ${ventesTx} GROUP BY 1 ORDER BY 1`,
+          ${FROM_TX} WHERE a.statut = 'ACCEPTEE' AND a.montant_ttc_cents > 0 AND ${ventesTx} GROUP BY 1 ORDER BY 1`,
         prisma.$queryRaw<Record<string, unknown>[]>`
           SELECT b.id, b.identifiant, g.libelle gamme, af.debut, af.fin, b.dernier_heartbeat, b.derniere_vente,
                  (SELECT count(*) FROM heartbeats hb

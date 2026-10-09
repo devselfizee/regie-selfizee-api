@@ -35,23 +35,28 @@ export function erreursUniquementSurLignes(erreurs: ErrorObject[]): boolean {
   return erreurs.every((e) => /^\/transactions\/\d+(\/|$)/.test(e.instancePath));
 }
 
-// Types des payloads (miroir des schémas JSON v1)
+// Types des payloads (miroir des schémas JSON v1, versions 1.0 et 1.1)
 export interface TransactionJson {
   transaction_id: string;
   horodatage: string;
   montant_ttc_centimes: number;
   taux_tva_pct?: number;
   devise: string;
-  statut: "accepte" | "refuse" | "annule" | "rembourse";
+  statut: "accepte" | "refuse" | "annule" | "expire" | "offert" | "rembourse";
+  encaissement?: "confirme" | "incertain";
+  motif?: "invite" | "banque" | "terminal";
   transaction_origine_id?: string;
   module: { type: string; numero_serie?: string };
-  moyen_paiement: "cb" | "sans_contact" | "especes" | "mobile" | "autre";
+  moyen_paiement: "cb" | "sans_contact" | "especes" | "mobile" | "web" | "aucun" | "autre";
   reference_monetique?: string;
+  reference_sequence?: string;
+  gratuite?: "mode_gratuit" | "code_staff" | "degrade" | "reimpression";
+  pikcloud_uuid?: string;
   produit: { code: string; libelle?: string; nb_tirages: number };
 }
 
 export interface LotTransactionsJson {
-  schema_version: "1.0";
+  schema_version: "1.0" | "1.1";
   borne_id: string;
   envoye_le: string;
   logiciel_version: string;
@@ -70,7 +75,7 @@ export interface HeartbeatJson {
 }
 
 export interface LotHeartbeatsJson {
-  schema_version: "1.0";
+  schema_version: "1.0" | "1.1";
   borne_id: string;
   heartbeats: HeartbeatJson[];
 }

@@ -132,13 +132,13 @@
 
 <!-- ─── Couverture ─────────────────────────────────────── -->
 <header class="cover">
-  <div class="eyebrow">Plateforme de suivi Régie · Selfizee / Ma Trombine</div>
+  <div class="eyebrow">Plateforme de suivi Régie · Selfizee</div>
   <h1>Synchronisation des bornes<br>avec la plateforme de suivi</h1>
-  <p class="muted" style="font-size:15px;margin:0">Spécification de l'API d'ingestion, version 1 — à l'attention du développeur du logiciel des bornes.</p>
+  <p class="muted" style="font-size:15px;margin:0">Spécification de l'API d'ingestion, version 1, schéma 1.1 — à l'attention du développeur du logiciel des bornes.</p>
   <div class="meta">
-    <span><strong>Version de l'API :</strong> v1 (schéma <code>1.0</code>)</span>
+    <span><strong>Version de l'API :</strong> v1 (schéma <code>1.1</code>, <code>1.0</code> toujours accepté)</span>
     <span><strong>Date :</strong> octobre 2026</span>
-    <span><strong>Gammes :</strong> Ma Trombine, Prestige</span>
+    <span><strong>Gammes :</strong> Spherik, Kalifun, Classic</span>
   </div>
   <ol class="toc">
     <li>Principe de la synchronisation</li>
@@ -154,6 +154,15 @@
   </ol>
 </header>
 
+<div class="callout ok">
+  <strong>Nouveautés du schéma 1.1 (avenant du 07/10/2026)</strong>
+  Statuts <code>expire</code> et <code>offert</code>, champs <code>encaissement</code> et <code>motif</code> ;
+  <code>transaction_id</code> généré par la borne, numéro d'autorisation dans <code>reference_monetique</code> (et <code>reference_sequence</code> facultatif) ;
+  paiement par QR : module <code>STRIPE_QR</code>, moyen <code>web</code> ; produits <code>NUMERIQUE</code> et <code>POSTAL</code> ;
+  module <code>HEXAPAY</code> ; séances à 0 € : moyen <code>aucun</code> et champ <code>gratuite</code> ; <code>pikcloud_uuid</code> ;
+  heartbeat : <code>ruban_restant</code> facultatif, codes d'erreur publiés, code inconnu accepté. Les lots <code>1.0</code> restent acceptés.
+</div>
+
 <!-- ─── 1. Principe ─────────────────────────────────────── -->
 <h2><span class="num">1</span> Principe de la synchronisation</h2>
 <p>Chaque borne envoie <strong>directement</strong> à la plateforme de suivi son journal de ventes et son état. Rien ne transite par Pikcloud ni Booth : une panne de la synchronisation photo n'a donc aucun effet sur le chiffre d'affaires, les commissions ou les alertes.</p>
@@ -167,9 +176,9 @@
     <!-- Borne -->
     <rect x="10" y="40" width="200" height="190" rx="14" fill="#f5f4f0" stroke="#cfcdc5"/>
     <text x="110" y="66" text-anchor="middle" font-size="15" font-weight="700" fill="#16161a">Borne</text>
-    <text x="110" y="84" text-anchor="middle" font-size="11.5" fill="#7a7873">Ma Trombine / Prestige</text>
+    <text x="110" y="84" text-anchor="middle" font-size="11.5" fill="#7a7873">Spherik / Kalifun / Classic</text>
     <rect x="28" y="98" width="164" height="34" rx="7" fill="#fff" stroke="#cfcdc5"/>
-    <text x="110" y="119" text-anchor="middle" font-size="12" fill="#16161a">Module de paiement</text>
+    <text x="110" y="119" text-anchor="middle" font-size="12" fill="#16161a">Terminal Hexapay · QR</text>
     <rect x="28" y="140" width="164" height="34" rx="7" fill="#fff" stroke="#cfcdc5"/>
     <text x="110" y="161" text-anchor="middle" font-size="12" fill="#16161a">Logiciel borne</text>
     <rect x="28" y="182" width="164" height="34" rx="7" fill="#e8f1fc" stroke="#2a78d6"/>
@@ -209,7 +218,7 @@
 <div class="grid2">
   <div class="card">
     <h4>Ce que la borne envoie</h4>
-    <p style="margin:0">Le <strong>journal des ventes</strong> (montant, moyen de paiement, formule, statut) et son <strong>état</strong> (en ligne, papier, ruban, erreurs).</p>
+    <p style="margin:0">Le <strong>journal des ventes</strong> (montant, moyen de paiement, formule, statut) et son <strong>état</strong> (en ligne, papier, erreurs).</p>
   </div>
   <div class="card">
     <h4>Ce que la borne n'envoie jamais</h4>
@@ -219,7 +228,7 @@
 
 <table>
   <tr><th>Élément</th><th>Valeur</th></tr>
-  <tr><td>URL de base</td><td>Communiquée par Selfizee (ex. <code>https://api-regie.&lt;domaine&gt;</code>). <strong>HTTPS obligatoire</strong> en production.</td></tr>
+  <tr><td>URL de base</td><td>Communiquée par Selfizee, en <strong>HTTPS</strong> : une URL de DEV pour les essais avec le simulateur de terminal, puis l'URL de PROD à livrer dans le logiciel.</td></tr>
   <tr><td>Format</td><td>JSON UTF-8, en-tête <code>Content-Type: application/json</code></td></tr>
   <tr><td>Taille maximale</td><td>2 Mo par requête · 500 ventes ou 2 000 heartbeats par lot</td></tr>
   <tr><td>Schémas officiels</td><td><code>schemas/transactions.v1.schema.json</code> et <code>schemas/heartbeat.v1.schema.json</code> (dépôt <code>regie-selfizee-api</code>), à utiliser pour valider côté borne</td></tr>
@@ -261,31 +270,33 @@
 
 <div class="callout warn">
   <strong>Le <code>borne_id</code> doit correspondre à la clé</strong>
-  Le champ <code>borne_id</code> du JSON (ex. <code>MT-0042</code>) doit être exactement l'identifiant de la borne à qui appartient la clé. Sinon la requête est refusée (403 <code>BORNE_DIFFERENTE</code>).
+  <code>borne_id</code> est l'identifiant court déjà utilisé par les flux des bornes (<code>S513</code>, <code>K001</code>, <code>C042</code>) : la borne est créée sur la plateforme avec cet identifiant, et il doit être exactement celui de la borne à qui appartient la clé (sinon 403 <code>BORNE_DIFFERENTE</code>). La clé arrive par le JSON de settings (<code>regieApiKey</code>) : rien à saisir sur la machine ; après une régénération, les ventes attendent en file (<code>401</code>) jusqu'au prochain téléchargement des settings.
 </div>
 
 <!-- ─── 3. Envoi des ventes ─────────────────────────────── -->
 <h2><span class="num">3</span> Envoi des ventes</h2>
-<p><code>POST /ingest/v1/transactions</code> — un lot de <strong>1 à 500 ventes</strong>, envoyé après chaque vente ou par petits lots.</p>
+<p><code>POST /ingest/v1/transactions</code> — un lot de <strong>1 à 500 ventes</strong>. Une vente part <strong>au verdict d'enregistrement</strong> (terminal : « enregistré », « abandonné » ou délai écoulé ; QR : <code>paid</code> / <code>failed</code> ; séance à 0 € : validation de la séance). Elle porte donc un statut définitif et n'est plus jamais modifiée. Chaque paiement d'une même séance (« +1 pour un pote ») est une vente à part entière.</p>
 
 <pre><span class="c">// Lot de ventes</span>
 {
-  <span class="k">"schema_version"</span>: <span class="s">"1.0"</span>,
-  <span class="k">"borne_id"</span>: <span class="s">"MT-0042"</span>,
+  <span class="k">"schema_version"</span>: <span class="s">"1.1"</span>,
+  <span class="k">"borne_id"</span>: <span class="s">"S513"</span>,
   <span class="k">"envoye_le"</span>: <span class="s">"2026-10-05T23:15:02+02:00"</span>,     <span class="c">// avec fuseau</span>
-  <span class="k">"logiciel_version"</span>: <span class="s">"3.4.1"</span>,
+  <span class="k">"logiciel_version"</span>: <span class="s">"2026.10.1"</span>,
   <span class="k">"rattrapage"</span>: <span class="n">false</span>,
   <span class="k">"transactions"</span>: [
     {
-      <span class="k">"transaction_id"</span>: <span class="s">"ING-20261005-000184"</span>,   <span class="c">// clé anti-doublon</span>
+      <span class="k">"transaction_id"</span>: <span class="s">"S513-20261005-K7PX2M-1"</span>,  <span class="c">// clé anti-doublon</span>
       <span class="k">"horodatage"</span>: <span class="s">"2026-10-05T22:47:31+02:00"</span>,
       <span class="k">"montant_ttc_centimes"</span>: <span class="n">800</span>,              <span class="c">// 8,00 € en centimes</span>
       <span class="k">"devise"</span>: <span class="s">"EUR"</span>,
-      <span class="k">"statut"</span>: <span class="s">"accepte"</span>,
-      <span class="k">"module"</span>: { <span class="k">"type"</span>: <span class="s">"INGENICO_SELF_2000"</span>, <span class="k">"numero_serie"</span>: <span class="s">"SELF2K-19A77310"</span> },
+      <span class="k">"statut"</span>: <span class="s">"accepte"</span>, <span class="k">"encaissement"</span>: <span class="s">"confirme"</span>,
+      <span class="k">"module"</span>: { <span class="k">"type"</span>: <span class="s">"HEXAPAY"</span> },
       <span class="k">"moyen_paiement"</span>: <span class="s">"sans_contact"</span>,
-      <span class="k">"reference_monetique"</span>: <span class="s">"AUT-554821"</span>,
-      <span class="k">"produit"</span>: { <span class="k">"code"</span>: <span class="s">"BANDE_4"</span>, <span class="k">"libelle"</span>: <span class="s">"Bande 4 photos"</span>, <span class="k">"nb_tirages"</span>: <span class="n">2</span> }
+      <span class="k">"reference_monetique"</span>: <span class="s">"554821"</span>,           <span class="c">// NO AUTO du ticket</span>
+      <span class="k">"reference_sequence"</span>: <span class="s">"000184"</span>,
+      <span class="k">"pikcloud_uuid"</span>: <span class="s">"0f8c1c2e-5b7a-4c1e-9d2a-3f4b5c6d7e8f"</span>,
+      <span class="k">"produit"</span>: { <span class="k">"code"</span>: <span class="s">"TIRAGE"</span>, <span class="k">"libelle"</span>: <span class="s">"2 tirages"</span>, <span class="k">"nb_tirages"</span>: <span class="n">2</span> }
     }
   ]
 }</pre>
@@ -293,7 +304,7 @@
 <h3>Enveloppe du lot</h3>
 <table>
   <tr><th>Champ</th><th>Description</th></tr>
-  <tr><td><code>schema_version</code> <span class="req">*</span></td><td>Toujours <code>"1.0"</code>.</td></tr>
+  <tr><td><code>schema_version</code> <span class="req">*</span></td><td><code>"1.1"</code> (<code>"1.0"</code> reste accepté).</td></tr>
   <tr><td><code>borne_id</code> <span class="req">*</span></td><td>Identifiant de la borne : majuscules, chiffres, <code>-</code> et <code>_</code> (3 à 64 caractères).</td></tr>
   <tr><td><code>envoye_le</code> <span class="req">*</span></td><td>Date et heure de l'envoi, avec fuseau.</td></tr>
   <tr><td><code>logiciel_version</code> <span class="req">*</span></td><td>Version du logiciel de la borne.</td></tr>
@@ -304,21 +315,49 @@
 <h3>Une vente</h3>
 <table>
   <tr><th>Champ</th><th>Description</th></tr>
-  <tr><td><code>transaction_id</code> <span class="req">*</span></td><td>Identifiant donné par le <strong>module de paiement</strong>, unique pour la borne. C'est la clé anti-doublon.</td></tr>
+  <tr><td><code>transaction_id</code> <span class="req">*</span></td><td>Généré par la <strong>borne</strong>, unique et stable, jamais réutilisé : <code>&lt;borne&gt;-&lt;AAAAMMJJ&gt;-&lt;code séance&gt;-&lt;rang&gt;</code>. C'est la clé anti-doublon.</td></tr>
   <tr><td><code>horodatage</code> <span class="req">*</span></td><td>Date et heure de la vente, <strong>avec fuseau</strong>.</td></tr>
-  <tr><td><code>montant_ttc_centimes</code> <span class="req">*</span></td><td>Montant TTC en <strong>centimes, nombre entier</strong> (<code>800</code> = 8,00 €). Toujours positif, y compris pour un remboursement.</td></tr>
+  <tr><td><code>montant_ttc_centimes</code> <span class="req">*</span></td><td>Montant TTC en <strong>centimes, nombre entier, positif ou nul</strong> (<code>800</code> = 8,00 €). <code>0</code> uniquement pour une séance gratuite.</td></tr>
   <tr><td><code>taux_tva_pct</code></td><td>Taux de TVA (ex. <code>20</code>). Par défaut : 20 %.</td></tr>
   <tr><td><code>devise</code> <span class="req">*</span></td><td><code>"EUR"</code> (seule devise gérée).</td></tr>
-  <tr><td><code>statut</code> <span class="req">*</span></td><td><code>accepte</code>, <code>refuse</code>, <code>annule</code> ou <code>rembourse</code>. <strong>Envoyer aussi les refus</strong> : ils servent au taux de refus et aux alertes.</td></tr>
-  <tr><td><code>transaction_origine_id</code></td><td>Pour un remboursement : <code>transaction_id</code> de la vente d'origine. <strong>Obligatoire si <code>statut</code> = <code>rembourse</code>.</strong></td></tr>
-  <tr><td><code>module.type</code> <span class="req">*</span></td><td><code>INGENICO_SELF_2000</code>, <code>MONNAYEUR</code>, <code>STRIPE_TERMINAL</code>… Un code inconnu est rejeté : demander à Selfizee de l'ajouter.</td></tr>
-  <tr><td><code>module.numero_serie</code></td><td>Numéro de série du module de paiement.</td></tr>
-  <tr><td><code>moyen_paiement</code> <span class="req">*</span></td><td><code>cb</code> (carte insérée), <code>sans_contact</code>, <code>especes</code>, <code>mobile</code> (Apple Pay / Google Pay), <code>autre</code>.</td></tr>
-  <tr><td><code>reference_monetique</code></td><td>Référence du prestataire (n° d'autorisation…), pour le rapprochement avec les relevés Ingenico. <strong>Interdite pour les espèces.</strong></td></tr>
-  <tr><td><code>produit.code</code> <span class="req">*</span></td><td>Code de la formule vendue (ex. <code>BANDE_4</code>).</td></tr>
-  <tr><td><code>produit.libelle</code></td><td>Libellé lisible de la formule.</td></tr>
-  <tr><td><code>produit.nb_tirages</code> <span class="req">*</span></td><td>Nombre de tirages imprimés (0 à 100 ; <code>0</code> pour un refus).</td></tr>
+  <tr><td><code>statut</code> <span class="req">*</span></td><td>Voir le tableau des statuts. <strong>Envoyer aussi refus, annulations et expirations.</strong></td></tr>
+  <tr><td><code>encaissement</code></td><td>Avec <code>accepte</code> seulement : <code>confirme</code>, ou <code>incertain</code> (enregistrement sans réponse du terminal, pas de ticket retrouvé : compté dans le CA, signalé au rapprochement).</td></tr>
+  <tr><td><code>motif</code></td><td><code>invite</code> ou <code>terminal</code> pour <code>annule</code>, <code>terminal</code> pour <code>expire</code>, <code>banque</code> pour <code>refuse</code>.</td></tr>
+  <tr><td><code>module.type</code> <span class="req">*</span></td><td><code>HEXAPAY</code>, <code>STRIPE_QR</code>, <code>INGENICO_SELF_2000</code>, <code>MONNAYEUR</code>… Un code inconnu est rejeté : demander à Selfizee de l'ajouter.</td></tr>
+  <tr><td><code>module.numero_serie</code></td><td>Numéro de série du terminal (réglage <code>terminalSerial</code>), absent tant qu'il n'est pas renseigné.</td></tr>
+  <tr><td><code>moyen_paiement</code> <span class="req">*</span></td><td>Voir le tableau des moyens.</td></tr>
+  <tr><td><code>reference_monetique</code></td><td><strong>Numéro d'autorisation</strong> du ticket (<code>NO AUTO</code>) ou identifiant Stripe (<code>pi_…</code>) : clé du rapprochement. Absent pour refus, annulation, expiration. <strong>Interdit pour les espèces et les séances gratuites.</strong></td></tr>
+  <tr><td><code>reference_sequence</code></td><td>Numéro de séquence du terminal.</td></tr>
+  <tr><td><code>gratuite</code></td><td>Séance à 0 € : <code>mode_gratuit</code>, <code>code_staff</code>, <code>degrade</code>, <code>reimpression</code>. Exige le moyen <code>aucun</code>.</td></tr>
+  <tr><td><code>pikcloud_uuid</code></td><td>Identifiant de la séance côté serveur web (<code>photo_uuid</code>).</td></tr>
+  <tr><td><code>transaction_origine_id</code></td><td>Remboursement uniquement (saisi en back-office, voir § 5).</td></tr>
+  <tr><td><code>produit.code</code> <span class="req">*</span></td><td><code>TIRAGE</code>, <code>TIRAGE_EXTRA</code> (paiement supplémentaire de la séance), <code>NUMERIQUE</code> (numérique seul), <code>POSTAL</code> (tirage expédié).</td></tr>
+  <tr><td><code>produit.libelle</code></td><td>Libellé de la formule tel que la borne l'affiche (ex. « 2 tirages »).</td></tr>
+  <tr><td><code>produit.nb_tirages</code> <span class="req">*</span></td><td>Tirages payés, figés à l'envoi (0 à 100). <code>0</code> pour <code>NUMERIQUE</code> et pour un refus.</td></tr>
 </table>
+
+<h3>Statuts</h3>
+<table>
+  <tr><th>Statut</th><th>Sens</th><th>Chiffre d'affaires</th></tr>
+  <tr><td><code>accepte</code></td><td>Paiement accepté et enregistrement confirmé, ou paiement QR débité.</td><td>oui (<code>incertain</code> : compté, à vérifier)</td></tr>
+  <tr><td><code>refuse</code></td><td>Carte refusée par la banque. Compte dans le taux de refus.</td><td>non</td></tr>
+  <tr><td><code>annule</code></td><td>L'invité a renoncé, ou le terminal a abandonné <strong>avant</strong> l'impression.</td><td>non</td></tr>
+  <tr><td><code>expire</code></td><td>Aucune réponse du terminal en 2 × 60 s. Ni refus ni annulation : indicateur de panne.</td><td>non</td></tr>
+  <tr><td><code>offert</code></td><td>Accepté, imprimé, enregistrement abandonné : <strong>aucun débit</strong>. Compté comme tirage non facturé.</td><td>non</td></tr>
+  <tr><td><code>rembourse</code></td><td>Jamais envoyé par la borne : saisi en back-office.</td><td>déduit</td></tr>
+</table>
+
+<h3>Moyens de paiement</h3>
+<table>
+  <tr><th>Moyen</th><th>Sens</th></tr>
+  <tr><td><code>cb</code>, <code>sans_contact</code></td><td>D'après le ticket du terminal.</td></tr>
+  <tr><td><code>mobile</code></td><td>Apple Pay / Google Pay, sur un terminal qui sait les distinguer (pas Hexapay).</td></tr>
+  <tr><td><code>web</code></td><td>Paiement par QR sur le téléphone de l'invité, débité par le serveur web (Stripe). Module <code>STRIPE_QR</code>.</td></tr>
+  <tr><td><code>especes</code></td><td>Monnayeur.</td></tr>
+  <tr><td><code>aucun</code></td><td>Séance à 0 € (<code>accepte</code>, montant <code>0</code>). Ni vente ni CA, mais de l'activité et du papier consommé.</td></tr>
+  <tr><td><code>autre</code></td><td>Moyen inconnu (ticket non retrouvé).</td></tr>
+</table>
+<p class="muted" style="font-size:12px">Règles de cohérence (sinon <code>SCHEMA_INVALIDE</code>) : <code>encaissement</code> seulement avec <code>accepte</code> ; <code>gratuite</code> seulement avec <code>aucun</code> ; <code>aucun</code> seulement à 0 € et avec <code>accepte</code> ; pas de <code>reference_monetique</code> avec <code>especes</code> ou <code>aucun</code>.</p>
 <p class="muted" style="font-size:12px"><span class="req">*</span> obligatoire. Tout champ non prévu par le schéma est refusé.</p>
 
 <div class="grid2">
@@ -367,7 +406,7 @@
   <span class="k">"import_id"</span>: <span class="s">"1824"</span>,
   <span class="k">"recues"</span>: <span class="n">4</span>, <span class="k">"creees"</span>: <span class="n">3</span>, <span class="k">"doublons"</span>: <span class="n">0</span>, <span class="k">"rejetees"</span>: <span class="n">1</span>, <span class="k">"non_affectees"</span>: <span class="n">0</span>,
   <span class="k">"erreurs"</span>: [
-    { <span class="k">"index"</span>: <span class="n">2</span>, <span class="k">"transaction_id"</span>: <span class="s">"MON-000912"</span>, <span class="k">"code"</span>: <span class="s">"MODULE_INCONNU"</span>,
+    { <span class="k">"index"</span>: <span class="n">2</span>, <span class="k">"transaction_id"</span>: <span class="s">"S513-20261005-K7PX2M-3"</span>, <span class="k">"code"</span>: <span class="s">"MODULE_INCONNU"</span>,
       <span class="k">"message"</span>: <span class="s">"Type de module \"MONNAYEUR_X\" absent du référentiel"</span> }
   ]
 }</pre>
@@ -391,28 +430,11 @@
 
 <!-- ─── 5. Remboursements ───────────────────────────────── -->
 <h2><span class="num">5</span> Remboursements</h2>
-<p>Un remboursement est une <strong>nouvelle vente</strong>, avec son propre identifiant, qui pointe vers la vente d'origine. La vente d'origine ne doit jamais être renvoyée avec un statut modifié : elle serait rejetée (<code>CONFLIT_DOUBLON</code>).</p>
-
-<figure>
-  <svg viewBox="0 0 760 150" role="img" aria-label="Le remboursement ING-000186 référence la vente d'origine ING-000184 via transaction_origine_id">
-    <defs><marker id="fo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2a78d6"/></marker></defs>
-    <rect x="20" y="20" width="300" height="108" rx="12" fill="#fff" stroke="#cfcdc5"/>
-    <text x="40" y="46" font-size="12.5" font-weight="700" fill="#16161a">Vente d'origine</text>
-    <rect x="236" y="32" width="68" height="20" rx="10" fill="#e4f4e7"/><text x="270" y="46" text-anchor="middle" font-size="11" font-weight="600" fill="#0a7a2f">accepte</text>
-    <text x="40" y="74" font-size="11.5" fill="#4d4c48" font-family="ui-monospace,Consolas,monospace">transaction_id : ING-000184</text>
-    <text x="40" y="94" font-size="11.5" fill="#4d4c48" font-family="ui-monospace,Consolas,monospace">montant : 800 · 22:47</text>
-    <text x="40" y="114" font-size="11" fill="#7a7873">envoyée une fois, jamais modifiée</text>
-    <rect x="440" y="20" width="300" height="108" rx="12" fill="#fff" stroke="#2a78d6"/>
-    <text x="460" y="46" font-size="12.5" font-weight="700" fill="#16161a">Remboursement</text>
-    <rect x="646" y="32" width="80" height="20" rx="10" fill="#fff3d6"/><text x="686" y="46" text-anchor="middle" font-size="11" font-weight="600" fill="#8a5a00">rembourse</text>
-    <text x="460" y="74" font-size="11.5" fill="#4d4c48" font-family="ui-monospace,Consolas,monospace">transaction_id : ING-000186</text>
-    <text x="460" y="94" font-size="11.5" fill="#1c5cab" font-weight="600" font-family="ui-monospace,Consolas,monospace">transaction_origine_id : ING-000184</text>
-    <text x="460" y="114" font-size="11.5" fill="#4d4c48" font-family="ui-monospace,Consolas,monospace">montant : 800 (positif) · 23:05</text>
-    <line x1="438" y1="90" x2="324" y2="74" stroke="#2a78d6" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#fo)"/>
-    <text x="380" y="66" text-anchor="middle" font-size="11" fill="#1c5cab">référence</text>
-  </svg>
-  <figcaption>Figure 4 — Un remboursement est un nouvel envoi qui référence la vente d'origine.</figcaption>
-</figure>
+<p>La borne <strong>ne rembourse jamais</strong>. Un remboursement est saisi par Selfizee dans la plateforme (page <strong>Ventes</strong>), rattaché à la vente d'origine ; il se déduit du chiffre d'affaires et de la base de commission du lieu. Une vente déjà envoyée n'est jamais renvoyée avec un statut modifié : elle serait rejetée (<code>CONFLIT_DOUBLON</code>).</p>
+<div class="callout">
+  <strong>« Offert » n'est pas un remboursement</strong>
+  Un tirage sorti sans débit (enregistrement abandonné par le terminal) part avec le statut <code>offert</code> : il ne fait pas de chiffre d'affaires et n'est pas reversé au lieu.
+</div>
 
 <!-- ─── 6. Heartbeat ────────────────────────────────────── -->
 <h2 class="saut"><span class="num">6</span> Signal de vie (heartbeat)</h2>
@@ -445,15 +467,15 @@
 </figure>
 
 <pre>{
-  <span class="k">"schema_version"</span>: <span class="s">"1.0"</span>,
-  <span class="k">"borne_id"</span>: <span class="s">"MT-0042"</span>,
+  <span class="k">"schema_version"</span>: <span class="s">"1.1"</span>,
+  <span class="k">"borne_id"</span>: <span class="s">"S513"</span>,
   <span class="k">"heartbeats"</span>: [
     {
       <span class="k">"horodatage"</span>: <span class="s">"2026-10-05T23:15:00+02:00"</span>,
-      <span class="k">"logiciel_version"</span>: <span class="s">"3.4.1"</span>,
-      <span class="k">"papier_restant"</span>: <span class="n">310</span>,  <span class="k">"ruban_restant"</span>: <span class="n">316</span>,
+      <span class="k">"logiciel_version"</span>: <span class="s">"2026.10.1"</span>,
+      <span class="k">"papier_restant"</span>: <span class="n">310</span>,
       <span class="k">"imprimante_ok"</span>: <span class="n">false</span>, <span class="k">"module_paiement_ok"</span>: <span class="n">true</span>,
-      <span class="k">"erreurs"</span>: [ { <span class="k">"code"</span>: <span class="s">"PRN_JAM"</span>, <span class="k">"message"</span>: <span class="s">"Bourrage papier"</span>, <span class="k">"composant"</span>: <span class="s">"imprimante"</span> } ]
+      <span class="k">"erreurs"</span>: [ { <span class="k">"code"</span>: <span class="s">"PRN_PAPIER_ERREUR"</span>, <span class="k">"message"</span>: <span class="s">"Bourrage papier"</span>, <span class="k">"composant"</span>: <span class="s">"imprimante"</span> } ]
     }
   ]
 }</pre>
@@ -462,9 +484,31 @@
   <tr><th>Champ</th><th>Description</th></tr>
   <tr><td><code>horodatage</code> <span class="req">*</span></td><td>Moment de la mesure, avec fuseau.</td></tr>
   <tr><td><code>logiciel_version</code> <span class="req">*</span></td><td>Version du logiciel.</td></tr>
-  <tr><td><code>papier_restant</code>, <code>ruban_restant</code></td><td>Nombre de tirages restants (alertes consommables).</td></tr>
+  <tr><td><code>papier_restant</code></td><td>Feuilles (tirages) restantes : alerte consommables.</td></tr>
+  <tr><td><code>ruban_restant</code></td><td>Facultatif : à omettre sur les imprimantes qui comptent par kit papier + ruban (DNP).</td></tr>
   <tr><td><code>imprimante_ok</code>, <code>module_paiement_ok</code></td><td>État des périphériques.</td></tr>
   <tr><td><code>erreurs</code></td><td>Erreurs en cours : <code>code</code>, <code>message</code>, <code>composant</code> (<code>imprimante</code>, <code>module_paiement</code>, <code>camera</code>, <code>ecran</code>, <code>reseau</code>, <code>logiciel</code>, <code>autre</code>).</td></tr>
+</table>
+
+<h3>Codes d'erreur</h3>
+<p>Un code inconnu est <strong>accepté et conservé</strong> : un heartbeat n'est jamais refusé pour un libellé.</p>
+<table>
+  <tr><th>Code</th><th>Composant</th><th>Sens</th></tr>
+  <tr><td><code>PRN_ABSENTE</code></td><td>imprimante</td><td>Plus vue (câble, alimentation)</td></tr>
+  <tr><td><code>PRN_HORS_LIGNE</code></td><td>imprimante</td><td>Hors ligne</td></tr>
+  <tr><td><code>PRN_PAPIER_FIN</code></td><td>imprimante</td><td>Plus de papier</td></tr>
+  <tr><td><code>PRN_PAPIER_ERREUR</code></td><td>imprimante</td><td>Erreur papier (bourrage, mal engagé)</td></tr>
+  <tr><td><code>PRN_CAPOT</code></td><td>imprimante</td><td>Capot ouvert</td></tr>
+  <tr><td><code>PRN_ERREUR</code></td><td>imprimante</td><td>Autre erreur, <code>message</code> = cause brute</td></tr>
+  <tr><td><code>TPE_NON_PRET</code></td><td>module_paiement</td><td>Terminal non prêt</td></tr>
+  <tr><td><code>TPE_MUET</code></td><td>module_paiement</td><td>Terminal sans réponse à la sonde</td></tr>
+  <tr><td><code>TPE_OCCUPE</code></td><td>module_paiement</td><td>Terminal occupé (transaction pendante, télécollecte)</td></tr>
+  <tr><td><code>CAM_ABSENTE</code></td><td>camera</td><td>Caméra non détectée</td></tr>
+  <tr><td><code>NET_INTERNET_KO</code></td><td>reseau</td><td>Lien présent, pas d'accès internet</td></tr>
+  <tr><td><code>NET_PORTAIL_CAPTIF</code></td><td>reseau</td><td>Portail captif</td></tr>
+  <tr><td><code>SW_MODE_DEGRADE</code></td><td>logiciel</td><td>Mode gratuit ou staff (pas de ventes attendues)</td></tr>
+  <tr><td><code>SW_ECRAN_ADMIN</code></td><td>logiciel</td><td>Écran d'administration ouvert</td></tr>
+  <tr><td><code>ALIM_BATTERIE</code></td><td>autre</td><td>Sur batterie</td></tr>
 </table>
 <p>Jusqu'à <strong>2 000</strong> heartbeats par lot (rattrapage). Réponse : <code>200 OK</code> avec <code>{ "recus": 2, "crees": 2, "doublons": 0 }</code>. Un heartbeat déjà reçu (même borne, même horodatage) est ignoré.</p>
 
@@ -645,8 +689,8 @@ curl -X POST https://&lt;url-api&gt;/ingest/v1/heartbeats \
 <!-- ─── 9. Mise en service ──────────────────────────────── -->
 <h2 class="saut"><span class="num">9</span> Mise en service d'une borne</h2>
 <ol class="steps">
-  <li><strong>Création sur la plateforme</strong> (Selfizee) : identifiant, gamme, module de paiement. La clé API s'affiche une seule fois.</li>
-  <li><strong>Installation</strong> de l'identifiant et de la clé dans la configuration de la borne.</li>
+  <li><strong>Création sur la plateforme</strong> (Selfizee) : identifiant court (<code>S513</code>…), gamme (Spherik, Kalifun, Classic), module <code>HEXAPAY</code> et son numéro de terminal (TID, pour le rapprochement). La clé API s'affiche une seule fois.</li>
+  <li><strong>Livraison de la clé</strong> par le JSON de settings de la borne (<code>regieApiKey</code>).</li>
   <li><strong>Affectation au lieu</strong> (Selfizee), avec la date de début. Les ventes sont rattachées au lieu actif à leur date.</li>
   <li><strong>Vérification</strong> : la borne passe « En ligne » dans les 5 minutes (heartbeat), puis une vente test apparaît dans les statistiques du lieu.</li>
 </ol>
@@ -657,17 +701,17 @@ curl -X POST https://&lt;url-api&gt;/ingest/v1/heartbeats \
     <table>
       <tr><th>Borne</th><th>Connexion</th><th>Lieu actuel</th><th>Dernière vente</th></tr>
       <tr>
-        <td><strong>MT-0101</strong><div class="sub">Ma Trombine · v3.4.1</div></td>
+        <td><strong>S513</strong><div class="sub">Spherik · 2026.10.1</div></td>
         <td><span class="tag ok">● En ligne</span><div class="sub">signal il y a 3 min</div></td>
         <td>Camping Les Flots Bleus</td><td>il y a 12 min</td>
       </tr>
       <tr>
-        <td><strong>MT-0103</strong><div class="sub">Ma Trombine · v3.4.1</div></td>
+        <td><strong>K001</strong><div class="sub">Kalifun · 2026.10.1</div></td>
         <td><span class="tag crit">■ Muette</span><div class="sub">signal il y a 6 h</div></td>
         <td>Bar Le Comptoir</td><td>il y a 34 h</td>
       </tr>
       <tr>
-        <td><strong>MT-0199</strong><div class="sub">Ma Trombine</div></td>
+        <td><strong>C042</strong><div class="sub">Classic</div></td>
         <td><span class="tag neutre">○ Jamais connectée</span><div class="sub">clé à installer</div></td>
         <td><span class="tag warn">▲ Non affectée</span></td><td>jamais</td>
       </tr>
@@ -680,9 +724,8 @@ curl -X POST https://&lt;url-api&gt;/ingest/v1/heartbeats \
 <h2><span class="num">10</span> Points encore ouverts</h2>
 <table>
   <tr><th>Sujet</th><th>À définir</th></tr>
-  <tr><td>Lien avec Pikcloud</td><td>Champ optionnel avec l'identifiant de la session ou de l'événement Pikcloud, pour relier une vente à ses photos. Selon les identifiants dont la borne dispose au moment de la vente.</td></tr>
-  <tr><td>Journal Ingenico Self 2000</td><td>À confirmer sur un exemple réel : identifiant de transaction, distinction carte insérée / sans contact / mobile, numéro d'autorisation.</td></tr>
-  <tr><td>HTTPS et URL définitive</td><td>Obligatoire avant la mise en service des vraies bornes. L'URL sera communiquée par Selfizee.</td></tr>
+  <tr><td>Rapprochement</td><td>Un extrait réel du journal Hexapay et d'un relevé du prestataire permettra de confirmer les colonnes (TID, numéro d'autorisation, séquence) et les tolérances.</td></tr>
+  <tr><td>Séances à 0 €</td><td>Acceptées par la plateforme. À Selfizee de décider si les bornes les envoient.</td></tr>
 </table>
 
 <p class="muted" style="margin-top:28px;font-size:12px;border-top:1px solid var(--line);padding-top:10px">

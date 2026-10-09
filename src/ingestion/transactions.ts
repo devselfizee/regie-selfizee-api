@@ -1,4 +1,4 @@
-import { Prisma, type Borne, type MoyenPaiement, type TransactionStatut } from "@prisma/client";
+import { Prisma, type Borne, type Encaissement, type Gratuite, type MotifStatut, type MoyenPaiement, type TransactionStatut } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { htDepuisTtc, pctVersBp } from "../lib/montants.js";
 import { jourEtHeureLocaux, offsetMinutes } from "../lib/temps.js";
@@ -15,8 +15,14 @@ const STATUTS: Record<TransactionJson["statut"], TransactionStatut> = {
   accepte: "ACCEPTEE",
   refuse: "REFUSEE",
   annule: "ANNULEE",
+  expire: "EXPIREE",
+  offert: "OFFERTE",
   rembourse: "REMBOURSEE",
 };
+
+/** Ventes sans rapprochement possible avec un relevé de terminal : espèces, gratuité, module non rapprochable (QR Stripe). */
+const nonRapprochable = (moyen: MoyenPaiement, montant: number, moduleRapprochable: boolean) =>
+  !moduleRapprochable || moyen === "ESPECES" || moyen === "AUCUN" || moyen === "WEB" || montant === 0;
 
 const TVA_DEFAUT_BP = Number(process.env.TVA_DEFAUT_BP ?? 2000);
 // Au-delà, une date dans le futur trahit une horloge de borne déréglée : la vente est rejetée
@@ -46,6 +52,7 @@ interface Candidate {
   statut: TransactionStatut;
   moyenPaiement: MoyenPaiement;
   typeModuleId: number;
+  moduleRapprochable: boolean;
   tauxTvaBp: number;
 }
 
@@ -123,6 +130,7 @@ export async function ingererLotTransactions(
       statut: STATUTS[t.statut],
       moyenPaiement: t.moyen_paiement.toUpperCase() as MoyenPaiement,
       typeModuleId: typeModule.id,
+      moduleRapprochable: typeModule.rapprochable,
       tauxTvaBp: t.taux_tva_pct !== undefined ? pctVersBp(t.taux_tva_pct) : TVA_DEFAUT_BP,
     };
     // Même transaction_id deux fois dans le lot
@@ -183,13 +191,18 @@ export async function ingererLotTransactions(
         moduleId: module?.id ?? null,
         moyenPaiement: c.moyenPaiement,
         referenceMonetique: c.t.reference_monetique ?? null,
+        referenceSequence: c.t.reference_sequence ?? null,
+        encaissement: c.t.encaissement ? (c.t.encaissement.toUpperCase() as Encaissement) : null,
+        motif: c.t.motif ? (c.t.motif.toUpperCase() as MotifStatut) : null,
+        gratuite: c.t.gratuite ? (c.t.gratuite.toUpperCase() as Gratuite) : null,
+        pikcloudUuid: c.t.pikcloud_uuid ?? null,
         produitCode: c.t.produit.code,
         produitLibelle: c.t.produit.libelle ?? null,
         nbTirages: c.t.produit.nb_tirages,
         transactionOrigineId: c.t.transaction_origine_id ? (origines.get(c.t.transaction_origine_id) ?? null) : null,
         logicielVersion: lot.logiciel_version,
         importId: importLot.id,
-        rapprochement: c.moyenPaiement === "ESPECES" ? ("NON_APPLICABLE" as const) : ("NON_RAPPROCHE" as const),
+        rapprochement: nonRapprochable(c.moyenPaiement, c.t.montant_ttc_centimes, c.moduleRapprochable) ? ("NON_APPLICABLE" as const) : ("NON_RAPPROCHE" as const),
       } satisfies Prisma.TransactionCreateManyInput,
     };
   });
@@ -232,6 +245,7 @@ export async function ingererLotTransactions(
                   montantTtcCents: l.data.montantTtcCents,
                   montantHtCents: l.data.montantHtCents,
                   nbTirages: l.data.nbTirages,
+                  encaissement: l.data.encaissement,
                 })
               )
           );

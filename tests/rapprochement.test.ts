@@ -77,7 +77,7 @@ describe("import d'un relevé et rapprochement", () => {
     const type = await prisma.refValeur.create({ data: { categorie: "TYPE_LIEU", code: "BAR", libelle: "Bar" } });
     lieuId = (await prisma.lieu.create({ data: { raisonSociale: "SAS", enseigne: "Bar du Port", typeLieuId: type.id } })).id;
     const gamme = await prisma.gamme.create({ data: { code: "MT", libelle: "Ma Trombine" } });
-    const ing = await prisma.typeModulePaiement.create({ data: { code: "INGENICO_SELF_2000", libelle: "Ingenico" } });
+    const ing = await prisma.typeModulePaiement.create({ data: { code: "INGENICO_SELF_2000", libelle: "Ingenico", rapprochable: true } });
     await prisma.typeModulePaiement.create({ data: { code: "MONNAYEUR", libelle: "Monnayeur" } });
     const b = (await api.post("/api/bornes").send({ identifiant: "MT-0042", gammeId: gamme.id, numeroSerie: "S1", module: { typeId: ing.id, numeroSerie: "SELF-1" } }).expect(201)).body;
     borneId = b.id;
