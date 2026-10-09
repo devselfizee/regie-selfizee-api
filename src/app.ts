@@ -13,6 +13,7 @@ import { commissionsRouter, reversementsRouter } from "./routes/commissions.js";
 import { alertesRouter } from "./routes/alertes.js";
 import { segmentsRouter } from "./routes/segments.js";
 import { rapprochementRouter } from "./routes/rapprochement.js";
+import { previsionsRouter } from "./routes/previsions.js";
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
@@ -68,6 +69,7 @@ export function creerApp() {
   app.use("/api/stats/segments", ventes, segmentsRouter);
   app.use("/api/stats", ventes, statsRouter);
   app.use("/api/export", ventes, exportRouter);
+  app.use("/api/previsions", ventes, previsionsRouter);
   app.use("/api/commissions", commissionsRouter);
   app.use("/api/reversements", reversementsRouter);
   app.use("/api/alertes", alertesRouter);
