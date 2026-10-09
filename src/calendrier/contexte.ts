@@ -4,7 +4,7 @@
 // jour de la semaine s'annulent : on compare ensuite la moyenne des indices par catégorie.
 import { prisma } from "../lib/prisma.js";
 import { jourOuvert, type OuvertureLieu } from "../alertes/ouverture.js";
-import { debutsEquipement, historiques } from "../previsions/service.js";
+import { debutsEquipement, historiques } from "../stats/historique.js";
 import { feriesEntre, vacancesEntre, zoneScolaire, type ZoneScolaire } from "./calendrier.js";
 
 const JOUR = 86_400_000;

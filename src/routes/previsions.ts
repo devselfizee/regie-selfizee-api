@@ -31,7 +31,7 @@ previsionsRouter.get(
     const p = perimetreLieux(req.utilisateur);
     const lieux = await prisma.lieu.findMany({
       where: { statut: "ACTIF", ...(p?.commercialId ? { commercialId: p.commercialId } : {}), ...(p?.lieuId !== undefined ? { id: p.lieuId } : {}) },
-      select: { id: true, enseigne: true, ville: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true },
+      select: { id: true, enseigne: true, ville: true, codePostal: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true },
     });
     const previsions = await prevoirLieux(lieux, du, au, jour);
 

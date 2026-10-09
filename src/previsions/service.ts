@@ -6,6 +6,8 @@ import { baseDeCalcul, calculerPeriode, estCumule } from "../commissions/moteur.
 import { calculer, regleDe } from "../commissions/service.js";
 import { libellePeriode, periodesDuContrat } from "../commissions/periodes.js";
 import { dateAtteinte, prevoir, type Prevision } from "./prevision.js";
+import { chargerContexte, effets, indicesDesLieux } from "../calendrier/contexte.js";
+import { debutsEquipement, historiques } from "../stats/historique.js";
 
 const JOUR = 86_400_000;
 /** Historique chargé : 8 semaines de référence, un an plus tôt, et la marge de ±3 jours. */
@@ -18,33 +20,28 @@ export const moisDe = (d: Date) => ({
   au: new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)),
 });
 
-const selectOuverture = { saisonnalite: true, horaires: true, saisons: true, fermetures: true } as const;
+const selectOuverture = { codePostal: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true } as const;
 
-/** CA TTC par lieu et par jour depuis `depuis`. */
-export async function historiques(lieuIds: number[], depuis: Date) {
-  const lignes = await prisma.$queryRaw<{ lieu_id: number; jour: Date; ca: number }[]>`
-    SELECT lieu_id, jour, sum(ca_ttc_cents)::float8 ca FROM agg_jour
-    WHERE lieu_id = ANY(${lieuIds}::int[]) AND jour >= ${ymd(depuis)}::date
-    GROUP BY lieu_id, jour`;
-  const parLieu = new Map<number, Map<string, number>>();
-  for (const l of lignes) {
-    if (!parLieu.has(l.lieu_id)) parLieu.set(l.lieu_id, new Map());
-    parLieu.get(l.lieu_id)!.set(ymd(l.jour), Number(l.ca));
-  }
-  return parLieu;
-}
-
-/** Premier jour où chaque lieu avait une borne : avant, l'absence de vente ne veut rien dire. */
-export async function debutsEquipement(lieuIds: number[]) {
-  const g = await prisma.affectationBorne.groupBy({ by: ["lieuId"], where: { lieuId: { in: lieuIds } }, _min: { debut: true } });
-  return new Map(g.map((x) => [x.lieuId, x._min.debut ? localParis(x._min.debut).jour : null]));
-}
-
-/** Prévision pour plusieurs lieux sur la même période (une requête pour tout l'historique). */
-export async function prevoirLieux(lieux: ({ id: number } & OuvertureLieu)[], du: Date, au: Date, jour = aujourdhui()) {
+/**
+ * Prévision pour plusieurs lieux sur la même période (une requête pour tout l'historique),
+ * corrigée du calendrier et de la météo prévue d'après les effets mesurés sur 12 mois pour chaque lieu.
+ */
+export async function prevoirLieux(lieux: ({ id: number; codePostal: string | null } & OuvertureLieu)[], du: Date, au: Date, jour = aujourdhui()) {
   const ids = lieux.map((l) => l.id);
-  const [hist, debuts] = await Promise.all([historiques(ids, new Date(jour.getTime() - HISTORIQUE_JOURS * JOUR)), debutsEquipement(ids)]);
-  return new Map(lieux.map((l) => [l.id, prevoir(l, hist.get(l.id) ?? new Map(), debuts.get(l.id) ?? null, du, au, jour)]));
+  const hier = new Date(jour.getTime() - JOUR);
+  const debutRef = new Date(jour.getTime() - 7 * 8 * JOUR);
+  const [hist, debuts, indices, contexte] = await Promise.all([
+    historiques(ids, new Date(jour.getTime() - HISTORIQUE_JOURS * JOUR)),
+    debutsEquipement(ids),
+    indicesDesLieux(lieux, new Date(jour.getTime() - 365 * JOUR), hier, hier),
+    chargerContexte(lieux, debutRef < du ? debutRef : du, au),
+  ]);
+  return new Map(
+    lieux.map((l) => [
+      l.id,
+      prevoir(l, hist.get(l.id) ?? new Map(), debuts.get(l.id) ?? null, du, au, jour, { contexte: contexte(l.id).jour, effets: effets(indices.get(l.id) ?? []) }),
+    ])
+  );
 }
 
 async function chargerLieu(lieuId: number) {

@@ -5,6 +5,7 @@
 // 3. jours fermés (saison, fermetures, jours sans horaire) : 0.
 // La fourchette (≈ 80 %) vient de la dispersion observée des jours de la semaine.
 import { jourOuvert, type OuvertureLieu } from "../alertes/ouverture.js";
+import { SEUIL_PLUIE_MM, type ContexteJour, type Effet, type Effets } from "../calendrier/contexte.js";
 
 const JOUR = 86_400_000;
 export const SEMAINES_REFERENCE = 8;
@@ -20,6 +21,16 @@ export interface JourPrevu {
   realiseCents: number | null; // null : jour à venir
   prevuCents: number; // 0 si fermé
   ouvert: boolean;
+  /** Correction calendrier / météo appliquée (1 = aucune) et ses raisons */
+  correction?: { facteur: number; raisons: string[] };
+}
+
+/** Effet mesuré sur au moins ce nombre de jours pour corriger une prévision. */
+export const EFFECTIF_MIN_CORRECTION = 5;
+
+export interface Calendrier {
+  contexte: (jour: string) => ContexteJour;
+  effets: Effets;
 }
 
 export interface Prevision {
@@ -57,7 +68,8 @@ export function prevoir(
   depuis: Date | null,
   du: Date,
   au: Date,
-  aujourdhui: Date
+  aujourdhui: Date,
+  calendrier?: Calendrier
 ): Prevision {
   const ca = (d: Date) => historique.get(ymd(d)) ?? 0;
   const equipe = (d: Date) => !depuis || d >= depuis;
@@ -97,6 +109,45 @@ export function prevoir(
     return Math.min(3, Math.max(0.3, moyenne(autour) / baseN1));
   };
 
+  // Correction calendrier / météo d'après les effets mesurés pour ce lieu. Le niveau de référence
+  // contient déjà une part p de jours concernés : facteur = (1 + e si le jour l'est) / (1 + p × e)
+  const utilisable = (e: Effet) => (e.effet !== null && e.n >= EFFECTIF_MIN_CORRECTION ? e.effet : null);
+  const joursReference: ContexteJour[] = [];
+  if (calendrier)
+    for (let i = 1; i <= SEMAINES_REFERENCE * 7; i++) {
+      const d = plus(aujourdhui, -i);
+      if (equipe(d) && jourOuvert(lieu, d)) joursReference.push(calendrier.contexte(ymd(d)));
+    }
+  const part = (f: (c: ContexteJour) => boolean | null) => {
+    const connus = joursReference.map(f).filter((x): x is boolean => x !== null);
+    return connus.length ? connus.filter(Boolean).length / connus.length : null;
+  };
+  const pluvieux = (c: ContexteJour) => (c.meteo?.precipitationMm == null ? null : c.meteo.precipitationMm >= SEUIL_PLUIE_MM);
+  const criteres = calendrier
+    ? [
+        { e: utilisable(calendrier.effets.feries), p: part((c) => !!c.ferie), dans: (c: ContexteJour) => !!c.ferie, libelle: (c: ContexteJour) => `férié (${c.ferie})` },
+        // Les vacances ne sont corrigées que sans N-1 : la saisonnalité de l'an dernier les contient déjà
+        ...(avecN1 ? [] : [{ e: utilisable(calendrier.effets.vacances), p: part((c) => !!c.vacances), dans: (c: ContexteJour) => !!c.vacances, libelle: () => "vacances scolaires" }]),
+        { e: utilisable(calendrier.effets.pluie), p: part(pluvieux), dans: pluvieux, libelle: () => "pluie prévue", hors: "temps sec prévu" },
+      ]
+    : [];
+  const correction = (d: Date) => {
+    if (!calendrier) return { facteur: 1, raisons: [] as string[] };
+    const c = calendrier.contexte(ymd(d));
+    let facteur = 1;
+    const raisons: string[] = [];
+    for (const k of criteres) {
+      const dans = k.dans(c);
+      if (k.e === null || k.p === null || dans === null) continue; // effet non mesuré, ou météo pas encore prévue
+      const x = (dans ? 1 + k.e : 1) / (1 + k.p * k.e);
+      facteur *= x;
+      if (dans) raisons.push(`${k.libelle(c)} ${k.e > 0 ? "+" : ""}${Math.round(k.e * 100)} %`);
+      else if ("hors" in k && k.hors && Math.abs(x - 1) >= 0.03) raisons.push(k.hors);
+    }
+    facteur = Math.min(2, Math.max(0.5, facteur));
+    return { facteur: Math.round(facteur * 100) / 100, raisons };
+  };
+
   // Arrêt : JOURS_ARRET jours ouverts d'affilée sans vente jusqu'à hier
   let sansVente = 0;
   let arretDepuis: Date | null = null;
@@ -119,10 +170,12 @@ export function prevoir(
     const passe = d < aujourdhui;
     const r = d <= aujourdhui ? ca(d) : null;
     let prevu = 0;
+    let corr: JourPrevu["correction"];
     if (ouvert && !passe && !arret) {
       const { m, v } = niveau(d);
-      const f = facteur(d);
-      facteurs.push(f);
+      corr = correction(d);
+      const f = facteur(d) * corr.facteur;
+      facteurs.push(facteur(d));
       // Aujourd'hui : on ne prévoit que ce qui manque par rapport au réalisé
       prevu = Math.max(0, m * f - (r ?? 0));
       varianceRestante += v * f * f;
@@ -130,7 +183,7 @@ export function prevoir(
     }
     if (r !== null) realise += r;
     restant += prevu;
-    jours.push({ jour: ymd(d), realiseCents: r, prevuCents: Math.round(prevu), ouvert });
+    jours.push({ jour: ymd(d), realiseCents: r, prevuCents: Math.round(prevu), ouvert, ...(corr && corr.facteur !== 1 ? { correction: corr } : {}) });
   }
   const ecart = Z80 * Math.sqrt(varianceRestante);
   return {

@@ -84,6 +84,29 @@ describe("prévision du CA", () => {
     expect(p.totalCents).toBe(50000);
   });
 
+  it("corrige de la pluie prévue et des fériés d'après les effets mesurés", () => {
+    const hist = historique("2026-08-01", "2026-10-14", () => 10000);
+    const effet = (e: number | null, n = 20) => ({ effet: e, n });
+    const calendrier = {
+      // Référence sans pluie ; pluie prévue le 16, le 20 est « férié » ; pas de météo au-delà du 18
+      contexte: (j: string) => ({
+        ferie: j === "2026-10-20" ? "Essai" : null,
+        vacances: null,
+        meteo: j <= "2026-10-18" ? { tempMax: 15, precipitationMm: j === "2026-10-16" ? 6 : 0, codeWmo: 61, prevision: j >= "2026-10-15" } : null,
+      }),
+      effets: { jours: 200, feries: effet(0.5), vacances: effet(0.3), pluie: effet(-0.4), temperatures: [] },
+    };
+    const p = prevoir(ouvertTousLesJours, hist, null, d("2026-10-15"), d("2026-10-21"), aujourdhui, calendrier);
+    const j = Object.fromEntries(p.jours.map((x) => [x.jour, x]));
+    expect(j["2026-10-16"]).toMatchObject({ prevuCents: 6000, correction: { facteur: 0.6, raisons: ["pluie prévue -40 %"] } });
+    expect(j["2026-10-17"].prevuCents).toBe(10000); // sec : la référence était sèche aussi
+    expect(j["2026-10-19"].prevuCents).toBe(10000); // météo inconnue : pas de correction
+    expect(j["2026-10-20"]).toMatchObject({ prevuCents: 15000, correction: { raisons: ["férié (Essai) +50 %"] } });
+    // Effet mesuré sur trop peu de jours : ignoré
+    const peu = prevoir(ouvertTousLesJours, hist, null, d("2026-10-16"), d("2026-10-16"), aujourdhui, { ...calendrier, effets: { ...calendrier.effets, pluie: effet(-0.4, 3) } });
+    expect(peu.restantCents).toBe(10000);
+  });
+
   it("date d'atteinte d'un seuil", () => {
     const hist = historique("2026-08-01", "2026-10-14", () => 10000);
     const p = prevoir(ouvertTousLesJours, hist, null, d("2026-10-01"), d("2026-10-31"), aujourdhui);
