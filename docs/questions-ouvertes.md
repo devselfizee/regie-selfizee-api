@@ -49,3 +49,10 @@ Chaque point indique **le choix retenu par défaut dans les schémas**. Il suffi
     → À confirmer avec un vrai relevé : le n° de terminal (TID) y figure-t-il, et le n° d'autorisation remonté par la borne (`reference_monetique`) est-il le même que celui du relevé ?
 18. **TID des bornes** : il faut le saisir sur la fiche de chaque borne (section « Module de paiement »). Sans lui, les lignes du relevé apparaissent en « terminal inconnu ».
 19. **Tolérances de rapprochement** : même montant à 10 minutes près ; montant différent à 2 minutes près = écart de montant ; même n° d'autorisation à 24 h près. Ces valeurs sont à ajuster après un premier relevé réel.
+
+## V3, pilotage
+
+20. **Licence météo** : Open-Meteo est gratuit pour un usage non commercial seulement. Pour la production, il faut un abonnement Open-Meteo (renseigner `OPEN_METEO_API_KEY`), ou choisir une autre source.
+21. **Score des prospects** : les poids des critères sont posés « à dire d'expert » (type de lieu 4, capacité, fréquentation et visibilité 1,5, les autres 1 ou 0,5).
+    → À revoir avec Sébastien quand le parc dépassera une vingtaine de lieux. La précision affichée sur la page Prospects dira si la méthode tient.
+22. **Vacances scolaires** : l'effet mesuré pendant les grandes vacances est sous-estimé, car les jours de comparaison sont eux aussi en vacances. Pour les campings, la saisonnalité N-1 le prend en compte dès la deuxième année.

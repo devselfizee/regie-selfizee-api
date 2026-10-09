@@ -142,4 +142,22 @@ En local sans Keycloak, l'API considère l'appelant comme admin ; l'en-tête `X-
 3. **V2, analyse** : segmentation croisée, indicateurs normalisés, coûts et marge, espace partenaire, carte.
 4. **V3, pilotage** : prévisions, météo et calendrier, scoring des prospects.
 
-Les tables V2 (coûts, interventions, événements) sont déjà dans le schéma. Elles sont peu coûteuses maintenant et évitent une migration lourde plus tard.
+Les quatre phases sont livrées.
+
+### V3 : comment ça marche
+
+- **Prévisions** (`src/previsions`) : CA du mois et de la période de commission en cours, jour par jour.
+  - Base : moyenne du même jour de la semaine sur les 8 dernières semaines, jours d'ouverture seulement.
+  - Corrections : saisonnalité de l'an dernier si elle est connue, puis jours fériés, vacances et pluie prévue, selon l'effet mesuré pour le lieu.
+  - Résultat : fourchette à 80 %, date d'atteinte du seuil ou de chaque palier de commission, et « activité arrêtée » après 7 jours ouverts sans vente.
+- **Calendrier et météo** (`src/calendrier`) :
+  - **Sources** : jours fériés calculés ; vacances scolaires (open data Éducation nationale, zone déduite du code postal) ; météo Open-Meteo à l'emplacement du lieu.
+  - **Mise à jour** : synchronisation toutes les 6 h.
+  - **Mesure de l'effet** : chaque jour est comparé au même jour de la semaine des 4 semaines avant et après.
+- **Journal d'événements** (`src/evenements`, CDC §8) : soirées, travaux, changements de prix. L'impact est mesuré :
+  - **événement ponctuel** : jour même contre jour habituel ;
+  - **changement durable** : 4 semaines avant contre 4 semaines après.
+- **Score des prospects** (`src/prospects`) :
+  - **Estimation** : CA par jour d'ouverture estimé d'après les 5 lieux équipés les plus semblables (critères de la fiche pondérés).
+  - **Score** : rang de l'estimation dans le parc, de 0 à 100.
+  - **Précision affichée** : chaque lieu équipé est estimé à partir des autres, et l'écart avec son CA réel est mesuré.
