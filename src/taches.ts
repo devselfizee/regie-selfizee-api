@@ -3,6 +3,8 @@ import { localParis } from "./alertes/ouverture.js";
 import { evaluerAlertes } from "./alertes/evaluation.js";
 import { envoyerRecapitulatif, notifierAlertes } from "./alertes/notifications.js";
 import { calculerReversements } from "./commissions/service.js";
+import { completerCodesPostaux, synchroniserVacances } from "./calendrier/calendrier.js";
+import { synchroniserMeteo } from "./calendrier/meteo.js";
 
 const MINUTE = 60_000;
 const HEURE_RECAP = 8; // récapitulatif quotidien des alertes, heure de Paris
@@ -11,7 +13,8 @@ const HEURE_RECAP = 8; // récapitulatif quotidien des alertes, heure de Paris
  * Tâches de fond (une seule instance de l'API suffit) :
  * - reversements des périodes terminées, toutes les heures (idempotent, périodes validées figées) ;
  * - alertes, toutes les 15 minutes, avec notifications des nouvelles alertes ;
- * - récapitulatif quotidien des alertes à 8 h.
+ * - récapitulatif quotidien des alertes à 8 h ;
+ * - vacances scolaires et météo des lieux, toutes les 6 heures (DONNEES_EXTERNES=0 pour couper).
  */
 export function demarrerPlanificateur() {
   const reversements = () =>
@@ -39,10 +42,20 @@ export function demarrerPlanificateur() {
     if (!deja) await envoyerRecapitulatif().catch((err) => console.error("Récapitulatif :", err));
   };
 
+  const donneesExternes = async () => {
+    if (process.env.DONNEES_EXTERNES === "0") return;
+    await completerCodesPostaux().catch((err) => console.error("Codes postaux :", err));
+    await synchroniserVacances().catch((err) => console.error("Vacances scolaires :", err));
+    const m = await synchroniserMeteo().catch((err) => (console.error("Météo :", err), null));
+    if (m?.erreurs.length) console.error("Météo :", m.erreurs.join(" ; "));
+  };
+
   setTimeout(() => {
     reversements();
     alertes();
+    donneesExternes();
   }, MINUTE);
+  setInterval(donneesExternes, 6 * 60 * MINUTE);
   setInterval(reversements, 60 * MINUTE);
   setInterval(() => {
     alertes();

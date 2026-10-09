@@ -6,6 +6,7 @@ export interface Position {
   longitude: number;
   libelle: string;
   score: number;
+  codePostal: string | null;
 }
 
 const URL_GEOCODAGE = "https://data.geopf.fr/geocodage/search";
@@ -25,12 +26,12 @@ export async function geocoder(adresse: { adresse?: string | null; codePostal?: 
     const res = await appeler().catch(() => appeler());
     if (!res.ok) return null;
     const json = (await res.json()) as {
-      features?: { geometry: { coordinates: [number, number] }; properties: { label: string; score: number } }[];
+      features?: { geometry: { coordinates: [number, number] }; properties: { label: string; score: number; postcode?: string } }[];
     };
     const f = json.features?.[0];
     if (!f || f.properties.score < 0.4) return null;
     const [longitude, latitude] = f.geometry.coordinates;
-    return { latitude, longitude, libelle: f.properties.label, score: f.properties.score };
+    return { latitude, longitude, libelle: f.properties.label, score: f.properties.score, codePostal: f.properties.postcode ?? null };
   } catch {
     return null; // le géocodage ne doit jamais empêcher d'enregistrer une fiche
   }

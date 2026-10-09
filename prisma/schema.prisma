@@ -171,6 +171,7 @@ model Lieu {
   reversements Reversement[]
   alertes      Alerte[]
   evenements   EvenementLieu[]
+  meteo        MeteoJour[]
   partenaires  User[]              @relation("PartenaireLieu")
   aggJours     AggJour[]
   aggHeures    AggHeure[]
@@ -389,7 +390,7 @@ model AffectationBorne {
   id               Int       @id @default(autoincrement())
   borneId          Int       @map("borne_id")
   lieuId           Int       @map("lieu_id")
-  debut            DateTime @db.Timestamptz(3)
+  debut            DateTime  @db.Timestamptz(3)
   fin              DateTime? @db.Timestamptz(3)
   emplacementNotes String?   @map("emplacement_notes")
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -592,7 +593,7 @@ model ReleveLigne {
   releveId               Int                 @map("releve_id")
   identifiantPrestataire String              @map("identifiant_prestataire") // TID
   referenceMonetique     String?             @map("reference_monetique")
-  horodatage             DateTime @db.Timestamptz(3)
+  horodatage             DateTime            @db.Timestamptz(3)
   montantCents           Int                 @map("montant_cents")
   transactionId          BigInt?             @map("transaction_id") // null = encaissé mais non remonté
   statut                 RapprochementStatut @default(NON_RAPPROCHE)
@@ -928,7 +929,7 @@ model Intervention {
   id            Int       @id @default(autoincrement())
   borneId       Int       @map("borne_id")
   technicienId  Int?      @map("technicien_id")
-  date          DateTime @db.Timestamptz(3)
+  date          DateTime  @db.Timestamptz(3)
   motif         String
   compteRendu   String?   @map("compte_rendu")
   enPanneDepuis DateTime? @map("en_panne_depuis") @db.Timestamptz(3)
@@ -946,7 +947,7 @@ model EvenementLieu {
   id      Int       @id @default(autoincrement())
   lieuId  Int       @map("lieu_id")
   typeId  Int       @map("type_id") // RefValeur TYPE_EVENEMENT
-  debut   DateTime @db.Timestamptz(3)
+  debut   DateTime  @db.Timestamptz(3)
   fin     DateTime? @db.Timestamptz(3)
   libelle String
 
@@ -955,6 +956,38 @@ model EvenementLieu {
 
   @@index([lieuId, debut])
   @@map("evenements_lieu")
+}
+
+// ─── V3 : calendrier et météo ───────────────────────────────
+
+// Vacances scolaires (open data Éducation nationale), synchronisées chaque jour
+model VacancesScolaires {
+  id            Int      @id @default(autoincrement())
+  zone          String // A, B, C, CORSE
+  libelle       String
+  anneeScolaire String   @map("annee_scolaire")
+  debut         DateTime @db.Date // premier jour de vacances
+  fin           DateTime @db.Date // dernier jour de vacances (veille de la reprise)
+
+  @@unique([zone, libelle, anneeScolaire])
+  @@map("vacances_scolaires")
+}
+
+// Météo du jour à l'emplacement du lieu (Open-Meteo). prevision = valeur prévue, remplacée par l'observée ensuite
+model MeteoJour {
+  lieuId          Int      @map("lieu_id")
+  jour            DateTime @db.Date
+  tempMax         Float?   @map("temp_max")
+  tempMin         Float?   @map("temp_min")
+  precipitationMm Float?   @map("precipitation_mm")
+  codeWmo         Int?     @map("code_wmo")
+  prevision       Boolean  @default(false)
+  majLe           DateTime @updatedAt @map("maj_le") @db.Timestamptz(3)
+
+  lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+
+  @@id([lieuId, jour])
+  @@map("meteo_jour")
 }
 
 // ─── Audit ──────────────────────────────────────────────────

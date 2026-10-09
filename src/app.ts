@@ -14,6 +14,7 @@ import { alertesRouter } from "./routes/alertes.js";
 import { segmentsRouter } from "./routes/segments.js";
 import { rapprochementRouter } from "./routes/rapprochement.js";
 import { previsionsRouter } from "./routes/previsions.js";
+import { contexteRouter, evenementsLieuRouter, evenementsRouter } from "./routes/contexte.js";
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
@@ -59,6 +60,8 @@ export function creerApp() {
   app.use("/api/utilisateurs", utilisateursRouter);
   app.use("/api/referentiel", referentielRouter);
   app.use("/api/lieux", lieuxRouter);
+  app.use("/api/lieux", evenementsLieuRouter);
+  app.use("/api/evenements", evenementsRouter);
   app.use("/api/imports", tech, importsRouter);
   app.use("/api/bornes", tech, bornesRouter);
   app.use("/api/bornes", tech, coutsBornesRouter);
@@ -67,6 +70,7 @@ export function creerApp() {
   app.use("/api/rentabilite", exiger("ADMIN"), rentabiliteRouter);
   app.use("/api/affectations", tech, affectationsRouter);
   app.use("/api/stats/segments", ventes, segmentsRouter);
+  app.use("/api/stats/contexte", ventes, contexteRouter);
   app.use("/api/stats", ventes, statsRouter);
   app.use("/api/export", ventes, exportRouter);
   app.use("/api/previsions", ventes, previsionsRouter);

@@ -21,7 +21,7 @@ export const moisDe = (d: Date) => ({
 const selectOuverture = { saisonnalite: true, horaires: true, saisons: true, fermetures: true } as const;
 
 /** CA TTC par lieu et par jour depuis `depuis`. */
-async function historiques(lieuIds: number[], depuis: Date) {
+export async function historiques(lieuIds: number[], depuis: Date) {
   const lignes = await prisma.$queryRaw<{ lieu_id: number; jour: Date; ca: number }[]>`
     SELECT lieu_id, jour, sum(ca_ttc_cents)::float8 ca FROM agg_jour
     WHERE lieu_id = ANY(${lieuIds}::int[]) AND jour >= ${ymd(depuis)}::date
@@ -35,7 +35,7 @@ async function historiques(lieuIds: number[], depuis: Date) {
 }
 
 /** Premier jour où chaque lieu avait une borne : avant, l'absence de vente ne veut rien dire. */
-async function debutsEquipement(lieuIds: number[]) {
+export async function debutsEquipement(lieuIds: number[]) {
   const g = await prisma.affectationBorne.groupBy({ by: ["lieuId"], where: { lieuId: { in: lieuIds } }, _min: { debut: true } });
   return new Map(g.map((x) => [x.lieuId, x._min.debut ? localParis(x._min.debut).jour : null]));
 }

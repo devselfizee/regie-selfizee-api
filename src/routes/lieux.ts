@@ -218,6 +218,8 @@ async function positionner(champs: Champs, avant?: Avant) {
   if (p) {
     champs.latitude = Math.round(p.latitude * 1e6) / 1e6;
     champs.longitude = Math.round(p.longitude * 1e6) / 1e6;
+    // Code postal déduit de la commune s'il manque (zone de vacances scolaires)
+    if (!champs.codePostal && p.codePostal) champs.codePostal = p.codePostal;
   } else if (fournies && adresseChangee) {
     // Ancienne position devenue fausse et nouvelle adresse introuvable : on retire le point
     champs.latitude = null;
