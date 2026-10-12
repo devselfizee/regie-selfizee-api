@@ -71,7 +71,7 @@ export async function envoyerSms(telephone: string, texte: string): Promise<stri
   const champs = new URLSearchParams({
     email,
     apikey,
-    version: "3.0.4",
+    version: process.env.SMSENVOI_VERSION || "3.0.4", // comme le CRM
     "message[recipients]": numeroInternational(telephone),
     "message[content]": texte.slice(0, 300),
     "message[subtype]": "PREMIUM",
