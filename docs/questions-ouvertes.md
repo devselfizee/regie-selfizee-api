@@ -20,12 +20,17 @@ Chaque point indique **le choix retenu par défaut dans les schémas**. Il suffi
 
 ## Ingestion
 
-6. **Changement de statut d'une transaction déjà reçue** (par exemple acceptée puis remboursée) : on attend un nouvel événement (avec son propre `transaction_id` et `transaction_origine_id`), pas une modification de l'événement d'origine.
-   → Si une borne renvoie le même `transaction_id` avec un contenu différent, il part dans la file d'erreurs (`CONFLIT_DOUBLON`). Il n'est jamais écrasé.
-7. **Les transactions refusées sont-elles bien envoyées par les bornes ?** Il en faut pour calculer le taux de refus et déclencher son alerte.
+6. **Changement de statut d'une transaction déjà reçue** (par exemple acceptée puis remboursée).
+   → **Réglé par l'avenant du 07/10/2026** : la borne envoie chaque vente une seule fois, au verdict définitif, et ne rembourse jamais. Les remboursements se saisissent dans la plateforme (page **Ventes**). Une vente renvoyée avec un contenu différent part dans la file d'erreurs (`CONFLIT_DOUBLON`), elle n'est jamais écrasée.
+7. **Les transactions refusées sont-elles bien envoyées par les bornes ?**
+   → **Oui** (avenant) : refus, annulations et expirations (terminal sans réponse) sont envoyés, chacun avec son statut.
 8. **Fréquence du heartbeat** : 5 minutes par défaut. Seuil de l'alerte « borne muette » : 3 h par défaut, uniquement pendant les heures d'ouverture.
-9. **Dépôt de fichiers en plus de l'API** : les bornes actuelles savent-elles faire un POST HTTPS ? Si oui, l'API seule suffit en V1.
-10. **Relevés Ingenico** : sous quel format (CSV, portail, API) ? On a besoin d'un exemple de fichier pour le rapprochement.
+9. **Dépôt de fichiers en plus de l'API** : les bornes savent-elles faire un POST HTTPS ?
+   → **Oui** (avenant) : l'API seule suffit, pas de dépôt de fichiers.
+10. **Relevés du prestataire monétique** : les bornes paient par un terminal piloté par Hexapay (pas Ingenico Self 2000). Sous quel format le prestataire fournit-il ses relevés (CSV, portail, API) ?
+    → L'équipe des bornes propose un extrait réel du journal Hexapay. Il manque encore un relevé du prestataire.
+10 bis. **Séances à 0 €** (mode gratuit, code staff, tirage offert sur terminal en panne, réimpression) : les bornes doivent-elles les envoyer ?
+    → La plateforme les accepte (moyen `aucun`), sans les compter comme ventes ni dans le CA. **À trancher par Selfizee**, seul point laissé ouvert par l'avenant.
 
 ## Fiche lieu et accès
 
@@ -45,7 +50,7 @@ Chaque point indique **le choix retenu par défaut dans les schémas**. Il suffi
 
 ## Rapprochement monétique
 
-17. **Format du relevé Ingenico** : nous n'avons pas d'exemple de fichier. L'import accepte donc n'importe quel CSV : on indique quelle colonne contient la date, l'heure, le montant, le n° de terminal et le n° d'autorisation, et ce choix est retenu pour le prochain import du même prestataire.
+17. **Format du relevé monétique** : nous n'avons pas d'exemple de fichier. L'import accepte donc n'importe quel CSV : on indique quelle colonne contient la date, l'heure, le montant, le n° de terminal et le n° d'autorisation, et ce choix est retenu pour le prochain import du même prestataire.
     → À confirmer avec un vrai relevé : le n° de terminal (TID) y figure-t-il, et le n° d'autorisation remonté par la borne (`reference_monetique`) est-il le même que celui du relevé ?
 18. **TID des bornes** : il faut le saisir sur la fiche de chaque borne (section « Module de paiement »). Sans lui, les lignes du relevé apparaissent en « terminal inconnu ».
 19. **Tolérances de rapprochement** : même montant à 10 minutes près ; montant différent à 2 minutes près = écart de montant ; même n° d'autorisation à 24 h près. Ces valeurs sont à ajuster après un premier relevé réel.
