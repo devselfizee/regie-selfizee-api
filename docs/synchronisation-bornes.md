@@ -298,7 +298,27 @@ curl -X POST https://<url-api>/ingest/v1/heartbeats \
 3. Selfizee affecte la borne à son lieu (avec la date de début).
 4. Vérification : la borne apparaît **« En ligne »** dans la page Bornes dans les 5 minutes (heartbeat), puis une vente test apparaît dans les statistiques du lieu.
 
-## 9. Points encore ouverts
+## 9. Essais en environnement de DEV
+
+Avant la livraison sur les bornes, les essais se font contre l'API de DEV, avec une borne de test (`S513`, gamme Spherik, module `HEXAPAY`) et le simulateur de terminal. Selfizee envoie par e-mail l'adresse HTTPS de l'API de DEV, et **séparément** la clé de la borne de test : une clé ne doit jamais figurer dans un document qui circule.
+
+Adresses complètes, **sans `/api`** (ce préfixe sert à l'application web, pas aux bornes). Avec `/api`, la requête est refusée par l'application web avec un `401` `{"error": "Token invalide"}` : si vous voyez ce message plutôt que `CLE_INVALIDE`, c'est l'adresse qui est fausse, pas la clé :
+
+```
+POST https://<adresse de l'API>/ingest/v1/transactions
+POST https://<adresse de l'API>/ingest/v1/heartbeats
+```
+
+Déroulé conseillé :
+1. **Heartbeat** : `200` avec `{"recus": 1, "crees": 1, "doublons": 0}` ; la borne passe « En ligne » sur la plateforme.
+2. **Un lot couvrant tous les cas** : accepté confirmé, accepté incertain, offert, refusé, annulé, expiré, paiement supplémentaire (`TIRAGE_EXTRA`), QR (`STRIPE_QR`), séance à 0 € si retenue. Attendu : `creees` = nombre de ventes, `rejetees` = 0.
+3. **Le même lot une seconde fois** : `creees` = 0, `doublons` = nombre de ventes.
+4. **Un lot avec une vente volontairement fausse** (par exemple `encaissement` sur un refus) : `200`, `rejetees` = 1 avec le motif, les autres ventes enregistrées.
+5. **Coupure simulée** : la file se vide ensuite par lots, dans l'ordre, avec `"rattrapage": true`.
+
+Tant que la borne de test n'est rattachée à aucun lieu, ses ventes sont gardées et comptées dans `non_affectees`, sans apparaître dans les statistiques : c'est normal en DEV.
+
+## 10. Points encore ouverts
 
 - **Rapprochement** : un extrait réel du journal Hexapay et d'un relevé du prestataire permettra de confirmer les colonnes (TID, numéro d'autorisation, numéro de séquence) et les tolérances.
 - **Séances à 0 €** : la plateforme les accepte. C'est à Selfizee de décider si les bornes les envoient.

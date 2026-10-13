@@ -150,6 +150,7 @@
     <li>Fiabilité : file d'attente et rattrapage</li>
     <li>Codes HTTP : que faire ?</li>
     <li>Mise en service d'une borne</li>
+    <li>Essais en environnement de DEV</li>
     <li>Points encore ouverts</li>
   </ol>
 </header>
@@ -720,8 +721,43 @@ curl -X POST https://&lt;url-api&gt;/ingest/v1/heartbeats \
   <figcaption>Figure 9 — Ce que Selfizee voit sur la plateforme : l'état de chaque borne, d'après ses heartbeats et ses ventes.</figcaption>
 </figure>
 
-<!-- ─── 10. Points ouverts ──────────────────────────────── -->
-<h2><span class="num">10</span> Points encore ouverts</h2>
+<!-- ─── 10. Essais en DEV ───────────────────────────────── -->
+<h2 class="saut"><span class="num">10</span> Essais en environnement de DEV</h2>
+<p>Avant la livraison sur les bornes, les essais se font contre l'API de DEV, avec une borne de test et le simulateur de terminal.</p>
+
+<h3>Ce que Selfizee vous envoie</h3>
+<table>
+  <tr><th>Élément</th><th>Valeur</th></tr>
+  <tr><td>Borne de test</td><td>Identifiant <code>S513</code>, gamme Spherik, module <code>HEXAPAY</code>, créée sur la plateforme de DEV.</td></tr>
+  <tr><td>Adresse de l'API de DEV</td><td>Envoyée par e-mail, en HTTPS.</td></tr>
+  <tr><td>Clé de la borne de test</td><td>Envoyée <strong>séparément</strong>, jamais dans ce document : une clé ne doit pas circuler dans un PDF.</td></tr>
+</table>
+
+<h3>Adresses complètes</h3>
+<pre><span class="c"># Ventes</span>
+POST https://&lt;adresse de l'API&gt;<span class="s">/ingest/v1/transactions</span>
+<span class="c"># Heartbeats</span>
+POST https://&lt;adresse de l'API&gt;<span class="s">/ingest/v1/heartbeats</span></pre>
+<div class="callout warn">
+  <strong>Pas de <code>/api</code> dans le chemin</strong>
+  Le préfixe <code>/api</code> sert à l'application web de Selfizee, pas aux bornes. Une requête envoyée à <code>https://&lt;adresse&gt;/api/ingest/v1/transactions</code> est refusée par l'application web avec un <code>401</code> <code>{"error": "Token invalide"}</code>. Si vous voyez ce message plutôt que <code>CLE_INVALIDE</code>, c'est l'adresse qui est fausse, pas la clé.
+</div>
+
+<h3>Déroulé conseillé</h3>
+<ol class="steps">
+  <li><strong>Heartbeat</strong> : un envoi doit répondre <code>200</code> avec <code>{"recus": 1, "crees": 1, "doublons": 0}</code>. La borne passe « En ligne » sur la plateforme.</li>
+  <li><strong>Un lot couvrant tous les cas</strong> : accepté confirmé, accepté incertain, offert, refusé, annulé, expiré, paiement supplémentaire (<code>TIRAGE_EXTRA</code>), QR (<code>STRIPE_QR</code>), et séance à 0 € si Selfizee les retient. Attendu : <code>creees</code> = nombre de ventes, <code>rejetees</code> = 0.</li>
+  <li><strong>Le même lot une seconde fois</strong> : attendu <code>creees</code> = 0, <code>doublons</code> = nombre de ventes. C'est la preuve qu'un renvoi ne compte rien deux fois.</li>
+  <li><strong>Un lot avec une vente volontairement fausse</strong> (par exemple <code>encaissement</code> sur un refus) : attendu <code>200</code>, <code>rejetees</code> = 1 avec le motif dans <code>erreurs</code>, les autres ventes enregistrées.</li>
+  <li><strong>Coupure simulée</strong> : couper le réseau, faire quelques ventes, le rétablir. La file doit se vider par lots, dans l'ordre, avec <code>"rattrapage": true</code>.</li>
+</ol>
+<div class="callout">
+  <strong>Ventes « non affectées » : c'est normal en DEV</strong>
+  Tant que la borne de test n'est rattachée à aucun lieu, ses ventes sont gardées et comptées dans <code>non_affectees</code>, mais n'apparaissent dans les statistiques d'aucun lieu. Selfizee peut l'affecter à un lieu de test pour les y voir.
+</div>
+
+<!-- ─── 11. Points ouverts ──────────────────────────────── -->
+<h2><span class="num">11</span> Points encore ouverts</h2>
 <table>
   <tr><th>Sujet</th><th>À définir</th></tr>
   <tr><td>Rapprochement</td><td>Un extrait réel du journal Hexapay et d'un relevé du prestataire permettra de confirmer les colonnes (TID, numéro d'autorisation, séquence) et les tolérances.</td></tr>

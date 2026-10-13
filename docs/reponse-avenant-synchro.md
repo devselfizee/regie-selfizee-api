@@ -2,7 +2,7 @@
 
 À l'attention du développeur du logiciel des bornes (`piktoo-QT-2026`).
 
-Le **schéma 1.1** est publié. Il reprend les huit demandes de l'avenant. Les schémas JSON du dépôt `regie-selfizee-api` (`schemas/transactions.v1.schema.json`, `schemas/heartbeat.v1.schema.json`) acceptent `schema_version` `"1.1"`, et toujours `"1.0"`. La spécification à jour est `docs/synchronisation-bornes.md`, et sa version illustrée `docs/synchronisation-bornes.html`.
+Le **schéma 1.1** est publié. Il reprend les huit demandes de l'avenant. Les schémas JSON du dépôt `regie-selfizee-api` (`schemas/transactions.v1.schema.json`, `schemas/heartbeat.v1.schema.json`) acceptent `schema_version` `"1.1"`, et toujours `"1.0"`. La spécification à jour est jointe en PDF (« Synchronisation des bornes avec la plateforme de suivi », schéma 1.1). Sources : `docs/synchronisation-bornes.md` et `docs/synchronisation-bornes.html`.
 
 | # | Demande | Réponse |
 |---|---|---|
@@ -17,7 +17,7 @@ Le **schéma 1.1** est publié. Il reprend les huit demandes de l'avenant. Les s
 | § 3.7 | Remboursements | Saisis en back-office (page **Ventes** de la plateforme), rattachés à la vente d'origine, partiels possibles. La borne n'envoie jamais `rembourse`. |
 | § 5 | Pikcloud | **Fait** : champ facultatif `pikcloud_uuid` (UUID). |
 | § 5 | Journal Hexapay | Oui, merci pour l'extrait réel. Avec un relevé du prestataire, il servira à régler l'import du rapprochement. |
-| § 5 | URL de DEV | Disponible : Selfizee vous la communique avec une clé de test. |
+| § 5 | URL de DEV | Disponible. Selfizee vous envoie l'adresse par e-mail, et la clé de la borne de test séparément. Le déroulé des essais est au § 10 de la spécification (§ 9 de la version Markdown). |
 
 **Règles de cohérence** ajoutées au schéma. Une vente qui ne les respecte pas est rejetée seule (`SCHEMA_INVALIDE`), sans bloquer le reste du lot :
 - `encaissement` seulement avec `accepte` ;

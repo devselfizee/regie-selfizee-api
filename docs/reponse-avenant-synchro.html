@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Réponse à l'avenant synchro</title>
+<style>
+  :root {
+    --ink: #16161a;
+    --ink-2: #4d4c48;
+    --muted: #7a7873;
+    --line: #e2e0d9;
+    --soft: #f5f4f0;
+    --paper: #ffffff;
+    --accent: #2a78d6;
+    --accent-soft: #e8f1fc;
+    --ok: #0a7a2f;
+    --ok-soft: #e4f4e7;
+    --warn: #8a5a00;
+    --warn-soft: #fff3d6;
+    --crit: #b42626;
+    --crit-soft: #fde8e8;
+    --code-bg: #1d1f24;
+    --code-ink: #e6e6e6;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0;
+    background: #eceae4;
+    color: var(--ink);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .page {
+    max-width: 210mm;
+    margin: 24px auto;
+    background: var(--paper);
+    padding: 18mm 17mm;
+    box-shadow: 0 2px 18px rgba(0,0,0,.08);
+  }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 10px; letter-spacing: -.01em; }
+  h2 {
+    font-size: 19px; margin: 34px 0 12px; padding-top: 6px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  h2 .num {
+    font-size: 13px; font-weight: 700; color: var(--accent);
+    border: 1.5px solid var(--accent); border-radius: 6px; padding: 0 7px;
+  }
+  h3 { font-size: 15px; margin: 22px 0 8px; }
+  p { margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  pre {
+    font-family: var(--mono); font-size: 12px; line-height: 1.5;
+    background: var(--code-bg); color: var(--code-ink);
+    padding: 14px 16px; border-radius: 8px; margin: 8px 0 14px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  pre .k { color: #8cc4ff; }
+  pre .s { color: #b5e08c; }
+  pre .n { color: #ffc27a; }
+  pre .c { color: #8b8f99; }
+  pre .h { color: #f0a0d0; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 13px; }
+  th { text-align: left; font-weight: 600; color: var(--ink-2); background: var(--soft); }
+  th, td { padding: 7px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:first-child { white-space: nowrap; }
+  .req { color: var(--crit); font-weight: 700; }
+  figure { margin: 14px 0 18px; break-inside: avoid; }
+  figcaption { font-size: 12px; color: var(--muted); margin-top: 6px; text-align: center; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .callout {
+    border-left: 4px solid var(--accent); background: var(--accent-soft);
+    padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; break-inside: avoid;
+  }
+  .callout.crit { border-color: var(--crit); background: var(--crit-soft); }
+  .callout.ok { border-color: var(--ok); background: var(--ok-soft); }
+  .callout.warn { border-color: #d99a00; background: var(--warn-soft); }
+  .callout strong:first-child { display: block; margin-bottom: 2px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; break-inside: avoid; }
+  .card h4 { margin: 0 0 6px; font-size: 13.5px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+  .tag.ok { background: var(--ok-soft); color: var(--ok); }
+  .tag.crit { background: var(--crit-soft); color: var(--crit); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.neutre { background: var(--soft); color: var(--ink-2); }
+  .tag.accent { background: var(--accent-soft); color: var(--accent); }
+  .cover { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 8px; }
+  .cover .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  .cover .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; color: var(--ink-2); margin-top: 12px; }
+  .toc { columns: 2; column-gap: 28px; font-size: 13px; padding-left: 18px; margin: 10px 0 0; }
+  .toc li { margin-bottom: 3px; }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 8px 0 14px; }
+  .steps li { counter-increment: s; position: relative; padding: 8px 0 8px 40px; border-bottom: 1px dashed var(--line); break-inside: avoid; }
+  .steps li::before {
+    content: counter(s); position: absolute; left: 0; top: 7px; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center;
+  }
+  /* Maquette de l'écran Bornes */
+  .mock { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; break-inside: avoid; font-size: 12.5px; }
+  .mock-bar { background: var(--soft); padding: 7px 12px; display: flex; gap: 6px; align-items: center; border-bottom: 1px solid var(--line); }
+  .mock-bar i { width: 9px; height: 9px; border-radius: 50%; background: #d4d2cb; display: inline-block; }
+  .mock-bar span { margin-left: 8px; color: var(--muted); font-size: 11.5px; }
+  .mock table { margin: 0; font-size: 12px; }
+  .mock td, .mock th { padding: 8px 10px; }
+  .mock .sub { color: var(--muted); font-size: 11px; }
+  .no-break { break-inside: avoid; }
+
+  @page { size: A4; margin: 14mm 13mm; }
+  @media print {
+    body { background: #fff; font-size: 12.5px; }
+    .page { margin: 0; padding: 0; box-shadow: none; max-width: none; }
+    h2 { break-after: avoid; }
+    h3 { break-after: avoid; }
+    .saut { break-before: page; }
+    pre, table, .card, .callout { break-inside: avoid; }
+  }
+  @media (max-width: 700px) {
+    .page { padding: 20px 16px; margin: 0; }
+    .grid2 { grid-template-columns: 1fr; }
+    .toc { columns: 1; }
+    td:first-child { white-space: normal; }
+  }
+</style>
+<style>
+  /* Long tableau : coupé entre les lignes plutôt que reporté en entier à la page suivante */
+  @media print { table { break-inside: auto; } tr { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main class="page">
+<header class="cover">
+  <div class="eyebrow">Plateforme de suivi Régie · Selfizee</div>
+  <h1>Réponse à l'avenant<br>« synchronisation des ventes »</h1>
+  <p class="muted" style="font-size:15px;margin:0">À l'attention du développeur du logiciel des bornes (<code>piktoo-QT-2026</code>).</p>
+  <div class="meta">
+    <span><strong>Avenant du :</strong> 07/10/2026</span>
+    <span><strong>Schéma publié :</strong> <code>1.1</code> (<code>1.0</code> toujours accepté)</span>
+  </div>
+</header>
+
+<p style="margin-top:18px">Le <strong>schéma 1.1</strong> est publié. Il reprend les huit demandes de l'avenant. Les schémas JSON du dépôt <code>regie-selfizee-api</code> (<code>schemas/transactions.v1.schema.json</code>, <code>schemas/heartbeat.v1.schema.json</code>) acceptent <code>schema_version</code> <code>"1.1"</code>, et toujours <code>"1.0"</code>. La spécification à jour est jointe en PDF (« Synchronisation des bornes avec la plateforme de suivi », schéma 1.1). Sources : <code>docs/synchronisation-bornes.md</code> et <code>docs/synchronisation-bornes.html</code>.</p>
+
+<h2><span class="num">1</span> Réponse point par point</h2>
+<table>
+  <tr><th>#</th><th>Demande</th><th>Réponse</th></tr>
+  <tr><td>1</td><td>Statuts <code>expire</code>, <code>offert</code>, champ <code>encaissement</code></td><td><strong>Fait</strong>, avec <code>motif</code>. <code>offert</code> ne fait pas de chiffre d'affaires et n'est pas reversé au lieu ; il compte en « tirage non facturé ». <code>expire</code> est hors taux de refus et compté à part. <code>incertain</code> est compté dans le CA et signalé dans le rapport de rapprochement.</td></tr>
+  <tr><td>2</td><td><code>transaction_id</code> généré par la borne, n° d'autorisation dans <code>reference_monetique</code></td><td><strong>Fait</strong>. La description du schéma est corrigée. <code>reference_sequence</code> est ajouté (facultatif) : envoyez-le, il pourra départager deux paiements au même montant.</td></tr>
+  <tr><td>3</td><td>Paiement QR Stripe</td><td><strong>Fait</strong> : module <code>STRIPE_QR</code>, moyen <code>web</code>. Ces ventes sont hors rapprochement avec les relevés du terminal.</td></tr>
+  <tr><td>4</td><td>Produits <code>NUMERIQUE</code>, <code>POSTAL</code>, <code>nb_tirages</code> à 0</td><td><strong>Fait</strong>. Les codes produit restent libres ; <code>TIRAGE</code>, <code>TIRAGE_EXTRA</code>, <code>NUMERIQUE</code> et <code>POSTAL</code> sont ceux affichés dans les statistiques.</td></tr>
+  <tr><td>5</td><td>Module Hexapay, n° de série par réglage</td><td><strong>Fait</strong> : <code>HEXAPAY</code> dans le référentiel, <code>numero_serie</code> facultatif. Les gammes Spherik, Kalifun et Classic sont ajoutées.</td></tr>
+  <tr><td>6</td><td>Séances à 0 €</td><td><strong>Accepté par la plateforme</strong> : moyen <code>aucun</code>, champ <code>gratuite</code>, <code>statut: "accepte"</code>, montant <code>0</code>. Elles ne comptent ni comme vente ni dans le CA, mais apparaissent dans l'activité et les tirages non facturés. Reste à Selfizee de confirmer que les bornes les envoient.</td></tr>
+  <tr><td>7</td><td>Clé par le JSON de settings, identifiants <code>S513</code> / <code>K001</code> / <code>C042</code></td><td><strong>D'accord</strong>. Ces identifiants respectent déjà le format. Les bornes seront créées avec eux. Un <code>401</code> après régénération de la clé ne fait rien perdre.</td></tr>
+  <tr><td>8</td><td><code>ruban_restant</code> absent, codes d'erreur</td><td><strong>Fait</strong> : <code>ruban_restant</code> facultatif. Votre référentiel de codes est publié tel quel. Un code inconnu est accepté et conservé : le heartbeat n'est jamais refusé pour un libellé.</td></tr>
+  <tr><td>§ 3.7</td><td>Remboursements</td><td>Saisis en back-office (page <strong>Ventes</strong> de la plateforme), rattachés à la vente d'origine, partiels possibles. La borne n'envoie jamais <code>rembourse</code>.</td></tr>
+  <tr><td>§ 5</td><td>Pikcloud</td><td><strong>Fait</strong> : champ facultatif <code>pikcloud_uuid</code> (UUID).</td></tr>
+  <tr><td>§ 5</td><td>Journal Hexapay</td><td>Oui, merci pour l'extrait réel. Avec un relevé du prestataire, il servira à régler l'import du rapprochement.</td></tr>
+  <tr><td>§ 5</td><td>URL de DEV</td><td>Disponible. Selfizee vous envoie l'adresse par e-mail, et la clé de la borne de test séparément. Le déroulé des essais est au § 10 de la spécification (§ 9 de la version Markdown).</td></tr>
+</table>
+
+<h2><span class="num">2</span> Règles de cohérence ajoutées au schéma</h2>
+<p>Une vente qui ne les respecte pas est rejetée seule (<code>SCHEMA_INVALIDE</code>), sans bloquer le reste du lot :</p>
+<ul>
+  <li><code>encaissement</code> seulement avec <code>accepte</code> ;</li>
+  <li><code>gratuite</code> seulement avec <code>aucun</code> ;</li>
+  <li><code>aucun</code> seulement à 0 € et avec <code>accepte</code> ;</li>
+  <li>pas de <code>reference_monetique</code> avec <code>especes</code> ou <code>aucun</code>.</li>
+</ul>
+
+<div class="callout ok">
+  <strong>Vos scénarios de test sont couverts</strong>
+  Les tests de la plateforme couvrent : accepté enregistré, accepté non enregistré, incertain, refusé, annulé, expiré, paiement supplémentaire, QR, séance gratuite.
+</div>
+
+<p class="muted" style="margin-top:28px;font-size:12px;border-top:1px solid var(--line);padding-top:10px">
+  À lire avec la spécification « Synchronisation des bornes avec la plateforme de suivi », schéma 1.1. Source : dépôt <code>regie-selfizee-api</code>, <code>docs/reponse-avenant-synchro.md</code>.
+</p>
+</main>
+</body>
+</html>
