@@ -151,7 +151,7 @@ Les quatre phases sont livrées.
   - Corrections : saisonnalité de l'an dernier si elle est connue, puis jours fériés, vacances et pluie prévue, selon l'effet mesuré pour le lieu.
   - Résultat : fourchette à 80 %, date d'atteinte du seuil ou de chaque palier de commission, et « activité arrêtée » après 7 jours ouverts sans vente.
 - **Calendrier et météo** (`src/calendrier`) :
-  - **Sources** : jours fériés calculés ; vacances scolaires (open data Éducation nationale, zone déduite du code postal) ; météo Open-Meteo à l'emplacement du lieu.
+  - **Sources** : jours fériés calculés ; vacances scolaires (open data Éducation nationale, zone déduite du code postal) ; météo Météo-France (relevés quotidiens de la station la plus proche, Licence Ouverte) et MET Norway (prévisions à 9 jours, CC BY 4.0), gratuites et utilisables commercialement.
   - **Mise à jour** : synchronisation toutes les 6 h.
   - **Mesure de l'effet** : chaque jour est comparé au même jour de la semaine des 4 semaines avant et après.
 - **Journal d'événements** (`src/evenements`, CDC §8) : soirées, travaux, changements de prix. L'impact est mesuré :

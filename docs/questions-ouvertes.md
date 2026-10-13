@@ -52,7 +52,7 @@ Chaque point indique **le choix retenu par défaut dans les schémas**. Il suffi
 
 ## V3, pilotage
 
-20. **Licence météo** : Open-Meteo est gratuit pour un usage non commercial seulement. Pour la production, il faut un abonnement Open-Meteo (renseigner `OPEN_METEO_API_KEY`), ou choisir une autre source.
+20. **Licence météo** : réglé. Open-Meteo, gratuit seulement pour un usage non commercial, est remplacé par deux sources gratuites et autorisées en usage commercial : Météo-France pour l'historique (relevés quotidiens par station, Licence Ouverte 2.0) et MET Norway pour les prévisions (CC BY 4.0). Les deux sont citées sous les blocs météo.
 21. **Score des prospects** : les poids des critères sont posés « à dire d'expert » (type de lieu 4, capacité, fréquentation et visibilité 1,5, les autres 1 ou 0,5).
     → À revoir avec Sébastien quand le parc dépassera une vingtaine de lieux. La précision affichée sur la page Prospects dira si la méthode tient.
 22. **Vacances scolaires** : l'effet mesuré pendant les grandes vacances est sous-estimé, car les jours de comparaison sont eux aussi en vacances. Pour les campings, la saisonnalité N-1 le prend en compte dès la deuxième année.

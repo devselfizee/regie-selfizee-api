@@ -50,7 +50,7 @@ contexteRouter.get(
     for (let t = du.getTime(); t <= finCalendrier.getTime(); t += JOUR) {
       const j = ymd(new Date(t));
       const c = ctx.jour(j);
-      if (c.ferie || c.vacances || c.meteo) jours.push({ jour: j, ...c, temps: libelleTemps(c.meteo?.codeWmo) });
+      if (c.ferie || c.vacances || c.meteo) jours.push({ jour: j, ...c, temps: libelleTemps(c.meteo?.codeWmo) ?? ((c.meteo?.precipitationMm ?? 0) >= 1 ? "Pluie" : null) });
     }
     res.json({
       du: ymd(du),
