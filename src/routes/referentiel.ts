@@ -49,6 +49,17 @@ referentielRouter.post(
   })
 );
 
+// POST /api/referentiel/valeurs/ordre { ids } — nouvel ordre d'affichage d'une liste (ou des sous-types d'un type)
+referentielRouter.post(
+  "/valeurs/ordre",
+  exiger("ADMIN"),
+  asynchrone(async (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.number().int()).min(1).max(500) }).parse(req.body);
+    await prisma.$transaction(ids.map((id, ordre) => prisma.refValeur.update({ where: { id }, data: { ordre } })));
+    res.status(204).end();
+  })
+);
+
 // PATCH /api/referentiel/valeurs/:id — renommer, réordonner, désactiver (jamais supprimer : historique)
 referentielRouter.patch(
   "/valeurs/:id",

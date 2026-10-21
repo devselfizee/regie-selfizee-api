@@ -58,7 +58,7 @@ bornesRouter.get(
       include: {
         gamme: true,
         modules: { include: { type: true }, orderBy: { id: "desc" } },
-        affectations: { orderBy: { debut: "desc" }, include: { lieu: { select: { id: true, enseigne: true, ville: true } } } },
+        affectations: { orderBy: { debut: "desc" }, include: { lieu: { select: { id: true, enseigne: true, ville: true, dateInstallation: true } } } },
         heartbeats: { orderBy: { horodatage: "desc" }, take: 1 },
       },
     });
