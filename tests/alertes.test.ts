@@ -92,6 +92,12 @@ describe("heures d'ouverture", () => {
 });
 
 describe("borne muette", () => {
+  it("pas d'alerte « muette » pour une borne qui ne s'est encore jamais connectée à Régie", async () => {
+    await prisma.borne.update({ where: { id: borneId }, data: { dernierHeartbeat: null } });
+    const r = await evaluerAlertes(MAINTENANT);
+    expect(r.creees.filter((a) => a.type === "BORNE_MUETTE" || a.type === "ZERO_VENTE")).toHaveLength(0);
+  });
+
   it("alerte pendant les heures d'ouverture, sans doublon, puis se résout quand la borne revient", async () => {
     await prisma.borne.update({ where: { id: borneId }, data: { dernierHeartbeat: ilYa(3) } });
     const r = await evaluerAlertes(MAINTENANT);

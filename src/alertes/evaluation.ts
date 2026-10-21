@@ -94,8 +94,15 @@ export async function evaluerAlertes(maintenant = new Date()) {
     const rMuette = regle("BORNE_MUETTE", lieu.id);
     const muettes = new Set<number>();
     for (const b of bornes) {
+      // Jamais connectée à Régie : la synchronisation n'est pas encore en place sur la borne (ou pas configurée).
+      // Ce n'est pas une panne : pas d'alerte, et pas d'alerte « zéro vente » non plus, faute de données.
+      if (!b.dernierHeartbeat) {
+        muettes.add(b.id);
+        resolues += await resoudre("BORNE_MUETTE", { borneId: b.id }, "Résolue automatiquement : borne pas encore synchronisée avec Régie", maintenant);
+        continue;
+      }
       const limite = new Date(maintenant.getTime() - rMuette.parametres.heures * HEURE);
-      const silencieuse = b.dernierHeartbeat ? b.dernierHeartbeat < limite : b.installeeLe < limite;
+      const silencieuse = b.dernierHeartbeat < limite;
       if (!silencieuse) {
         resolues += await resoudre("BORNE_MUETTE", { borneId: b.id }, "Résolue automatiquement : la borne a redonné signe de vie", maintenant);
         continue;
@@ -107,9 +114,7 @@ export async function evaluerAlertes(maintenant = new Date()) {
           await lever(
             {
               type: "BORNE_MUETTE", niveau: rMuette.niveau, lieuId: lieu.id, borneId: b.id,
-              message: b.dernierHeartbeat
-                ? `${b.identifiant} (${nom}) ne donne plus signe de vie depuis le ${dateHeure(b.dernierHeartbeat)}`
-                : `${b.identifiant} (${nom}) ne s'est jamais connectée depuis son installation`,
+              message: `${b.identifiant} (${nom}) ne donne plus signe de vie depuis le ${dateHeure(b.dernierHeartbeat)}`,
               valeurs: { dernierHeartbeat: b.dernierHeartbeat, heures: rMuette.parametres.heures },
             },
             maintenant
