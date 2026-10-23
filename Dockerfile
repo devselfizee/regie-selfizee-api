@@ -31,6 +31,8 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/dist ./dist
 # Schémas JSON d'ingestion (lus au démarrage)
 COPY schemas ./schemas
+# Partie commune du config.json des événements régie (kit nightlife)
+COPY modeles ./modeles
 
 EXPOSE 3003
 

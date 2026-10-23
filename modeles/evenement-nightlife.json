@@ -1,0 +1,1473 @@
+{
+  "source": "Export étalon FJT5 (La Ruche), 19/10/2026 : partie commune du kit nightlife",
+  "customFilter": {
+    "name": "Custom",
+    "values": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "pages": [
+    {
+      "type": "welcome",
+      "backgroundImage": "Backgrounds/welcom.jpg",
+      "headerHeightRatio": 0.0925,
+      "mainContentSizeRatio": 0.6,
+      "transitionDuration": 250,
+      "palette": {
+        "accentColor1": "#ffffff",
+        "accentColor2": "#DF4C4C",
+        "backgroundColor": "#00000000",
+        "headerBackgroundColor": "#00000000",
+        "textColor": "#ffffff"
+      },
+      "reboundImage": ""
+    },
+    {
+      "type": "chooseFormat",
+      "backgroundImage": "",
+      "headerHeightRatio": 0.0925,
+      "mainContentSizeRatio": 0.8,
+      "transitionDuration": 250,
+      "palette": {
+        "accentColor1": "#49af4b",
+        "accentColor2": "#DF4C4C",
+        "backgroundColor": "#ff000000",
+        "headerBackgroundColor": "#cc000000",
+        "textColor": "#ffffff"
+      },
+      "maximumStaticDisplayCount": 9
+    },
+    {
+      "type": "viewPhoto",
+      "backgroundImage": "",
+      "headerHeightRatio": 0.181,
+      "mainContentSizeRatio": 0.8,
+      "transitionDuration": 250,
+      "palette": {
+        "accentColor1": "#49af4b",
+        "accentColor2": "#DF4C4C",
+        "backgroundColor": "#ff000000",
+        "headerBackgroundColor": "#cc000000",
+        "textColor": "#ffffff"
+      },
+      "frameLineWidth": 3,
+      "frameBorderRadius": 15
+    },
+    {
+      "type": "paytoprintPage",
+      "backgroundImage": "",
+      "headerHeightRatio": 0.0925,
+      "mainContentSizeRatio": 0.8,
+      "transitionDuration": 250,
+      "palette": {
+        "accentColor1": "#49af4b",
+        "accentColor2": "#DF4C4C",
+        "backgroundColor": "#ff151515",
+        "headerBackgroundColor": "#cc000000",
+        "textColor": "#ffffff"
+      }
+    },
+    {
+      "type": "payPage",
+      "backgroundImage": "",
+      "headerHeightRatio": 0.0925,
+      "mainContentSizeRatio": 0.8,
+      "transitionDuration": 250,
+      "palette": {
+        "accentColor1": "#49af4b",
+        "accentColor2": "#DF4C4C",
+        "backgroundColor": "#000000",
+        "headerBackgroundColor": "#ffffff",
+        "textColor": "#000000"
+      }
+    },
+    {
+      "type": "waitPrinter",
+      "backgroundImage": "",
+      "headerHeightRatio": 0.0925,
+      "mainContentSizeRatio": 0.8,
+      "transitionDuration": 250,
+      "palette": {
+        "accentColor1": "#49af4b",
+        "accentColor2": "#DF4C4C",
+        "backgroundColor": "#ff151515",
+        "headerBackgroundColor": "#cc000000",
+        "textColor": "#ffffff"
+      }
+    }
+  ],
+  "languages": [
+    {
+      "dictionary": [
+        {
+          "entry": "VALIDER",
+          "tr": "ENREGISTRER"
+        },
+        {
+          "entry": "RECOMMENCER",
+          "tr": "IGNORER"
+        },
+        {
+          "entry": "N'oubliez pas votre photo sur le côté gauche",
+          "tr": "N'oubliez pas votre photo"
+        },
+        {
+          "entry": "SOUHAITEZ-VOUS IMPRIMER VOTRE PHOTO?",
+          "tr": "SOUHAITEZ-VOUS IMPRIMER VOTRE PHOTO ?"
+        },
+        {
+          "entry": "SOUHAITEZ-VOUS CONSERVER CET ENREGISTREMENT ?",
+          "tr": "SOUHAITEZ-VOUS CONSERVER VOTRE VIDÉO ? "
+        },
+        {
+          "entry": "RECOMMENCER",
+          "tag": "chooseFilter",
+          "tr": "RECOMMENCER"
+        },
+        {
+          "entry": "Veuillez renseigner un e-mail valide.",
+          "tr": "Veuillez renseigner un e-mail valide"
+        },
+        {
+          "entry": "Veuillez vérifier le format de l'email",
+          "tr": "Veuillez vérifier le format de l'email"
+        },
+        {
+          "entry": "Veuillez renseigner le champ",
+          "tr": "Veuillez renseigner le champ"
+        },
+        {
+          "entry": "Veuillez vérifier le format du numéro de téléphone",
+          "tr": "Veuillez vérifier le format du numéro de téléphone"
+        },
+        {
+          "entry": "Veuiller sélectionner une valeur",
+          "tr": "Veuillez sélectionner une valeur"
+        },
+        {
+          "entry": "Téléphone portable",
+          "tr": "Téléphone portable"
+        },
+        {
+          "entry": "Veuillez renseigner un numéro de téléphone valide.",
+          "tr": "Veuillez renseigner un numéro de téléphone valide"
+        },
+        {
+          "entry": "VALIDER VOTRE PHOTO",
+          "tr": "VALIDEZ VOTRE PHOTO"
+        },
+        {
+          "entry": "Email",
+          "tr": "Email"
+        },
+        {
+          "entry": "Téléphone portable",
+          "tr": "Téléphone portable"
+        },
+        {
+          "entry": "Civilité",
+          "tr": "Civilité"
+        },
+        {
+          "entry": "Date",
+          "tr": "Date"
+        },
+        {
+          "entry": "Prénom",
+          "tr": "Prénom"
+        },
+        {
+          "entry": "Nom",
+          "tr": "Nom"
+        },
+        {
+          "entry": "Code Postale",
+          "tr": "Code postal"
+        },
+        {
+          "entry": "Opt-in",
+          "tr": "Opt-in"
+        },
+        {
+          "entry": "Veuillez renseigner un e-mail valide.",
+          "tr": "Veuillez renseigner un email valide"
+        },
+        {
+          "entry": "Veuillez renseigner un numéro de téléphone valide.",
+          "tr": "Veuillez renseigner un numéro de téléphone valide"
+        },
+        {
+          "entry": "Veuillez sélectionner une valeur.",
+          "tr": "Veuillez sélectionner une valeur"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide.",
+          "tr": "Veuillez sélectionner une valeur valide"
+        },
+        {
+          "entry": "J'accepte que ma photo soit publiée sur la page Facebook de l'entreprise",
+          "tr": "J'accepte que ma photo soit publiée sur les réseaux sociaux de l'entreprise"
+        },
+        {
+          "entry": "J'accepte de recevoir offres commerciales par email",
+          "tr": "J'accepte de recevoir des offres commerciales par email"
+        },
+        {
+          "entry": "J'accepte de recevoir offres commerciales par sms",
+          "tr": "J'accepte de recevoir des offres commerciales par sms"
+        },
+        {
+          "entry": "J'accepte que ma photo sera utlisée sur les supports de communication de l'entreprise",
+          "tr": "J'accepte que ma photo soit utilisée sur les supports de communication de l'entreprise"
+        },
+        {
+          "entry": "J'accepte de recevoir ma photo par email",
+          "tr": "J'accepte de recevoir ma photo par email"
+        },
+        {
+          "entry": "Email (Texte legende champ)",
+          "tr": "Email"
+        },
+        {
+          "entry": "Email (Texte default champ)",
+          "tr": "Email"
+        },
+        {
+          "entry": "Téléphone portable (Texte legende champ)",
+          "tr": "Téléphone portable"
+        },
+        {
+          "entry": "Téléphone portable (Texte default champ)",
+          "tr": "Téléphone portable"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (civ)",
+          "tr": "Veuillez renseigner une valeur valide"
+        },
+        {
+          "entry": "Civilité (Texte legende champ)",
+          "tr": "Civilité"
+        },
+        {
+          "entry": "Civilité (Texte default champ)",
+          "tr": "Civilité"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (date)",
+          "tr": "Veuillez renseigner une valeur valide "
+        },
+        {
+          "entry": "Date (Texte legende champ)",
+          "tr": "Date"
+        },
+        {
+          "entry": "Date (Texte default champ)",
+          "tr": "Date"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (prenom)",
+          "tr": "Veuillez renseigner une valeur valide"
+        },
+        {
+          "entry": "Prénoms (Texte legende champ)",
+          "tr": "Prénom"
+        },
+        {
+          "entry": "Prénoms (Texte default champ)",
+          "tr": "Prénom"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (nom)",
+          "tr": "Veuillez renseigner une valeur valide"
+        },
+        {
+          "entry": "Nom (Texte legende champ)",
+          "tr": "Nom"
+        },
+        {
+          "entry": "Nom (Texte default champ)",
+          "tr": "Nom"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (cp)",
+          "tr": "Veuillez renseigner une valeur valide"
+        },
+        {
+          "entry": "Code postale (Texte legende champ)",
+          "tr": "Code postal"
+        },
+        {
+          "entry": "Code postale (Texte default champ)",
+          "tr": "Code postal"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (autre)",
+          "tr": "Veuillez renseigner une valeur valide"
+        },
+        {
+          "entry": "Autre (Texte legende champ)",
+          "tr": "Choisir une valeur"
+        },
+        {
+          "entry": "Autre (Texte default champ)",
+          "tr": "Choisir une valeur"
+        },
+        {
+          "entry": "Veuillez saisir vos coordonnées pour recevoir votre photo",
+          "tr": "Veuillez saisir vos coordonnées pour recevoir votre photo"
+        },
+        {
+          "entry": "Veuillez saisir vos coordonnées",
+          "tr": "Veuillez saisir vos coordonnées"
+        },
+        {
+          "entry": "J'accepte que ma photo soit publiée sur la page Facebook de l'entreprise (contenu optin)",
+          "tr": "J'accepte que ma photo soit publiée sur les réseaux sociaux de l'entreprise"
+        },
+        {
+          "entry": "J'accepte de recevoir offres commerciales par email",
+          "tr": "J'accepte de recevoir des offres commerciales par email"
+        },
+        {
+          "entry": "J'accepte de recevoir offres commerciales par sms",
+          "tr": "J'accepte de recevoir des offres commerciales par sms"
+        },
+        {
+          "entry": "J'accepte que ma photo sera utlisée sur les supports de communication de l'entreprise",
+          "tr": "J'accepte que ma photo soit utilisée sur les supports de communication de l'entreprise"
+        },
+        {
+          "entry": "J'accepte de recevoir ma photo par email",
+          "tr": "J'accepte de recevoir ma photo par email"
+        },
+        {
+          "entry": "Veuillez saisir vos coordonnées pour recevoir votre photo",
+          "tr": "Veuillez saisir vos coordonnées pour recevoir votre photo"
+        },
+        {
+          "entry": "J'accepte de recevoir ma photo par sms",
+          "tr": "J'accepte de recevoir ma photo par sms"
+        },
+        {
+          "entry": "J'accepte de recevoir ma photo par sms",
+          "tr": "J'accepte de recevoir ma photo par sms"
+        },
+        {
+          "entry": "Une erreur s'est produite : le code ne correspond pas",
+          "tr": "Une erreur s'est produite : le code ne correspond pas"
+        },
+        {
+          "entry": "Une erreur s'est produite : le code ne correspond pas",
+          "tr": "Une erreur s'est produite : le code ne correspond pas"
+        },
+        {
+          "entry": "Code validé avec succès !",
+          "tr": "Code validé avec succès !"
+        },
+        {
+          "entry": "Code validé avec succès ! Il vous reste",
+          "tr": "Code validé avec succès ! Il vous reste"
+        },
+        {
+          "entry": "crédit(s) à utiliser avec ce code.",
+          "tr": "crédit(s) à utiliser avec ce code."
+        },
+        {
+          "entry": "IMPRESSION DE LA PHOTO",
+          "tr": "IMPRESSION DE LA PHOTO"
+        },
+        {
+          "entry": "Veuillez saisir votre code :",
+          "tr": " Veuillez saisir votre code :"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide.",
+          "tr": "Veuillez renseigner une valeur valide."
+        },
+        {
+          "entry": "RECOMMENCER",
+          "tr": "IGNORER"
+        },
+        {
+          "entry": "RETOUR",
+          "tr": "RETOUR"
+        },
+        {
+          "entry": "CONTINUER",
+          "tr": "CONTINUER"
+        },
+        {
+          "entry": "VOUS AVEZ LA POSSIBILITÉ D'IMPRIMER VOTRE PHOTO SI VOUS POSSÉDEZ UN CODE D'ACTIVATION.",
+          "tr": "VOUS AVEZ LA POSSIBILITÉ D'IMPRIMER VOTRE PHOTO SI VOUS POSSÉDEZ UN CODE D'ACTIVATION."
+        },
+        {
+          "entry": "IMPRIMER AVEC LE CODE",
+          "tr": "IMPRIMER AVEC LE CODE"
+        },
+        {
+          "entry": "CONTINUER SANS IMPRIMER",
+          "tr": "CONTINUER SANS IMPRIMER"
+        },
+        {
+          "entry": "ENVOYER",
+          "tr": "ENVOYER"
+        },
+        {
+          "entry": "IMPRESSION EN COURS",
+          "tr": "IMPRESSION EN COURS"
+        },
+        {
+          "entry": "ANNULER",
+          "tr": "ANNULER"
+        },
+        {
+          "entry": "TERMINER",
+          "tr": "TERMINER"
+        },
+        {
+          "entry": "TITRE PAGE REMERCIEMENT",
+          "tr": "TITRE PAGE REMERCIEMENT"
+        },
+        {
+          "entry": "TEXTE PAGE REMERCIEMENT",
+          "tr": "TEXTE PAGE REMERCIEMENT"
+        },
+        {
+          "entry": "TITRE PAGE PUB",
+          "tr": "PUB"
+        },
+        {
+          "entry": "TEXTES PAGE PUB",
+          "tr": "VOTRE PUB"
+        },
+        {
+          "entry": "FÉLICITATIONS VOUS AVEZ GAGNÉ !",
+          "tr": "FÉLICITATIONS VOUS AVEZ GAGNÉ !"
+        },
+        {
+          "entry": "Nous recherchons votre lot....",
+          "tr": "Nous recherchons votre lot...."
+        },
+        {
+          "entry": "JEU CONCOURS : PERDU !",
+          "tr": "JEU CONCOURS : PERDU !"
+        },
+        {
+          "entry": "<p>MINCE</p>\n<p>VOUS N'AVEZ PAS GAGN&Eacute; &Agrave; NOTRE JEU IMMEDIAT</p>",
+          "tr": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n<p style=\"box-sizing: border-box; outline: none; margin-top: 0px; margin-bottom: 1rem; color: #54667a; font-family: montserrat, sans-serif; font-size: 16px; background-color: #ffffff;\">MINCE</p>\r\n<p style=\"box-sizing: border-box; outline: none; margin-top: 0px; margin-bottom: 1rem; color: #54667a; font-family: montserrat, sans-serif; font-size: 16px; background-color: #ffffff;\">VOUS N'AVEZ PAS GAGN&Eacute; &Agrave; NOTRE JEU IMMEDIAT</p>\r\n</body>"
+        },
+        {
+          "entry": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n<p>BRAVO,</p>\r\n<p>VOUS AVEZ GAGN&Eacute;</p>\r\n</body>\r\n</html>",
+          "tr": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n<p style=\"box-sizing: border-box; outline: none; margin-top: 0px; margin-bottom: 1rem; color: #54667a; font-family: montserrat, sans-serif; font-size: 16px; background-color: #ffffff;\">BRAVO,</p>\r\n<p style=\"box-sizing: border-box; outline: none; margin-top: 0px; margin-bottom: 1rem; color: #54667a; font-family: montserrat, sans-serif; font-size: 16px; background-color: #ffffff;\">VOUS AVEZ GAGN&Eacute;</p>\r\n</body>\r\n</html>"
+        },
+        {
+          "entry": "CONDITION D'UTILISATION DE L'ANIMATION",
+          "tr": " "
+        },
+        {
+          "entry": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n<p><span style=\"font-family: Montserrat, sans-serif; font-size: 13px; background-color: #ffffff;\">&lt;!DOCTYPE html&gt; &lt;html&gt; &lt;head&gt; &lt;/head&gt; &lt;body&gt; &lt;p&gt;CONTENU DISCLAIMER&lt;/p&gt; &lt;/body&gt; &lt;/html&gt;</span></p>\r\n</body>\r\n</html>",
+          "tr": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>"
+        },
+        {
+          "entry": "Merci de lire et d'accepter les conditions d'utilisation pour continuer :",
+          "tr": "Merci de lire et d'accepter les conditions d'utilisation pour continuer :"
+        },
+        {
+          "entry": "popup-btn-",
+          "tr": " Voir les conditions générales d’utilisation"
+        },
+        {
+          "entry": "popup-title-",
+          "tr": " "
+        },
+        {
+          "entry": "Contenu de la popup",
+          "tr": " "
+        },
+        {
+          "entry": "email ndd",
+          "tr": " "
+        },
+        {
+          "entry": "Veuillez saisir vos coordonnées pour recevoir votre photo",
+          "tr": "Veuillez saisir vos coordonnées pour recevoir votre photo"
+        },
+        {
+          "entry": "TOUCHER L'ÉCRAN",
+          "tr": "TOUCHEZ L'ÉCRAN"
+        },
+        {
+          "entry": "CHOISISSEZ VOTRE ANIMATION",
+          "tr": "CHOISISSEZ VOTRE ANIMATION"
+        },
+        {
+          "entry": "SÉLECTIONNER VOTRE FORMAT",
+          "tr": "SÉLECTIONNEZ VOTRE FORMAT"
+        },
+        {
+          "entry": "Un petit clin d’œil à la caméra !",
+          "tr": "Souriez !!"
+        },
+        {
+          "entry": "SÉLECTIONNER VOTRE FOND",
+          "tr": "SÉLECTIONNEZ VOTRE FOND"
+        },
+        {
+          "entry": "CHOISISSEZ VOTRE FILTRE",
+          "tr": "SOUHAITEZ-VOUS CONSERVER VOTRE PHOTO ?"
+        },
+        {
+          "entry": "IMPRESSION DE LA PHOTO",
+          "tr": " IMPRESSION DE LA PHOTO"
+        },
+        {
+          "entry": "VOUS AVEZ LA POSSIBILITÉ D'IMPRIMER VOTRE PHOTO SI VOUS POSSÉDEZ UN CODE D'ACTIVATION.",
+          "tr": "VOUS AVEZ LA POSSIBILITÉ D'IMPRIMER VOTRE PHOTO SI VOUS POSSÉDEZ UN CODE D'ACTIVATION."
+        },
+        {
+          "entry": "Veuillez vérifier votre connexion internet ou contacter l'accueil",
+          "tr": "Veuillez vérifier votre connexion internet ou contacter l'accueil"
+        },
+        {
+          "entry": "IMPRESSION DE LA PHOTO [129]",
+          "tr": "IMPRESSION DE LA PHOTO"
+        },
+        {
+          "entry": "Veuillez saisir votre code :",
+          "tr": " Veuillez saisir votre code :"
+        },
+        {
+          "entry": "IMPRESSION LANCÉE",
+          "tr": "IMPRESSION EN COURS"
+        }
+      ],
+      "icon": "Tr/fr_FR.png",
+      "name": "fr_FR"
+    },
+    {
+      "dictionary": [
+        {
+          "entry": "VALIDER",
+          "tr": "SAVE"
+        },
+        {
+          "entry": "RECOMMENCER",
+          "tr": "IGNORE"
+        },
+        {
+          "entry": "IMPRIMER",
+          "tr": "PRINT"
+        },
+        {
+          "entry": "N'oubliez pas votre photo sur le côté gauche",
+          "tr": "Don't forget your photo"
+        },
+        {
+          "entry": "tirages restants",
+          "tr": "Remaining sheets"
+        },
+        {
+          "entry": "NON",
+          "tr": "NO"
+        },
+        {
+          "entry": "OUI",
+          "tr": "YES"
+        },
+        {
+          "entry": "Vérifiez le format de l'adresse e-mail",
+          "tr": "Check the format of the e-mail address"
+        },
+        {
+          "entry": "OK",
+          "tr": "OK"
+        },
+        {
+          "entry": "Quelle est votre adresse e-mail ?",
+          "tr": "What is your email address?"
+        },
+        {
+          "entry": "SOUHAITEZ-VOUS IMPRIMER VOTRE PHOTO?",
+          "tr": "PRINT YOUR PHOTO?"
+        },
+        {
+          "entry": "PASSER",
+          "tr": "SKIP"
+        },
+        {
+          "entry": "Un problème avec l'impression",
+          "tr": "An issue occured during printing"
+        },
+        {
+          "entry": "tirages restants",
+          "tr": "Remaining sheets"
+        },
+        {
+          "entry": "SÉLECTIONNEZ LE TYPE D'ANIMATION",
+          "tr": "SELECT YOUR ANIMATION"
+        },
+        {
+          "entry": "PHOTO",
+          "tr": "PHOTO"
+        },
+        {
+          "entry": "LIVRE D'OR\\nVIDÉO",
+          "tr": "VIDEO GUESTBOOK"
+        },
+        {
+          "entry": "GIF MULTIPOSE",
+          "tr": "MULTIPOSE GIF"
+        },
+        {
+          "entry": "BOOMERANG\\nVIDÉO",
+          "tr": "VIDEO BOOMERANG"
+        },
+        {
+          "entry": "Préparez-vous !",
+          "tr": "Get ready!"
+        },
+        {
+          "entry": "Enregistrement en cours",
+          "tr": "Recording..."
+        },
+        {
+          "entry": "SOUHAITEZ-VOUS CONSERVER CET ENREGISTREMENT ?",
+          "tr": "SAVE YOUR VIDEO?"
+        },
+        {
+          "entry": "Préparez-vous pour la première photo !",
+          "tr": "Get ready for the first photo!"
+        },
+        {
+          "entry": "Mettez du mouvement pour la prochaine photo !",
+          "tr": "The second one!"
+        },
+        {
+          "entry": "Et une petite dernière !",
+          "tr": "And the last one!"
+        },
+        {
+          "entry": "SOUHAITEZ-VOUS CONSERVER VOTRE GIF ?",
+          "tr": "SAVE YOUR GIF?"
+        },
+        {
+          "entry": "SOUHAITEZ-VOUS CONSERVER VOTRE BOOMERANG ?",
+          "tr": "SAVE YOUR BOOMERANG?"
+        },
+        {
+          "entry": "Souriez en regardant le haut de l'écran !",
+          "tr": "Smile! "
+        },
+        {
+          "entry": "TERMINER L'ENREGISTREMENT",
+          "tr": "STOP RECORD"
+        },
+        {
+          "entry": "VIDÉO",
+          "tr": "VIDEO"
+        },
+        {
+          "entry": "seconde",
+          "tr": "second"
+        },
+        {
+          "entry": "secondes",
+          "tr": "seconds"
+        },
+        {
+          "entry": "J'accepte",
+          "tr": "I AGREE"
+        },
+        {
+          "entry": "Je refuse",
+          "tr": "I DISAGREE"
+        },
+        {
+          "entry": "RECOMMENCER",
+          "tag": "chooseFilter",
+          "tr": "RESTART"
+        },
+        {
+          "entry": "Veuillez renseigner un e-mail valide.",
+          "tr": "Please enter a valid email"
+        },
+        {
+          "entry": "Veuillez vérifier le format de l'email",
+          "tr": "Please check email format"
+        },
+        {
+          "entry": "Veuillez renseigner le champ",
+          "tr": "Please fill in the field"
+        },
+        {
+          "entry": "Veuillez vérifier le format du numéro de téléphone",
+          "tr": "Please check mobile format"
+        },
+        {
+          "entry": "Veuiller sélectionner une valeur",
+          "tr": "Please select a value"
+        },
+        {
+          "entry": "Téléphone portable",
+          "tr": "Phone number"
+        },
+        {
+          "entry": "Veuillez renseigner un numéro de téléphone valide.",
+          "tr": "Please fill in a valid phone number."
+        },
+        {
+          "entry": "VALIDER VOTRE PHOTO",
+          "tr": "VALIDATE YOUR PHOTO"
+        },
+        {
+          "entry": "Email",
+          "tr": "Email"
+        },
+        {
+          "entry": "Téléphone portable",
+          "tr": "Mobile phone"
+        },
+        {
+          "entry": "Civilité",
+          "tr": "Title"
+        },
+        {
+          "entry": "Date",
+          "tr": "Date"
+        },
+        {
+          "entry": "Prénom",
+          "tr": "First name"
+        },
+        {
+          "entry": "Nom",
+          "tr": "Last name"
+        },
+        {
+          "entry": "Code Postale",
+          "tr": "Postal code"
+        },
+        {
+          "entry": "Opt-in",
+          "tr": "Opt-in"
+        },
+        {
+          "entry": "Veuillez renseigner un e-mail valide.",
+          "tr": "Please provide a valid email"
+        },
+        {
+          "entry": "Veuillez renseigner un numéro de téléphone valide.",
+          "tr": "Please provide a valid phone number"
+        },
+        {
+          "entry": "Veuillez sélectionner une valeur.",
+          "tr": "Please provide a value"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide.",
+          "tr": "Please provide a valid value"
+        },
+        {
+          "entry": "J'accepte que ma photo soit publiée sur la page Facebook de l'entreprise",
+          "tr": "I agree that my photo can be published on the company's social networks"
+        },
+        {
+          "entry": "J'accepte de recevoir offres commerciales par email",
+          "tr": "I agree to receive my photo by email"
+        },
+        {
+          "entry": "J'accepte de recevoir offres commerciales par sms",
+          "tr": "I agree to receive commercial offers via text message"
+        },
+        {
+          "entry": "J'accepte que ma photo sera utlisée sur les supports de communication de l'entreprise",
+          "tr": "I agree that my photo can be used on the company's communication materials."
+        },
+        {
+          "entry": "J'accepte de recevoir ma photo par email",
+          "tr": "I agree to receive my photo by email"
+        },
+        {
+          "entry": "Email (Texte legende champ)",
+          "tr": "Email"
+        },
+        {
+          "entry": "Email (Texte default champ)",
+          "tr": "Email"
+        },
+        {
+          "entry": "Téléphone portable (Texte legende champ)",
+          "tr": "Mobile phone"
+        },
+        {
+          "entry": "Téléphone portable (Texte default champ)",
+          "tr": "Mobile phone"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (civ)",
+          "tr": "Please provide a valid value"
+        },
+        {
+          "entry": "Civilité (Texte legende champ)",
+          "tr": "Title"
+        },
+        {
+          "entry": "Civilité (Texte default champ)",
+          "tr": "Title"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (date)",
+          "tr": "Please provide a valid value"
+        },
+        {
+          "entry": "Date (Texte legende champ)",
+          "tr": "Date"
+        },
+        {
+          "entry": "Date (Texte default champ)",
+          "tr": "Date"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (prenom)",
+          "tr": "Please provide a valid value"
+        },
+        {
+          "entry": "Prénoms (Texte legende champ)",
+          "tr": "First name"
+        },
+        {
+          "entry": "Prénoms (Texte default champ)",
+          "tr": "First name"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (nom)",
+          "tr": "Please provide a valid value"
+        },
+        {
+          "entry": "Nom (Texte legende champ)",
+          "tr": "Name"
+        },
+        {
+          "entry": "Nom (Texte default champ)",
+          "tr": "Name"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (cp)",
+          "tr": "Please provide a valid value"
+        },
+        {
+          "entry": "Code postale (Texte legende champ)",
+          "tr": "Postal code"
+        },
+        {
+          "entry": "Code postale (Texte default champ)",
+          "tr": "Postal code"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide (autre)",
+          "tr": "Please provide a valid value"
+        },
+        {
+          "entry": "Autre (Texte legende champ)",
+          "tr": "Choose a value"
+        },
+        {
+          "entry": "Autre (Texte default champ)",
+          "tr": "Choose a value"
+        },
+        {
+          "entry": "Veuillez saisir vos coordonnées pour recevoir votre photo",
+          "tr": "Please enter your contact information to receive your photo."
+        },
+        {
+          "entry": "Veuillez saisir vos coordonnées",
+          "tr": "Please enter your contact details."
+        },
+        {
+          "entry": "J'accepte que ma photo soit publiée sur la page Facebook de l'entreprise (contenu optin)",
+          "tr": "I agree that my photo can be published on the company's social networks"
+        },
+        {
+          "entry": "J'accepte de recevoir offres commerciales par email",
+          "tr": "I agree to receive commercial offers by email"
+        },
+        {
+          "entry": "J'accepte de recevoir offres commerciales par sms",
+          "tr": "I agree to receive commercial offers via text message"
+        },
+        {
+          "entry": "J'accepte que ma photo sera utlisée sur les supports de communication de l'entreprise",
+          "tr": "I agree that my photo can be used in the company's communication materials"
+        },
+        {
+          "entry": "J'accepte de recevoir ma photo par email",
+          "tr": "I agree to receive my photo by email"
+        },
+        {
+          "entry": "Veuillez saisir vos coordonnées pour recevoir votre photo",
+          "tr": "Please enter your contact information to receive your photo"
+        },
+        {
+          "entry": "J'accepte de recevoir ma photo par sms",
+          "tr": "I agree to receive my photo by text message "
+        },
+        {
+          "entry": "J'accepte de recevoir ma photo par sms",
+          "tr": "I agree to receive my photo by text message "
+        },
+        {
+          "entry": "IMPRESSION DE LA PHOTO",
+          "tr": "PRINTING OF THE PHOTO"
+        },
+        {
+          "entry": "Une erreur s'est produite : le code ne correspond pas",
+          "tr": "An error occurred: the code does not match"
+        },
+        {
+          "entry": "Une erreur s'est produite : le code ne correspond pas",
+          "tr": "An error occurred: the code does not match"
+        },
+        {
+          "entry": "Code validé avec succès !",
+          "tr": "Code successfully validated!"
+        },
+        {
+          "entry": "Code validé avec succès ! Il vous reste",
+          "tr": "Code successfully validated! You have remaining"
+        },
+        {
+          "entry": "crédit(s) à utiliser avec ce code.",
+          "tr": "credit(s) to be used with this code"
+        },
+        {
+          "entry": "IMPRESSION DE LA PHOTO",
+          "tr": "PRINTING OF THE PHOTO"
+        },
+        {
+          "entry": "Veuillez saisir votre code :",
+          "tr": "Please enter your code :"
+        },
+        {
+          "entry": "Veuillez renseigner une valeur valide.",
+          "tr": "Please provide a valid value"
+        },
+        {
+          "entry": "RECOMMENCER",
+          "tr": "IGNORE"
+        },
+        {
+          "entry": "RETOUR",
+          "tr": "BACK"
+        },
+        {
+          "entry": "CONTINUER",
+          "tr": "CONTINUE"
+        },
+        {
+          "entry": "VOUS AVEZ LA POSSIBILITÉ D'IMPRIMER VOTRE PHOTO SI VOUS POSSÉDEZ UN CODE D'ACTIVATION.",
+          "tr": "YOU HAVE THE POSSIBILITY TO PRINT YOUR PHOTO IF YOU HAVE AN ACTIVATION CODE"
+        },
+        {
+          "entry": "IMPRIMER AVEC LE CODE",
+          "tr": "PRINT WITH THE CODE"
+        },
+        {
+          "entry": "CONTINUER SANS IMPRIMER",
+          "tr": "CONTINUE WITHOUT PRINTING"
+        },
+        {
+          "entry": "ENVOYER",
+          "tr": "SEND"
+        },
+        {
+          "entry": "IMPRESSION EN COURS",
+          "tr": "PRINTING IN PROGRESS"
+        },
+        {
+          "entry": "ANNULER",
+          "tr": "CANCEL"
+        },
+        {
+          "entry": "TERMINER",
+          "tr": "TO FINISH"
+        },
+        {
+          "entry": "TITRE PAGE REMERCIEMENT",
+          "tr": "THANKS"
+        },
+        {
+          "entry": "TEXTE PAGE REMERCIEMENT",
+          "tr": "THANKS ..."
+        },
+        {
+          "entry": "FÉLICITATIONS VOUS AVEZ GAGNÉ !",
+          "tr": "CONGRATULATIONS, YOU'VE WON!"
+        },
+        {
+          "entry": "Nous recherchons votre lot....",
+          "tr": "We are looking for your lot...."
+        },
+        {
+          "entry": "JEU CONCOURS : PERDU !",
+          "tr": "CONTEST: LOST!"
+        },
+        {
+          "entry": "<p>MINCE</p>\n<p>VOUS N'AVEZ PAS GAGN&Eacute; &Agrave; NOTRE JEU IMMEDIAT</p>",
+          "tr": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n<p>THIN</p>\r\n<p>YOU DIDN'T WIN AT OUR IMMEDIATE GAME</p>\r\n</body>\r\n</html>"
+        },
+        {
+          "entry": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n<p>BRAVO,</p>\r\n<p>VOUS AVEZ GAGN&Eacute;</p>\r\n</body>\r\n</html>",
+          "tr": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n<p>WELL DONE,</p>\r\n<p>YOU HAVE WON</p>\r\n</body>\r\n</html>"
+        },
+        {
+          "entry": "Date de naissance",
+          "tr": "Date of birth"
+        },
+        {
+          "entry": "Jour",
+          "tr": "Day"
+        },
+        {
+          "entry": "Mois",
+          "tr": "Month"
+        },
+        {
+          "entry": "Année",
+          "tr": "Year"
+        },
+        {
+          "entry": "CONDITION D'UTILISATION DE L'ANIMATION",
+          "tr": " "
+        },
+        {
+          "entry": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n<p><span style=\"font-family: Montserrat, sans-serif; font-size: 13px; background-color: #ffffff;\">&lt;!DOCTYPE html&gt; &lt;html&gt; &lt;head&gt; &lt;/head&gt; &lt;body&gt; &lt;p&gt;CONTENU DISCLAIMER&lt;/p&gt; &lt;/body&gt; &lt;/html&gt;</span></p>\r\n</body>\r\n</html>",
+          "tr": "<!DOCTYPE html>\r\n<html>\r\n<head>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>"
+        },
+        {
+          "entry": "Merci de lire et d'accepter les conditions d'utilisation pour continuer :",
+          "tr": " Merci de lire et d'accepter les conditions d'utilisation pour continuer :"
+        },
+        {
+          "entry": "popup-title-",
+          "tr": " "
+        },
+        {
+          "entry": "Contenu de la popup",
+          "tr": " "
+        },
+        {
+          "entry": "SAISIE DE VOTRE CODE",
+          "tr": "ENTERING YOUR CODE"
+        },
+        {
+          "entry": "Recherche en cours...",
+          "tr": "Research in progress..."
+        },
+        {
+          "entry": "Code invalide, aucun participant trouvé",
+          "tr": "Invalid code, no participant found"
+        },
+        {
+          "entry": "Une erreur s'est produite. Veuillez réessayer ou vérifier la connexion internet",
+          "tr": "An error has occurred. Please try again or check the internet connection"
+        },
+        {
+          "entry": "TOUCHER L'ÉCRAN",
+          "tr": "TOUCH THE SCREEN"
+        },
+        {
+          "entry": "CHOISISSEZ VOTRE ANIMATION",
+          "tr": "SELECT YOUR ANIMATION"
+        },
+        {
+          "entry": "SÉLECTIONNER VOTRE FORMAT",
+          "tr": "SELECT YOUR FRAME"
+        },
+        {
+          "entry": "Un petit clin d’œil à la caméra !",
+          "tr": "Smile!"
+        },
+        {
+          "entry": "SÉLECTIONNER VOTRE FOND",
+          "tr": "SELECT YOUR BACKGROUND"
+        },
+        {
+          "entry": "CHOISISSEZ VOTRE FILTRE",
+          "tr": "SAVE YOUR PHOTO? "
+        },
+        {
+          "entry": "IMPRESSION DE LA PHOTO",
+          "tr": "PRINTING OF THE PHOTO"
+        },
+        {
+          "entry": "VOUS AVEZ LA POSSIBILITÉ D'IMPRIMER VOTRE PHOTO SI VOUS POSSÉDEZ UN CODE D'ACTIVATION.",
+          "tr": "YOU HAVE THE POSSIBILITY TO PRINT YOUR PHOTO IF YOU HAVE AN ACTIVATION CODE"
+        },
+        {
+          "entry": "Veuillez vérifier votre connexion internet ou contacter l'accueil",
+          "tr": "Please check your internet connection or contact reception"
+        },
+        {
+          "entry": "IMPRESSION DE LA PHOTO [129]",
+          "tr": "PRINTING OF THE PHOTO"
+        },
+        {
+          "entry": "Veuillez saisir votre code :",
+          "tr": "Please type your code :"
+        },
+        {
+          "entry": "IMPRESSION LANCÉE",
+          "tr": "PRINTING..."
+        },
+        {
+          "entry": "Veuillez saisir vos coordonnées pour recevoir votre photo",
+          "tr": "PLEASE ENTER YOUR DETAILS "
+        }
+      ],
+      "icon": "Tr/en_GB.png",
+      "name": "en_GB"
+    }
+  ],
+  "version": {
+    "version": 2
+  },
+  "gabarits": {
+    "bandelette": {
+      "2inchCut": true,
+      "gsBackgrounds": [],
+      "previewROI": {
+        "height": 1844,
+        "width": 620,
+        "x": 0,
+        "y": 0
+      },
+      "shoots": [
+        {
+          "id": 0,
+          "width": 538,
+          "height": 383
+        },
+        {
+          "id": 1,
+          "width": 537,
+          "height": 383
+        },
+        {
+          "id": 2,
+          "width": 537,
+          "height": 383
+        },
+        {
+          "id": 3,
+          "width": 538,
+          "height": 383
+        },
+        {
+          "id": 0,
+          "width": 282,
+          "height": 200
+        },
+        {
+          "id": 1,
+          "width": 282,
+          "height": 200
+        },
+        {
+          "id": 2,
+          "width": 282,
+          "height": 200
+        },
+        {
+          "id": 3,
+          "width": 282,
+          "height": 200
+        }
+      ],
+      "holes": [
+        {
+          "shootId": 0,
+          "x": 37,
+          "y": 78,
+          "width": 538,
+          "height": 383
+        },
+        {
+          "shootId": 1,
+          "x": 37,
+          "y": 476,
+          "width": 537,
+          "height": 383
+        },
+        {
+          "shootId": 2,
+          "x": 37,
+          "y": 874,
+          "width": 537,
+          "height": 383
+        },
+        {
+          "shootId": 3,
+          "x": 37,
+          "y": 1272,
+          "width": 538,
+          "height": 383
+        },
+        {
+          "shootId": 0,
+          "x": 791,
+          "y": 447,
+          "width": 282,
+          "height": 200
+        },
+        {
+          "shootId": 1,
+          "x": 791,
+          "y": 661,
+          "width": 282,
+          "height": 200
+        },
+        {
+          "shootId": 2,
+          "x": 791,
+          "y": 875,
+          "width": 282,
+          "height": 200
+        },
+        {
+          "shootId": 3,
+          "x": 791,
+          "y": 1089,
+          "width": 282,
+          "height": 200
+        }
+      ],
+      "blendOverlay": false,
+      "preview": "Frames/strip_preview.jpg",
+      "lvOverlay": "",
+      "overlay": "Frames/strip_frame.png",
+      "watermark": "",
+      "qrHoles": [
+        {
+          "x": 832,
+          "y": 1520,
+          "width": 200,
+          "height": 200
+        }
+      ],
+      "sessionCode": {
+        "x": 656,
+        "y": 1770,
+        "width": 154,
+        "height": 28,
+        "rotation": 0,
+        "color": "#f0c400",
+        "align": "AlignLeft",
+        "prefix": true
+      }
+    },
+    "pola": {
+      "2inchCut": false,
+      "gsBackgrounds": [],
+      "previewROI": {
+        "height": 1844,
+        "width": 1240,
+        "x": 0,
+        "y": 0
+      },
+      "shoots": [
+        {
+          "id": 0,
+          "height": 1256,
+          "width": 1113
+        }
+      ],
+      "holes": [
+        {
+          "shootId": 0,
+          "x": 63,
+          "y": 114,
+          "height": 1256,
+          "width": 1113
+        }
+      ],
+      "blendOverlay": false,
+      "preview": "Frames/polaroid_preview.jpg",
+      "lvOverlay": "Frames/polaroid_frame.png",
+      "overlay": "Frames/polaroid_frame.png",
+      "watermark": "",
+      "sessionCode": false
+    },
+    "planche": {
+      "2inchCut": false,
+      "gsBackgrounds": [],
+      "previewROI": {
+        "height": 1844,
+        "width": 1240,
+        "x": 0,
+        "y": 0
+      },
+      "shoots": [
+        {
+          "id": 0,
+          "height": 560,
+          "width": 560
+        },
+        {
+          "id": 1,
+          "height": 560,
+          "width": 560
+        },
+        {
+          "id": 2,
+          "height": 560,
+          "width": 560
+        },
+        {
+          "id": 3,
+          "height": 560,
+          "width": 560
+        }
+      ],
+      "holes": [
+        {
+          "shootId": 0,
+          "x": 40,
+          "y": 128,
+          "height": 560,
+          "width": 560
+        },
+        {
+          "shootId": 1,
+          "x": 640,
+          "y": 128,
+          "height": 560,
+          "width": 560
+        },
+        {
+          "shootId": 2,
+          "x": 40,
+          "y": 736,
+          "height": 560,
+          "width": 560
+        },
+        {
+          "shootId": 3,
+          "x": 640,
+          "y": 732,
+          "height": 560,
+          "width": 560
+        }
+      ],
+      "blendOverlay": false,
+      "preview": "Frames/multiShoot_preview.jpg",
+      "lvOverlay": "",
+      "overlay": "Frames/multiShoot_frame.png",
+      "watermark": "",
+      "sessionCode": false
+    },
+    "carte": {
+      "2inchCut": false,
+      "cutterSetup": [
+        5.08,
+        10.16,
+        5.08
+      ],
+      "paperFormat": "15x20",
+      "gsBackgrounds": [],
+      "previewROI": {
+        "height": 1844,
+        "width": 1218,
+        "x": 609,
+        "y": 0
+      },
+      "shoots": [
+        {
+          "id": 0,
+          "width": 1097,
+          "height": 1260
+        },
+        {
+          "id": 0,
+          "width": 433,
+          "height": 497
+        },
+        {
+          "id": 0,
+          "width": 433,
+          "height": 497
+        }
+      ],
+      "holes": [
+        {
+          "shootId": 0,
+          "x": 666,
+          "y": 109,
+          "width": 1097,
+          "height": 1260
+        },
+        {
+          "shootId": 0,
+          "x": 88,
+          "y": 400,
+          "width": 433,
+          "height": 497
+        },
+        {
+          "shootId": 0,
+          "x": 1915,
+          "y": 400,
+          "width": 433,
+          "height": 497
+        }
+      ],
+      "blendOverlay": false,
+      "preview": "Frames/carte_preview.jpg",
+      "lvOverlay": "",
+      "overlay": "Frames/carte_frame.png",
+      "watermark": "",
+      "qrHoles": [
+        {
+          "x": 206,
+          "y": 1153,
+          "width": 196,
+          "height": 200
+        },
+        {
+          "x": 2033,
+          "y": 1153,
+          "width": 196,
+          "height": 200
+        }
+      ],
+      "sessionCode": {
+        "x": 147,
+        "y": 1589,
+        "width": 314,
+        "height": 36,
+        "rotation": 0,
+        "color": "#f0c400",
+        "align": "AlignHCenter",
+        "prefix": true
+      }
+    }
+  }
+}

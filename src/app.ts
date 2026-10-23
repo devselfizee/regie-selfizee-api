@@ -19,6 +19,7 @@ import { ventesRouter } from "./routes/ventes.js";
 import { demoRouter } from "./routes/demo.js";
 import { contexteRouter, evenementsLieuRouter, evenementsRouter } from "./routes/contexte.js";
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
+import { configEvenementRouter } from "./routes/configEvenement.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
 
@@ -64,6 +65,7 @@ export function creerApp() {
   app.use("/api/referentiel", referentielRouter);
   app.use("/api/lieux", lieuxRouter);
   app.use("/api/lieux", evenementsLieuRouter);
+  app.use("/api/lieux", configEvenementRouter);
   app.use("/api/evenements", evenementsRouter);
   app.use("/api/imports", tech, importsRouter);
   app.use("/api/bornes", tech, bornesRouter);

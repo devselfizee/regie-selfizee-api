@@ -20,6 +20,7 @@ export async function viderBase() {
     prisma.releveMonetique.deleteMany(),
     prisma.meteoJour.deleteMany(),
     prisma.evenementLieu.deleteMany(),
+    prisma.configEvenement.deleteMany(),
     prisma.transaction.deleteMany(),
     prisma.importErreur.deleteMany(),
     prisma.importLot.deleteMany(),

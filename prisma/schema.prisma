@@ -173,6 +173,7 @@ model Lieu {
   reversements Reversement[]
   alertes      Alerte[]
   evenements   EvenementLieu[]
+  configEvenement ConfigEvenement?
   meteo        MeteoJour[]
   partenaires  User[]              @relation("PartenaireLieu")
   aggJours     AggJour[]
@@ -1046,4 +1047,26 @@ model AuditLog {
 
   @@index([entite, entiteId])
   @@map("audit_logs")
+}
+
+// Événement de la borne d'un lieu en régie (CDC page souvenir § 13) : réglages saisis dans
+// la fiche événement, d'où est généré le config.json chargé par la borne.
+model ConfigEvenement {
+  id                Int       @id @default(autoincrement())
+  lieuId            Int       @unique @map("lieu_id")
+  // Code d'événement régie : R + 3 caractères (CDC § 14.1)
+  code              String    @unique @db.VarChar(8)
+  motDePasseTableau String    @map("mot_de_passe_tableau")
+  // Réglages validés par reglagesSchema (src/config-evenement/reglages.ts)
+  reglages          Json
+  // Dernière publication : version, date et config.json figé
+  version           Int       @default(0)
+  publieeLe         DateTime? @map("publiee_le") @db.Timestamptz(3)
+  configPubliee     Json?     @map("config_publiee")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+
+  @@map("config_evenements")
 }
