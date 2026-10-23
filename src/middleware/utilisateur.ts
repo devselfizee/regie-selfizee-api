@@ -21,10 +21,22 @@ export const adminsInitiaux = (brut = process.env.ADMIN_EMAILS ?? "") =>
 
 const champs = { id: true, email: true, nom: true, prenom: true, role: true, lieuId: true, isActive: true, keycloakSub: true } as const;
 
+// Noms de rôles Keycloak (realm ou client) qui donnent le rôle ADMIN ici, sans tenir compte de la casse
+export const rolesAdminKeycloak = (brut = process.env.KEYCLOAK_ROLES_ADMIN || "admin,administrateur,administrator,super-admin,super_admin,superadmin") =>
+  brut.split(/[,;\s]+/).map((r) => r.trim().toLowerCase()).filter(Boolean);
+
+/** Le jeton porte-t-il un rôle admin, au niveau du realm ou d'un client ? */
+export function estAdminKeycloak(jeton: AuthRequest["user"]): boolean {
+  const roles = [...(jeton?.realm_access?.roles ?? []), ...Object.values(jeton?.resource_access ?? {}).flatMap((c) => c.roles ?? [])];
+  const admins = rolesAdminKeycloak();
+  return roles.some((r) => admins.includes(r.toLowerCase()));
+}
+
 /**
  * Associe le compte Keycloak à un utilisateur de l'application.
- * Le realm Keycloak est partagé entre plusieurs applications : être connecté
- * ne suffit pas, il faut avoir été ajouté ici par un admin (ou figurer dans ADMIN_EMAILS).
+ * Tout compte du realm entre : créé à sa première connexion, ADMIN s'il a un rôle admin
+ * dans Keycloak (ou figure dans ADMIN_EMAILS), COMMERCIAL sinon. Un admin peut ensuite
+ * changer son rôle ou le désactiver dans la page Utilisateurs.
  */
 export async function utilisateurCourant(req: UtilisateurRequest, res: Response, next: NextFunction) {
   try {
@@ -54,30 +66,36 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     const email = (req.user?.email ?? (identifiant?.includes("@") ? identifiant : undefined))?.toLowerCase();
     if (!sub) return res.status(401).json({ error: "Token invalide" });
 
+    const admin = estAdminKeycloak(req.user) || (email !== undefined && adminsInitiaux().includes(email));
     let u = await prisma.user.findUnique({ where: { keycloakSub: sub }, select: champs });
 
-    // Première connexion : rattachement par e-mail à un utilisateur ajouté par un admin
+    // Première connexion : rattachement par e-mail à un utilisateur ajouté par un admin, sinon création
     if (!u && email) {
       const parEmail = await prisma.user.findUnique({ where: { email }, select: champs });
       if (parEmail && !parEmail.keycloakSub) {
         u = await prisma.user.update({ where: { id: parEmail.id }, data: { keycloakSub: sub }, select: champs });
-      } else if (!parEmail && adminsInitiaux().includes(email)) {
+      } else if (!parEmail) {
         u = await prisma.user.create({
           data: {
             email,
             keycloakSub: sub,
             nom: req.user?.family_name ?? email,
             prenom: req.user?.given_name ?? "",
-            role: "ADMIN",
+            role: admin ? "ADMIN" : "COMMERCIAL",
           },
           select: champs,
         });
       }
     }
 
+    // Admin dans Keycloak = admin ici, même si le compte existait avec un autre rôle
+    if (u?.isActive && admin && u.role !== "ADMIN") {
+      u = await prisma.user.update({ where: { id: u.id }, data: { role: "ADMIN" }, select: champs });
+    }
+
     if (!u || !u.isActive) {
       console.warn(
-        `Accès refusé à ${email ?? "(pas d'e-mail dans le jeton)"} : ${u ? "compte désactivé" : "inconnu"} — ADMIN_EMAILS lu : [${adminsInitiaux().join(", ")}]`
+        `Accès refusé à ${email ?? "(pas d'e-mail dans le jeton)"} : ${u ? "compte désactivé" : "compte sans e-mail, ou e-mail déjà rattaché à un autre compte Keycloak"}`
       );
       return res.status(403).json({
         error: "ACCES_NON_ACCORDE",

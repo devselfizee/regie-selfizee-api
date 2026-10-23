@@ -124,7 +124,7 @@ Seuils et niveaux réglables (page Paramètres → Règles d'alerte). Une anomal
 
 ## Utilisateurs et droits
 
-Le realm Keycloak `konitys` est partagé : être connecté ne suffit pas. Un admin ajoute chaque personne (e-mail + rôle) dans la page **Utilisateurs** ; le compte Keycloak est rattaché par e-mail à la première connexion. Les adresses de `ADMIN_EMAILS` deviennent ADMIN automatiquement (amorçage).
+Tout compte du realm Keycloak `konitys` entre dans la Régie : son compte est créé à sa première connexion, **ADMIN** si son jeton porte un rôle admin (realm ou client, noms dans `KEYCLOAK_ROLES_ADMIN`, défaut `admin`, `administrateur`, `super-admin`…) ou si son e-mail est dans `ADMIN_EMAILS`, **COMMERCIAL** sinon. Un rôle admin dans Keycloak fait aussi passer ADMIN un compte existant. Un admin change ensuite le rôle, ou désactive le compte, dans la page **Utilisateurs** ; une personne ajoutée d'avance dans cette page est rattachée par e-mail à sa première connexion, avec le rôle choisi.
 
 | | Admin | Commercial | Technicien | Partenaire |
 |---|---|---|---|---|

@@ -32,6 +32,7 @@ export interface AuthRequest extends Request {
     given_name?: string;
     family_name?: string;
     realm_access?: { roles: string[] };
+    resource_access?: Record<string, { roles?: string[] }>;
   };
 }
 
