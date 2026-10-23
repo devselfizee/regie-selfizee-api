@@ -19,6 +19,7 @@ import { ventesRouter } from "./routes/ventes.js";
 import { demoRouter } from "./routes/demo.js";
 import { contexteRouter, evenementsLieuRouter, evenementsRouter } from "./routes/contexte.js";
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
+import { mesPhotosRouter } from "./routes/mesPhotos.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
@@ -41,6 +42,14 @@ export function creerApp() {
     "/ingest/v1",
     express.json({ limit: process.env.INGEST_BODY_LIMIT ?? "2mb" }),
     ingestionRouter
+  );
+
+  // Page publique « Mes photos » (invités, sans connexion) : deux routes, limitées en fréquence
+  app.use(
+    "/public/v1/mes-photos",
+    cors({ origin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? "*" }),
+    express.json({ limit: "2kb" }),
+    mesPhotosRouter
   );
 
   // Back-office : CORS + Keycloak
