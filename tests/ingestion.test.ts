@@ -32,7 +32,7 @@ beforeEach(async () => {
   const k = genererCle();
   const borne = await prisma.borne.create({
     data: {
-      identifiant: "MT-0042", gammeId: gamme.id, numeroSerie: "S-42", statut: "INSTALLEE",
+      identifiant: "MT-0042", gammeId: gamme.id, statut: "INSTALLEE",
       apiKeyHash: k.hash, apiKeyPrefix: k.prefixe,
     },
   });

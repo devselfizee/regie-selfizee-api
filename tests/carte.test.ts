@@ -110,7 +110,7 @@ describe("carte", () => {
     await prisma.lieu.create({ data: { raisonSociale: "S", enseigne: "Sans position", typeLieuId: typeId } });
     const gamme = await prisma.gamme.create({ data: { code: "MT", libelle: "MT" } });
     const tm = await prisma.typeModulePaiement.create({ data: { code: "ING", libelle: "Ingenico" } });
-    const borne = await prisma.borne.create({ data: { identifiant: "MT-1", gammeId: gamme.id, numeroSerie: "1" } });
+    const borne = await prisma.borne.create({ data: { identifiant: "MT-1", gammeId: gamme.id } });
     const jour = (s: string) => new Date(`${s}T00:00:00Z`);
     await prisma.aggJour.createMany({
       data: [

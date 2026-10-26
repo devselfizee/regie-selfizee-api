@@ -73,7 +73,7 @@ describe("routes", () => {
     const co = await prisma.user.create({ data: { email: "co@test.fr", nom: "Co", prenom: "Co", role: "COMMERCIAL" } });
     // Un lieu équipé depuis 60 jours (hors périmètre du commercial) : 100 €/jour
     const actif = await prisma.lieu.create({ data: { raisonSociale: "S", enseigne: "Camping Réf", ville: "Royan", typeLieuId: type.id, capaciteAccueil: 800 } });
-    const borne = await prisma.borne.create({ data: { identifiant: "MT-1", gammeId: gamme.id, numeroSerie: "1" } });
+    const borne = await prisma.borne.create({ data: { identifiant: "MT-1", gammeId: gamme.id } });
     const hier = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() - 1));
     await prisma.affectationBorne.create({ data: { borneId: borne.id, lieuId: actif.id, debut: new Date(hier.getTime() - 59 * 86_400_000) } });
     await prisma.aggJour.createMany({

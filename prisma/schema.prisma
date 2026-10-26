@@ -339,7 +339,6 @@ model Borne {
   id          Int         @id @default(autoincrement())
   identifiant String      @unique // ID qui remonte dans les JSON (borne_id)
   gammeId     Int         @map("gamme_id")
-  numeroSerie String      @unique @map("numero_serie")
   crmId       Int?        @unique @map("crm_id") // lien parc CRM
   statut      BorneStatut @default(EN_STOCK)
   demo        Boolean     @default(false) // données de démonstration

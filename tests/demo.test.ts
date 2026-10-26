@@ -19,7 +19,7 @@ beforeEach(async () => {
   // De vraies données, qui doivent survivre à l'effacement de la démo
   const bar = await prisma.refValeur.findFirstOrThrow({ where: { categorie: "TYPE_LIEU", code: "BAR" } });
   vraiLieu = (await prisma.lieu.create({ data: { raisonSociale: "Vrai SAS", enseigne: "Vrai bar", typeLieuId: bar.id } })).id;
-  const b = (await api.post("/api/bornes").send({ identifiant: "S513", gammeId: (await prisma.gamme.findUniqueOrThrow({ where: { code: "SPHERIK" } })).id, numeroSerie: "SPHERIK-513" }).expect(201)).body;
+  const b = (await api.post("/api/bornes").send({ identifiant: "S513", gammeId: (await prisma.gamme.findUniqueOrThrow({ where: { code: "SPHERIK" } })).id }).expect(201)).body;
   vraieBorne = b.id;
   await prisma.affectationBorne.create({ data: { borneId: vraieBorne, lieuId: vraiLieu, debut: new Date("2026-01-01T00:00:00Z") } });
   await api.post("/ingest/v1/transactions").set("Authorization", `Bearer ${b.cleApi}`).send({

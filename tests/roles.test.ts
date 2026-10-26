@@ -48,7 +48,7 @@ beforeEach(async () => {
   for (const [id, lieuId] of [["MT-0042", camping], ["MT-0043", bar]] as const) {
     const k = genererCle();
     const borne = await prisma.borne.create({
-      data: { identifiant: id, gammeId: gamme.id, numeroSerie: id, apiKeyHash: k.hash, apiKeyPrefix: k.prefixe },
+      data: { identifiant: id, gammeId: gamme.id, apiKeyHash: k.hash, apiKeyPrefix: k.prefixe },
     });
     await prisma.affectationBorne.create({ data: { borneId: borne.id, lieuId, debut: new Date("2026-01-01T00:00:00Z") } });
     await request(app)

@@ -79,7 +79,7 @@ describe("GET /api/stats/segments", () => {
       });
       ids[nom] = lieu.id;
       if (!debut) continue;
-      const borne = await prisma.borne.create({ data: { identifiant: `B-${++n}`, gammeId: gamme.id, numeroSerie: `${n}` } });
+      const borne = await prisma.borne.create({ data: { identifiant: `B-${++n}`, gammeId: gamme.id } });
       await prisma.affectationBorne.create({ data: { borneId: borne.id, lieuId: lieu.id, debut: d(debut) } });
       await prisma.aggJour.create({
         data: { jour: d("2026-09-08"), lieuId: lieu.id, borneId: borne.id, typeModuleId: tm.id, moyenPaiement: "CB", nbAcceptees: 1, caTtcCents: ca!, caHtCents: 0 },

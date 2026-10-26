@@ -270,7 +270,6 @@ export async function genererDemo(maintenant = new Date()) {
         demo: true,
         identifiant: p.borne!.identifiant,
         gammeId: gamme.id,
-        numeroSerie: `SN-${p.borne!.identifiant}`,
         statut: "INSTALLEE",
         coutAchatCents: 450000,
         dureeAmortissementMois: 36,
@@ -326,7 +325,7 @@ export async function genererDemo(maintenant = new Date()) {
   // Un prospect et une borne en stock
   await creerLieu(PROSPECT, debut, true);
   await prisma.borne.create({
-    data: { demo: true, identifiant: "DEMO-S03", gammeId: (await prisma.gamme.findUniqueOrThrow({ where: { code: "SPHERIK" } })).id, numeroSerie: "SN-DEMO-S03" },
+    data: { demo: true, identifiant: "DEMO-S03", gammeId: (await prisma.gamme.findUniqueOrThrow({ where: { code: "SPHERIK" } })).id },
   });
 
   // Reversements des périodes terminées, puis météo des lieux (réseau : sans bloquer la réponse)

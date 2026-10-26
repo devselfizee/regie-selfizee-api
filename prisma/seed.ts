@@ -39,7 +39,6 @@ async function main() {
       data: {
         identifiant: "MT-0042",
         gammeId: gamme.id,
-        numeroSerie: "MT2026-0042",
         statut: "INSTALLEE",
         apiKeyHash: cle.hash,
         apiKeyPrefix: cle.prefixe,

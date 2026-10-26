@@ -33,8 +33,8 @@ describe("rentabilité par borne", () => {
     lieuId = (await prisma.lieu.create({ data: { raisonSociale: "SAS", enseigne: "Bar du Port", typeLieuId: type.id } })).id;
     const gamme = await prisma.gamme.create({ data: { code: "MT", libelle: "Ma Trombine" } });
     const tm = await prisma.typeModulePaiement.create({ data: { code: "ING", libelle: "ING" } });
-    a = (await prisma.borne.create({ data: { identifiant: "MT-A", gammeId: gamme.id, numeroSerie: "A", statut: "INSTALLEE" } })).id;
-    b = (await prisma.borne.create({ data: { identifiant: "MT-B", gammeId: gamme.id, numeroSerie: "B", statut: "INSTALLEE" } })).id;
+    a = (await prisma.borne.create({ data: { identifiant: "MT-A", gammeId: gamme.id, statut: "INSTALLEE" } })).id;
+    b = (await prisma.borne.create({ data: { identifiant: "MT-B", gammeId: gamme.id, statut: "INSTALLEE" } })).id;
     for (const borneId of [a, b]) {
       await prisma.affectationBorne.create({ data: { borneId, lieuId, debut: d("2026-09-01") } });
     }

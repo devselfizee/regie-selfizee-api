@@ -107,7 +107,7 @@ for (const p of PROFILS) {
   const cle = genererCle();
   const borne = await prisma.borne.create({
     data: {
-      identifiant: p.borne, gammeId: gamme.id, numeroSerie: `SN-${p.borne}`, statut: "INSTALLEE",
+      identifiant: p.borne, gammeId: gamme.id, statut: "INSTALLEE",
       apiKeyHash: cle.hash, apiKeyPrefix: cle.prefixe, apiKeyCreeLe: new Date(),
       modules: { create: { typeId: ingenico.id, numeroSerie: `TPE-${p.borne}` } },
     },
@@ -186,7 +186,6 @@ await prisma.borne.upsert({
   create: {
     identifiant: "MT-0199",
     gammeId: (await prisma.gamme.findUniqueOrThrow({ where: { code: "MA_TROMBINE" } })).id,
-    numeroSerie: "SN-MT-0199",
   },
 });
 

@@ -60,7 +60,7 @@ beforeEach(async () => {
   await prisma.typeModulePaiement.create({ data: { code: "INGENICO_SELF_2000", libelle: "Ingenico" } });
   lieuId = (await prisma.lieu.create({ data: { raisonSociale: "SARL Camping", enseigne: "Camping", typeLieuId: type.id, siret: "12345678900012" } })).id;
   const k = genererCle();
-  const borne = await prisma.borne.create({ data: { identifiant: "MT-0042", gammeId: gamme.id, numeroSerie: "S", apiKeyHash: k.hash, apiKeyPrefix: k.prefixe } });
+  const borne = await prisma.borne.create({ data: { identifiant: "MT-0042", gammeId: gamme.id, apiKeyHash: k.hash, apiKeyPrefix: k.prefixe } });
   await prisma.affectationBorne.create({ data: { borneId: borne.id, lieuId, debut: new Date("2026-01-01T00:00:00Z") } });
   cle = k.cle;
   // Août : 800 €, septembre : 300 €
