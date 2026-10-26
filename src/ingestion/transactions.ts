@@ -154,9 +154,13 @@ export async function ingererLotTransactions(
       where: { numeroSerie: { in: [...candidates.values()].map((c) => c.t.module.numero_serie).filter((n): n is string => !!n) } },
     }),
   ]);
+  const dejaIntegrees: string[] = [];
   for (const e of existantes) {
     const c = candidates.get(e.transactionIdModule)!;
-    if (identique(e, c)) doublons++;
+    if (identique(e, c)) {
+      doublons++;
+      dejaIntegrees.push(e.transactionIdModule);
+    }
     else erreurs.push({ index: c.index, transaction_id: e.transactionIdModule, code: "CONFLIT_DOUBLON", message: `transaction_id déjà reçu (#${e.id}) avec un contenu différent : non écrasé` });
     candidates.delete(e.transactionIdModule);
   }
@@ -291,6 +295,16 @@ export async function ingererLotTransactions(
       ...(derniereVente && (!borne.derniereVente || derniereVente > borne.derniereVente) ? { derniereVente } : {}),
     },
   });
+
+  // Erreurs laissées par un envoi précédent de ces mêmes transactions (module désactivé, puis renvoi
+  // ou « Rejouer ») : elles sont maintenant intégrées, l'erreur est réglée
+  const integrees = [...dejaIntegrees, ...lignes.map((l) => l.data.transactionIdModule)];
+  if (integrees.length) {
+    await prisma.importErreur.updateMany({
+      where: { statut: "NOUVELLE", transactionIdModule: { in: integrees }, import: { borneId: borne.id } },
+      data: { statut: "RETRAITEE", traiteLe: new Date() },
+    });
+  }
 
   // Transactions sans lieu : stockées, et signalées (une alerte par borne et par jour)
   if (joursNonAffectes.size > 0) {
