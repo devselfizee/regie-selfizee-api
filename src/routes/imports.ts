@@ -1,6 +1,8 @@
 import { Router } from "express";
 import type { ImportErreurStatut, ImportStatut, ImportType, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { ingererLotTransactions } from "../ingestion/transactions.js";
+import { erreursUniquementSurLignes, formaterErreurs, validerLotTransactions, type LotTransactionsJson } from "../ingestion/validation.js";
 
 export const importsRouter = Router();
 
@@ -131,6 +133,24 @@ importsRouter.get("/signes-de-vie", async (req, res, next) => {
       include: { borne: { select: { id: true, identifiant: true } } },
     });
     res.json(signes);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/imports/journal/:id/rejouer — rejoue un lot de ventes déjà reçu (après correction du référentiel,
+// par exemple un module réactivé). Sans risque : les ventes déjà intégrées sont reconnues comme doublons.
+importsRouter.post("/journal/:id/rejouer", async (req, res, next) => {
+  try {
+    const lot = await prisma.importLot.findUniqueOrThrow({ where: { id: BigInt(req.params.id) }, include: { borne: true } });
+    if (lot.type !== "TRANSACTIONS" || !lot.borne) {
+      return res.status(400).json({ error: "NON_REJOUABLE", message: "Seul un lot de ventes d'une borne connue peut être rejoué" });
+    }
+    if (!validerLotTransactions(lot.payload) && !erreursUniquementSurLignes(validerLotTransactions.errors ?? [])) {
+      return res.status(400).json({ error: "SCHEMA_INVALIDE", message: formaterErreurs(validerLotTransactions.errors) });
+    }
+    const resultat = await ingererLotTransactions(lot.borne, lot.payload as unknown as LotTransactionsJson, req.ip, "RATTRAPAGE_MANUEL");
+    res.json(resultat);
   } catch (err) {
     next(err);
   }

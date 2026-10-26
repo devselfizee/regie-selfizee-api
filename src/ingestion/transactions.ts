@@ -1,4 +1,4 @@
-import { Prisma, type Borne, type Encaissement, type Gratuite, type MotifStatut, type MoyenPaiement, type TransactionStatut } from "@prisma/client";
+import { Prisma, type Borne, type Encaissement, type ImportSource, type Gratuite, type MotifStatut, type MoyenPaiement, type TransactionStatut } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { htDepuisTtc, pctVersBp } from "../lib/montants.js";
 import { jourEtHeureLocaux, offsetMinutes } from "../lib/temps.js";
@@ -77,11 +77,13 @@ const identique = (
 export async function ingererLotTransactions(
   borne: Borne,
   lot: LotTransactionsJson,
-  ipSource: string | undefined
+  ipSource: string | undefined,
+  // RATTRAPAGE_MANUEL : lot déjà reçu, rejoué depuis le journal
+  source: ImportSource = "API"
 ): Promise<ResultatLot> {
   const importLot = await prisma.importLot.create({
     data: {
-      source: "API",
+      source,
       type: "TRANSACTIONS",
       borneId: borne.id,
       borneIdentifiant: borne.identifiant,
