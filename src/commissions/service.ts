@@ -1,8 +1,8 @@
 import type { ContratCommission, ContratPalier, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
-import { baseDeCalcul, calculerPeriode, decrireContrat, estCumule, type RegleContrat, type VentesPeriode } from "./moteur.js";
-import { libellePeriode, periodesDuContrat, type Periode } from "./periodes.js";
+import { auProrata, baseDeCalcul, calculerPeriode, decrireContrat, estCumule, type RegleContrat, type VentesPeriode } from "./moteur.js";
+import { libellePeriode, partDePeriode, periodesDuContrat, type Periode } from "./periodes.js";
 
 export type ContratAvecPaliers = ContratCommission & { paliers: ContratPalier[] };
 
@@ -46,11 +46,20 @@ export async function ventesDuLieu(lieuId: number, du: Date, au: Date): Promise<
 
 /** Calcule une période d'un contrat (avec le cumul si le seuil est cumulé). */
 export async function calculer(c: ContratAvecPaliers, p: Periode) {
-  const regle = regleDe(c);
+  // Période incomplète (installation ou avenant en cours de mois) : forfait, minimum et seuils au prorata
+  const part = partDePeriode(p.debut, c);
+  const regle = auProrata(regleDe(c), part);
   const ventes = await ventesDuLieu(c.lieuId, p.debut, p.fin);
   const cumulAvant =
     estCumule(regle) && p.debut > c.dateEffet ? baseDeCalcul(regle, await ventesDuLieu(c.lieuId, c.dateEffet, veille(p.debut))) : 0;
   const resultat = calculerPeriode(regle, ventes, cumulAvant);
+  const auProrataUtile = part < 1 && (regle.forfaitCents || regle.minimumGarantiCents || (!estCumule(regle) && (regle.seuilCents || regle.paliers.length)));
+  if (auProrataUtile) {
+    resultat.lignes.unshift({
+      libelle: `Période incomplète (${Math.round(part * 100)} % de la période) : forfait, minimum garanti et seuils au prorata`,
+      montantCents: 0,
+    });
+  }
   return { regle, ventes, resultat };
 }
 

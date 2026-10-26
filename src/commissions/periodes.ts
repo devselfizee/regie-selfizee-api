@@ -26,9 +26,28 @@ function suivante(d: Date, p: Exclude<Periodicite, "SAISON">): Date {
   return jour(a + 1, 0, 1);
 }
 
-/** Une date d'effet doit tomber au début d'une période (un avenant ne coupe pas une période en deux). */
+/** La date tombe-t-elle au début d'une période (mois, trimestre, année) ? */
 export function estDebutDePeriode(d: Date, p: Periodicite): boolean {
   return p === "SAISON" || debutDePeriode(d, p).getTime() === d.getTime();
+}
+
+const JOUR_MS = 86_400_000;
+const nbJours = (debut: Date, fin: Date) => Math.round((fin.getTime() - debut.getTime()) / JOUR_MS) + 1;
+
+/**
+ * Part de la période civile couverte par le contrat (1 = période entière). Un contrat qui démarre
+ * le 21 octobre (installation en cours de mois) couvre 11/31 d'octobre ; un avenant au 15 coupe
+ * le mois entre deux contrats. La période en cours, arrêtée à aujourd'hui, ne change rien à la part.
+ */
+export function partDePeriode(debutPeriode: Date, c: { periodicite: Periodicite; dateEffet: Date; dateFin: Date | null }): number {
+  if (c.periodicite === "SAISON") return 1;
+  const debut = debutDePeriode(debutPeriode, c.periodicite);
+  const fin = veille(suivante(debut, c.periodicite));
+  const couvertDebut = c.dateEffet > debut ? c.dateEffet : debut;
+  const finContrat = c.dateFin ? veille(c.dateFin) : null;
+  const couvertFin = finContrat && finContrat < fin ? finContrat : fin;
+  if (couvertFin < couvertDebut) return 0;
+  return nbJours(couvertDebut, couvertFin) / nbJours(debut, fin);
 }
 
 /**
@@ -62,8 +81,10 @@ export function periodesDuContrat(
 export function libellePeriode(p: Periode, periodicite: Periodicite): string {
   const mois = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
   const date = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
-  if (periodicite === "MOIS") return mois.format(p.debut);
-  if (periodicite === "TRIMESTRE") return `T${Math.floor(p.debut.getUTCMonth() / 3) + 1} ${p.debut.getUTCFullYear()}`;
-  if (periodicite === "ANNEE") return String(p.debut.getUTCFullYear());
-  return `Saison du ${date.format(p.debut)} au ${date.format(p.fin)}`;
+  if (periodicite === "SAISON") return `Saison du ${date.format(p.debut)} au ${date.format(p.fin)}`;
+  const nom =
+    periodicite === "MOIS" ? mois.format(p.debut) : periodicite === "TRIMESTRE" ? `T${Math.floor(p.debut.getUTCMonth() / 3) + 1} ${p.debut.getUTCFullYear()}` : String(p.debut.getUTCFullYear());
+  // Période incomplète (début ou fin de contrat en cours de période) : on précise les dates
+  const complete = debutDePeriode(p.debut, periodicite).getTime() === p.debut.getTime() && veille(suivante(p.debut, periodicite)).getTime() === p.fin.getTime();
+  return complete ? nom : `${nom} (du ${date.format(p.debut)} au ${date.format(p.fin)})`;
 }

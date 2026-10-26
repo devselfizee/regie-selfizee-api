@@ -121,6 +121,24 @@ export function partVariable(r: RegleContrat, base: number): { montant: number; 
   }
 }
 
+/**
+ * Règle ramenée à une période incomplète (part = jours couverts / jours de la période) :
+ * forfait et minimum garanti au prorata, ainsi que seuil et paliers quand ils valent par période
+ * (un seuil cumulé depuis la date d'effet n'a pas à l'être).
+ */
+export function auProrata(r: RegleContrat, part: number): RegleContrat {
+  if (part >= 1) return r;
+  const p = (c: number | null) => (c === null ? null : Math.round(c * part));
+  const parPeriode = !estCumule(r);
+  return {
+    ...r,
+    forfaitCents: p(r.forfaitCents),
+    minimumGarantiCents: p(r.minimumGarantiCents),
+    seuilCents: parPeriode ? p(r.seuilCents) : r.seuilCents,
+    paliers: parPeriode ? r.paliers.map((x) => ({ ...x, depuisCents: Math.round(x.depuisCents * part) })) : r.paliers,
+  };
+}
+
 /** Le seuil (ou les paliers) se cumule-t-il depuis la date d'effet ? */
 export const estCumule = (r: RegleContrat) =>
   r.seuilCumul === "CUMULE" && (r.modele === "POURCENTAGE_APRES_SEUIL" || r.modele === "PALIERS");

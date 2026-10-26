@@ -7,7 +7,6 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { exiger, perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { calculerPeriode, decrireContrat, type RegleContrat } from "../commissions/moteur.js";
-import { estDebutDePeriode } from "../commissions/periodes.js";
 import { calculerReversements, commissionEnCours, regleDe, STATUTS_FIGES } from "../commissions/service.js";
 import { chargerReleve, destinatairesParDefaut, detailDe, genererPdfReleve, nomFichierReleve, type Releve } from "../commissions/releve.js";
 import { emailConfigure, envoyerEmail } from "../lib/envoi.js";
@@ -50,9 +49,6 @@ const contratSchema = z
       if (new Set(c.paliers.map((p) => p.depuisCents)).size !== c.paliers.length) manque("paliers", "Deux paliers ont la même borne");
     }
     if (c.modele === "FORFAIT" && !c.forfaitCents) manque("forfaitCents", "Montant du forfait obligatoire");
-    if (!estDebutDePeriode(c.dateEffet, c.periodicite)) {
-      manque("dateEffet", "La date d'effet doit être le premier jour d'une période (mois, trimestre ou année)");
-    }
   });
 
 /** Ne garde que les champs utiles au modèle (évite les paramètres fantômes). */

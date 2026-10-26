@@ -110,15 +110,15 @@ describe("calcul des reversements", () => {
 });
 
 describe("avenants", () => {
-  it("refuse une date d'effet en milieu de période ou sur une période validée", async () => {
+  it("refuse une date d'effet sur une période validée, même en milieu de mois", async () => {
     await api.post(`/api/commissions/lieux/${lieuId}/contrats`).send(contratSeuil).expect(201);
     await calculerReversements({ jusquA: FIN_SEPTEMBRE });
     const [aout] = await reversements();
     await api.patch(`/api/reversements/${aout.id}/statut`).send({ statut: "VALIDE" }).expect(200);
 
-    const milieu = await api.post(`/api/commissions/lieux/${lieuId}/contrats`).send({ ...contratSeuil, dateEffet: "2026-09-15" });
-    expect(milieu.status).toBe(400);
-    expect(milieu.body.champs[0].chemin).toBe("dateEffet");
+    const milieuAout = await api.post(`/api/commissions/lieux/${lieuId}/contrats`).send({ ...contratSeuil, dateEffet: "2026-08-15" });
+    expect(milieuAout.status).toBe(400);
+    expect(milieuAout.body.error).toBe("PERIODE_VALIDEE");
 
     const aoutValide = await api.post(`/api/commissions/lieux/${lieuId}/contrats`).send({ ...contratSeuil, dateEffet: "2026-08-01" });
     expect(aoutValide.status).toBe(400);

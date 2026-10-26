@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { calculerPeriode, decrireContrat, partVariable, type RegleContrat, type VentesPeriode } from "../src/commissions/moteur.js";
-import { estDebutDePeriode, periodesDuContrat } from "../src/commissions/periodes.js";
+import { auProrata, calculerPeriode, decrireContrat, partVariable, type RegleContrat, type VentesPeriode } from "../src/commissions/moteur.js";
+import { estDebutDePeriode, libellePeriode, partDePeriode, periodesDuContrat } from "../src/commissions/periodes.js";
 
 const base: RegleContrat = {
   modele: "AUCUNE", base: "TTC", netRemboursements: true, periodicite: "MOIS",
@@ -141,7 +141,28 @@ describe("périodes", () => {
     expect(p.map(ymd)).toEqual(["2026-04-01→2026-09-30"]);
   });
 
-  it("une date d'effet doit ouvrir une période", () => {
+  it("contrat qui démarre en cours de mois (installation au 21 octobre)", () => {
+    const debut = { periodicite: "MOIS" as const, dateEffet: d("2026-10-21"), dateFin: null };
+    const p = periodesDuContrat(debut, d("2026-11-30"));
+    expect(p.map(ymd)).toEqual(["2026-10-21→2026-10-31", "2026-11-01→2026-11-30"]);
+    expect(libellePeriode(p[0], "MOIS")).toBe("octobre 2026 (du 21/10/2026 au 31/10/2026)");
+    expect(libellePeriode(p[1], "MOIS")).toBe("novembre 2026");
+    // Part de la période couverte : 11/31 en octobre, 1 ensuite ; un avenant au 15 novembre coupe le mois
+    expect(partDePeriode(d("2026-10-21"), debut)).toBeCloseTo(11 / 31);
+    expect(partDePeriode(d("2026-11-01"), debut)).toBe(1);
+    expect(partDePeriode(d("2026-11-01"), { ...debut, dateEffet: d("2026-10-01"), dateFin: d("2026-11-15") })).toBeCloseTo(14 / 30);
+  });
+
+  it("période incomplète : forfait, minimum et seuil par période au prorata, pas le taux ni un seuil cumulé", () => {
+    const f = auProrata(contrat({ modele: "FORFAIT", forfaitCents: 31_000, tauxBp: 1000, minimumGarantiCents: 6200 }), 11 / 31);
+    expect(f).toMatchObject({ forfaitCents: 11_000, minimumGarantiCents: 2200, tauxBp: 1000 });
+    const seuil = contrat({ modele: "POURCENTAGE_APRES_SEUIL", tauxBp: 2500, seuilCents: 62_000, seuilMode: "AU_DELA", seuilCumul: "PAR_PERIODE" });
+    expect(auProrata(seuil, 0.5).seuilCents).toBe(31_000);
+    expect(auProrata({ ...seuil, seuilCumul: "CUMULE" }, 0.5).seuilCents).toBe(62_000);
+    expect(auProrata(seuil, 1)).toBe(seuil);
+  });
+
+  it("reconnaît le début d'une période", () => {
     expect(estDebutDePeriode(d("2026-03-01"), "MOIS")).toBe(true);
     expect(estDebutDePeriode(d("2026-03-15"), "MOIS")).toBe(false);
     expect(estDebutDePeriode(d("2026-02-01"), "TRIMESTRE")).toBe(false);
