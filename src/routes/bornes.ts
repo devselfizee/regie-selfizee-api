@@ -77,7 +77,8 @@ const moduleSchema = z.object({
 const borneSchema = z.object({
   identifiant: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9_-]{2,63}$/, "Identifiant : majuscules, chiffres, - et _"),
   gammeId: z.number().int().positive(),
-  numeroSerie: z.string().trim().min(1),
+  // Facultatif : par défaut l'identifiant (un seul champ à saisir) ; un vrai n° fabricant si on le connaît
+  numeroSerie: z.string().trim().min(1).optional(),
   statut: z.enum(BorneStatut).optional(),
   crmId: z.number().int().nullable().optional(),
   coutAchatCents: z.number().int().min(0).nullable().optional(),
@@ -105,7 +106,8 @@ async function changerModule(db: Prisma.TransactionClient, borneId: number, modu
 bornesRouter.post(
   "/",
   asynchrone(async (req, res) => {
-    const { module, ...data } = borneSchema.parse(req.body);
+    const { module, ...saisie } = borneSchema.parse(req.body);
+    const data = { ...saisie, numeroSerie: saisie.numeroSerie ?? saisie.identifiant };
     const cle = genererCle();
     const borne = await prisma.borne.create({
       data: {
