@@ -21,6 +21,7 @@ import { contexteRouter, evenementsLieuRouter, evenementsRouter } from "./routes
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
 import { mesPhotosRouter } from "./routes/mesPhotos.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
+import { cadresEvenementRouter } from "./routes/cadresEvenement.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
 
@@ -52,6 +53,9 @@ export function creerApp() {
     mesPhotosRouter
   );
 
+  // Cadres du studio : rendu PNG + JSON Fabric avec ses illustrations, jusqu'à 25 Mo (lu avant la limite générale)
+  app.use("/api/lieux/:id/evenement/cadres", express.json({ limit: "30mb" }));
+
   // Back-office : CORS + Keycloak
   app.use(
     "/api",
@@ -75,6 +79,7 @@ export function creerApp() {
   app.use("/api/lieux", lieuxRouter);
   app.use("/api/lieux", evenementsLieuRouter);
   app.use("/api/lieux", configEvenementRouter);
+  app.use("/api/lieux", cadresEvenementRouter);
   app.use("/api/evenements", evenementsRouter);
   app.use("/api/imports", tech, importsRouter);
   app.use("/api/bornes", tech, bornesRouter);

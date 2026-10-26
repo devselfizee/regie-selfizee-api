@@ -174,6 +174,7 @@ model Lieu {
   alertes      Alerte[]
   evenements   EvenementLieu[]
   configEvenement ConfigEvenement?
+  cadresEvenement CadreEvenement[]
   meteo        MeteoJour[]
   partenaires  User[]              @relation("PartenaireLieu")
   aggJours     AggJour[]
@@ -1069,4 +1070,30 @@ model ConfigEvenement {
   lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
 
   @@map("config_evenements")
+}
+
+// Cadre dessiné au studio pour un gabarit du kit de la fiche événement (CDC page souvenir § 13.2) :
+// un par gabarit et par lieu. Le rendu PNG ira dans le zip de l'événement, le JSON Fabric rouvre l'éditeur.
+model CadreEvenement {
+  id              Int      @id @default(autoincrement())
+  lieuId          Int      @map("lieu_id")
+  // Gabarit du kit : bandelette, pola, planche, carte (src/config-evenement/reglages.ts)
+  gabarit         String   @db.VarChar(20)
+  nom             String
+  // Format et gabarit du studio (marque-page, polaroid… ; src/config-evenement/cadres.ts)
+  formatId        String   @map("format_id") @db.VarChar(60)
+  gabaritStudioId String?  @map("gabarit_studio_id") @db.VarChar(60)
+  nbPoses         Int      @map("nb_poses")
+  // État Fabric du canvas (JSON sérialisé, illustrations en base64 comprises)
+  canvas          String
+  // Rendu du cadre en taille réelle (data URL PNG) et vignette (data URL JPEG)
+  image           String
+  vignette        String?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+
+  @@unique([lieuId, gabarit])
+  @@map("cadres_evenement")
 }
