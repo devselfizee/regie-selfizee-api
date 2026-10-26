@@ -15,15 +15,22 @@ export const ventesRouter = Router();
 
 const jourIso = z.iso.date();
 
-// GET /api/ventes?q=&borneId=&du=&au= — 100 ventes au plus, les plus récentes d'abord
+// GET /api/ventes?q=&borneId=&du=&au=&tout=1 — 100 au plus, les plus récentes d'abord.
+// Par défaut, seulement les vraies ventes (débitées) et les remboursements ; tout=1 ajoute les séances
+// sans vente : gratuites, offertes, refusées, annulées, expirées (terminal sans réponse, aucun débit).
+// Une recherche (q) porte sur toutes.
 ventesRouter.get(
   "/",
   asynchrone(async (req, res) => {
     const f = z
-      .object({ q: z.string().trim().optional(), borneId: z.coerce.number().int().optional(), du: jourIso.optional(), au: jourIso.optional() })
+      .object({ q: z.string().trim().optional(), borneId: z.coerce.number().int().optional(), du: jourIso.optional(), au: jourIso.optional(), tout: z.string().optional() })
       .parse(req.query);
     const where: Prisma.TransactionWhereInput = {
-      ...(f.q ? { OR: [{ transactionIdModule: { contains: f.q, mode: "insensitive" } }, { referenceMonetique: { contains: f.q, mode: "insensitive" } }] } : {}),
+      AND: [
+        // Une recherche par identifiant trouve la transaction quel que soit son statut
+        f.tout || f.q ? {} : { OR: [{ statut: "ACCEPTEE", montantTtcCents: { gt: 0 }, moyenPaiement: { not: "AUCUN" } }, { statut: "REMBOURSEE" }] },
+        f.q ? { OR: [{ transactionIdModule: { contains: f.q, mode: "insensitive" } }, { referenceMonetique: { contains: f.q, mode: "insensitive" } }] } : {},
+      ],
       ...(f.borneId ? { borneId: f.borneId } : {}),
       ...(f.du || f.au ? { jourLocal: { ...(f.du ? { gte: new Date(`${f.du}T00:00:00Z`) } : {}), ...(f.au ? { lte: new Date(`${f.au}T00:00:00Z`) } : {}) } } : {}),
     };
