@@ -159,7 +159,11 @@ async function parc(f: Filtres) {
     FROM bornes b
     JOIN affectations_borne af ON af.borne_id = b.id AND af.fin IS NULL
     JOIN lieux l ON l.id = af.lieu_id
-    WHERE ${et([...conditionsLieu(f), ...(f.gammeId?.length ? [Prisma.sql`b.gamme_id IN (${Prisma.join(f.gammeId)})`] : [])])}
+    WHERE ${et([
+      ...conditionsLieu(f),
+      ...(f.gammeId?.length ? [Prisma.sql`b.gamme_id IN (${Prisma.join(f.gammeId)})`] : []),
+      ...(f.parc?.length ? [Prisma.sql`b.parc::text IN (${Prisma.join(f.parc)})`] : []),
+    ])}
     ORDER BY b.identifiant`;
   const [{ count: nonAffectees }] = await prisma.$queryRaw<{ count: bigint }[]>`
     SELECT count(*) FROM bornes b

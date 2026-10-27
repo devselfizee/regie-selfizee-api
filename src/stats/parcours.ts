@@ -12,6 +12,7 @@ const FROM = Prisma.sql`FROM parcours p JOIN lieux l ON l.id = p.lieu_id JOIN bo
 function conditions(f: Filtres) {
   const c = [Prisma.sql`p.jour_local BETWEEN ${ymd(f.du)}::date AND ${ymd(f.au)}::date`, ...conditionsLieu(f)];
   if (f.gammeId?.length) c.push(Prisma.sql`b.gamme_id IN (${Prisma.join(f.gammeId)})`);
+  if (f.parc?.length) c.push(Prisma.sql`b.parc::text IN (${Prisma.join(f.parc)})`);
   return et(c);
 }
 

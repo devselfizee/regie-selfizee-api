@@ -40,6 +40,7 @@ const lieuSchema = z.object({
   sousTypeId: idOpt,
   standingId: idOpt,
   antenneId: idOpt,
+  parc: z.enum(["SELFIZEE", "CLIENT"]).optional(),
 
   saisonnalite: z.enum(Saisonnalite).optional(),
 
@@ -109,6 +110,7 @@ lieuxRouter.get(
       ...(req.query.typeLieuId ? { typeLieuId: Number(req.query.typeLieuId) } : {}),
       ...(req.query.commercialId ? { commercialId: Number(req.query.commercialId) } : {}),
       ...(req.query.antenneId ? { antenneId: Number(req.query.antenneId) } : {}),
+      ...(req.query.parc === "SELFIZEE" || req.query.parc === "CLIENT" ? { parc: req.query.parc } : {}),
       // Lieux qui ont en ce moment une borne de cette gamme
       ...(req.query.gammeId ? { affectations: { some: { fin: null, borne: { gammeId: Number(req.query.gammeId) } } } } : {}),
       ...(perimetre?.commercialId !== undefined ? { commercialId: perimetre.commercialId } : {}),
@@ -128,7 +130,7 @@ lieuxRouter.get(
       orderBy: { enseigne: "asc" },
       take: 1000,
       select: {
-        id: true, enseigne: true, raisonSociale: true, ville: true, codePostal: true, statut: true, saisonnalite: true,
+        id: true, enseigne: true, raisonSociale: true, ville: true, codePostal: true, statut: true, saisonnalite: true, parc: true,
         typeLieu: { select: { libelle: true } },
         antenne: { select: { id: true, libelle: true } },
         commercial: { select: { nom: true, prenom: true } },

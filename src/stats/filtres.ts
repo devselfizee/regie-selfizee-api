@@ -20,6 +20,8 @@ const FILTRES_LIEU_ID = {
 const FILTRES_LIEU_ENUM = {
   saisonnalite: "saisonnalite",
   interieurExterieur: "interieur_exterieur",
+  // Parc du lieu (SELFIZEE, CLIENT) ; les ventes suivent en plus le parc de leur borne (conditionsVentes)
+  parc: "parc",
 } as const;
 
 const listeIds = z
@@ -102,6 +104,8 @@ export function conditionsVentes(f: Filtres, colonneJour = "a.jour"): Prisma.Sql
   if (f.gammeId?.length) c.push(Prisma.sql`b.gamme_id IN (${Prisma.join(f.gammeId)})`);
   if (f.typeModuleId?.length) c.push(Prisma.sql`a.type_module_id IN (${Prisma.join(f.typeModuleId)})`);
   if (f.moyenPaiement?.length) c.push(Prisma.sql`a.moyen_paiement::text IN (${Prisma.join(f.moyenPaiement)})`);
+  // Une vente appartient au parc de sa borne (la location financière porte sur la borne)
+  if (f.parc?.length) c.push(Prisma.sql`b.parc::text IN (${Prisma.join(f.parc)})`);
   return c;
 }
 

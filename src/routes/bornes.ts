@@ -26,6 +26,7 @@ bornesRouter.get(
       where: {
         ...(req.query.gammeId ? { gammeId: Number(req.query.gammeId) } : {}),
         ...(req.query.statut ? { statut: req.query.statut as BorneStatut } : {}),
+        ...(req.query.parc === "SELFIZEE" || req.query.parc === "CLIENT" ? { parc: req.query.parc } : {}),
         ...(q
           ? { identifiant: { contains: q, mode: "insensitive" } }
           : {}),
@@ -78,6 +79,7 @@ const borneSchema = z.object({
   identifiant: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9_-]{2,63}$/, "Identifiant : majuscules, chiffres, - et _"),
   gammeId: z.number().int().positive(),
   statut: z.enum(BorneStatut).optional(),
+  parc: z.enum(["SELFIZEE", "CLIENT"]).optional(),
   crmId: z.number().int().nullable().optional(),
   coutAchatCents: z.number().int().min(0).nullable().optional(),
   dureeAmortissementMois: z.number().int().min(0).nullable().optional(),

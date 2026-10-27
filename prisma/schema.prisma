@@ -106,6 +106,8 @@ model Lieu {
   statut      LieuStatut @default(ACTIF)
   // Données de démonstration : effaçables d'un clic (Paramètres), jamais mêlées aux vraies
   demo        Boolean    @default(false)
+  // Parc Selfizee, ou parc d'un client en location financière (hors des stats Selfizee par défaut)
+  parc        Parc       @default(SELFIZEE)
 
   // Identité
   raisonSociale String   @map("raison_sociale")
@@ -349,6 +351,8 @@ model Borne {
   crmId       Int?        @unique @map("crm_id") // lien parc CRM
   statut      BorneStatut @default(EN_STOCK)
   demo        Boolean     @default(false) // données de démonstration
+  // Parc de la borne : ses ventes comptent dans ce parc
+  parc        Parc        @default(SELFIZEE)
 
   // Authentification de l'API d'ingestion : clé propre à la borne.
   // On ne stocke que le hash ; le préfixe permet d'identifier la clé.
@@ -1160,4 +1164,10 @@ model Parcours {
   @@index([lieuId, jourLocal])
   @@index([borneId, debut])
   @@map("parcours")
+}
+
+// Parc d'un lieu ou d'une borne : Selfizee, ou client en location financière
+enum Parc {
+  SELFIZEE
+  CLIENT
 }
