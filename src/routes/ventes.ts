@@ -71,8 +71,8 @@ ventesRouter.get(
         f.moyenPaiement?.length ? { moyenPaiement: { in: f.moyenPaiement as Prisma.EnumMoyenPaiementFilter["in"] } } : {},
         f.lieuId ? { lieuId: f.lieuId } : {},
         f.borneId ? { borneId: f.borneId } : {},
-        // Une vente suit le parc de sa borne
-        f.parc ? { borne: { parc: f.parc } } : {},
+        // Une vente suit le parc du lieu (compte client) où elle a été faite
+        f.parc ? { lieu: { parc: f.parc } } : {},
         f.du || f.au ? { jourLocal: { ...(f.du ? { gte: new Date(`${f.du}T00:00:00Z`) } : {}), ...(f.au ? { lte: new Date(`${f.au}T00:00:00Z`) } : {}) } } : {},
       ],
     };
@@ -85,7 +85,7 @@ ventesRouter.get(
         skip: (f.page - 1) * parPage,
         take: parPage,
         include: {
-          borne: { select: { id: true, identifiant: true, parc: true } },
+          borne: { select: { id: true, identifiant: true } },
           lieu: { select: { id: true, enseigne: true } },
           typeModule: { select: { libelle: true } },
           derivees: { where: { statut: "REMBOURSEE" }, select: { montantTtcCents: true } },
@@ -124,8 +124,8 @@ ventesRouter.get(
     const v = await prisma.transaction.findUnique({
       where: { id: BigInt(req.params.id) },
       include: {
-        borne: { select: { id: true, identifiant: true, parc: true, gamme: { select: { libelle: true } } } },
-        lieu: { select: { id: true, enseigne: true, ville: true } },
+        borne: { select: { id: true, identifiant: true, gamme: { select: { libelle: true } } } },
+        lieu: { select: { id: true, enseigne: true, ville: true, parc: true } },
         typeModule: { select: { libelle: true } },
         module: { select: { numeroSerie: true, identifiantPrestataire: true } },
         origine: { select: { id: true, transactionIdModule: true } },

@@ -26,7 +26,8 @@ bornesRouter.get(
       where: {
         ...(req.query.gammeId ? { gammeId: Number(req.query.gammeId) } : {}),
         ...(req.query.statut ? { statut: req.query.statut as BorneStatut } : {}),
-        ...(req.query.parc === "SELFIZEE" || req.query.parc === "CLIENT" ? { parc: req.query.parc } : {}),
+        // Parc du lieu où la borne est installée
+        ...(req.query.parc === "SELFIZEE" || req.query.parc === "CLIENT" ? { affectations: { some: { fin: null, lieu: { parc: req.query.parc } } } } : {}),
         ...(q
           ? { identifiant: { contains: q, mode: "insensitive" } }
           : {}),
@@ -35,7 +36,7 @@ bornesRouter.get(
       include: {
         gamme: true,
         modules: { where: { retireLe: null }, include: { type: true } },
-        affectations: { where: { fin: null }, include: { lieu: { select: { id: true, enseigne: true, ville: true } } } },
+        affectations: { where: { fin: null }, include: { lieu: { select: { id: true, enseigne: true, ville: true, parc: true } } } },
       },
     });
     const maintenant = Date.now();
@@ -79,7 +80,6 @@ const borneSchema = z.object({
   identifiant: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9_-]{2,63}$/, "Identifiant : majuscules, chiffres, - et _"),
   gammeId: z.number().int().positive(),
   statut: z.enum(BorneStatut).optional(),
-  parc: z.enum(["SELFIZEE", "CLIENT"]).optional(),
   crmId: z.number().int().nullable().optional(),
   coutAchatCents: z.number().int().min(0).nullable().optional(),
   dureeAmortissementMois: z.number().int().min(0).nullable().optional(),

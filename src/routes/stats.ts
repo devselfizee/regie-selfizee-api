@@ -162,7 +162,6 @@ async function parc(f: Filtres) {
     WHERE ${et([
       ...conditionsLieu(f),
       ...(f.gammeId?.length ? [Prisma.sql`b.gamme_id IN (${Prisma.join(f.gammeId)})`] : []),
-      ...(f.parc?.length ? [Prisma.sql`b.parc::text IN (${Prisma.join(f.parc)})`] : []),
     ])}
     ORDER BY b.identifiant`;
   const [{ count: nonAffectees }] = await prisma.$queryRaw<{ count: bigint }[]>`
