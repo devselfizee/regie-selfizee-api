@@ -343,8 +343,9 @@ statsRouter.get(
           ${FROM_AGG} JOIN types_module_paiement tm ON tm.id = a.type_module_id
           WHERE ${ventes} GROUP BY 1 ORDER BY ca DESC`,
         prisma.$queryRaw<Record<string, unknown>[]>`
-          SELECT a.produit_code code, max(a.produit_libelle) libelle, count(*) nb, sum(a.montant_ttc_cents) ca
-          ${FROM_TX} WHERE a.statut = 'ACCEPTEE' AND a.montant_ttc_cents > 0 AND ${ventesTx} GROUP BY 1 ORDER BY ca DESC`,
+          -- Une ligne par produit ET par nombre de tirages : sous un même code (TIRAGE), la borne vend 1, 2 ou 3 tirages
+          SELECT a.produit_code code, a.nb_tirages tirages, max(a.produit_libelle) libelle, count(*) nb, sum(a.montant_ttc_cents) ca
+          ${FROM_TX} WHERE ${VENDUE} AND ${ventesTx} GROUP BY 1, 2 ORDER BY 1, 2`,
         prisma.$queryRaw<Record<string, unknown>[]>`
           SELECT a.montant_ttc_cents montant, count(*) nb
           ${FROM_TX} WHERE a.statut = 'ACCEPTEE' AND a.montant_ttc_cents > 0 AND ${ventesTx} GROUP BY 1 ORDER BY 1`,
@@ -434,7 +435,14 @@ statsRouter.get(
       meilleuresDates: meilleuresDates.map((d) => ({ jour: ymd(d.jour as Date), caTtcCents: n(d.ca), nbVentes: n(d.nb) })),
       moyensPaiement: moyens.map((m) => ({ moyen: m.moyen as string, caTtcCents: n(m.ca), nbVentes: n(m.nb), nbRefusees: n(m.refus) })),
       modulesPaiement: modules.map((m) => ({ libelle: m.libelle as string, caTtcCents: n(m.ca), nbVentes: n(m.nb), nbRefusees: n(m.refus) })),
-      formules: formules.map((p) => ({ code: p.code as string, libelle: p.libelle as string | null, nbVentes: n(p.nb), caTtcCents: n(p.ca) })),
+      formules: formules.map((p) => ({
+        code: p.code as string,
+        nbTirages: n(p.tirages),
+        // Libellé d'un tirage : d'après le nombre de tirages, pas le texte de la borne (« 3 tirages » couvrait toutes les quantités)
+        libelle: p.code === "TIRAGE" ? `${n(p.tirages)} tirage${n(p.tirages) > 1 ? "s" : ""}` : (p.libelle as string | null),
+        nbVentes: n(p.nb),
+        caTtcCents: n(p.ca),
+      })),
       montants: montants.map((m) => ({ montantCents: n(m.montant), nbVentes: n(m.nb) })),
       bornes: bornes.map((b, i) => ({
         disponibilite: dispos[i],
