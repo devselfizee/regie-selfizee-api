@@ -80,3 +80,14 @@ describe("rôle admin Keycloak", () => {
     expect(estAdminKeycloak({ sub: "1" })).toBe(false);
   });
 });
+
+describe("département depuis le code postal", () => {
+  it("métropole, Corse, outre-mer, inconnu", async () => {
+    const { departement } = await import("../src/lib/departement.js");
+    expect(departement("22000")).toBe("22");
+    expect(departement("20090")).toBe("2A");
+    expect(departement("20200")).toBe("2B");
+    expect(departement("97400")).toBe("974");
+    expect(departement(null)).toBeNull();
+  });
+});

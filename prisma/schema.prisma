@@ -76,6 +76,7 @@ model RefValeur {
   lieuxEmplacement   Lieu[]          @relation("LieuEmplacement")
   lieuxEclairage     Lieu[]          @relation("LieuEclairage")
   lieuxOrigineLead   Lieu[]          @relation("LieuOrigineLead")
+  lieuxAntenne       Lieu[]          @relation("LieuAntenne")
   lieuxClientele     LieuClientele[]
   evenements         EvenementLieu[]
 
@@ -94,6 +95,7 @@ enum RefCategorie {
   ECLAIRAGE
   ORIGINE_LEAD
   TYPE_EVENEMENT // soirée spéciale, travaux, changement de prix…
+  ANTENNE // antenne Selfizee qui suit le lieu
 }
 
 // ─── Lieux (fiche client) ───────────────────────────────────
@@ -146,6 +148,7 @@ model Lieu {
   dateInstallation DateTime? @map("date_installation") @db.Date
   dureeContratMois Int?      @map("duree_contrat_mois")
   commercialId     Int?      @map("commercial_id")
+  antenneId        Int?      @map("antenne_id") // antenne Selfizee (liste ANTENNE)
   origineLeadId    Int?      @map("origine_lead_id")
 
   notes     String?
@@ -161,27 +164,29 @@ model Lieu {
   eclairage       RefValeur? @relation("LieuEclairage", fields: [eclairageId], references: [id])
   origineLead     RefValeur? @relation("LieuOrigineLead", fields: [origineLeadId], references: [id])
   commercial      User?      @relation("LieuCommercial", fields: [commercialId], references: [id])
+  antenne         RefValeur? @relation("LieuAntenne", fields: [antenneId], references: [id])
 
-  contacts     LieuContact[]
-  clienteles   LieuClientele[]
-  horaires     LieuHoraire[]
-  saisons      LieuSaison[]
-  fermetures   LieuFermeture[]
-  affectations AffectationBorne[]
-  transactions Transaction[]
-  contrats     ContratCommission[]
-  reversements Reversement[]
-  alertes      Alerte[]
-  evenements   EvenementLieu[]
+  contacts        LieuContact[]
+  clienteles      LieuClientele[]
+  horaires        LieuHoraire[]
+  saisons         LieuSaison[]
+  fermetures      LieuFermeture[]
+  affectations    AffectationBorne[]
+  transactions    Transaction[]
+  contrats        ContratCommission[]
+  reversements    Reversement[]
+  alertes         Alerte[]
+  evenements      EvenementLieu[]
   configEvenement ConfigEvenement?
   cadresEvenement CadreEvenement[]
-  meteo        MeteoJour[]
-  partenaires  User[]              @relation("PartenaireLieu")
-  aggJours     AggJour[]
-  aggHeures    AggHeure[]
+  meteo           MeteoJour[]
+  partenaires     User[]              @relation("PartenaireLieu")
+  aggJours        AggJour[]
+  aggHeures       AggHeure[]
 
   @@index([typeLieuId])
   @@index([commercialId])
+  @@index([antenneId])
   @@map("lieux")
 }
 

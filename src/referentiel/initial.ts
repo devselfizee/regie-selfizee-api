@@ -29,6 +29,7 @@ const LISTES: Record<RefCategorie, [code: string, libelle: string][]> = {
   EMPLACEMENT_ZONE: [["ENTREE", "Entrée"], ["PISTE", "Piste"], ["TERRASSE", "Terrasse"], ["ACCUEIL", "Accueil"], ["COULOIR", "Couloir / passage"]],
   ECLAIRAGE: [["FAIBLE", "Faible"], ["MOYEN", "Moyen"], ["BON", "Bon"]],
   ORIGINE_LEAD: [["PROSPECTION", "Prospection terrain"], ["RECOMMANDATION", "Recommandation"], ["ENTRANT", "Demande entrante"], ["SALON", "Salon"]],
+  ANTENNE: [],
   TYPE_EVENEMENT: [["SOIREE", "Soirée spéciale"], ["DEPLACEMENT", "Déplacement de la borne"], ["TRAVAUX", "Travaux"], ["PRIX", "Changement de prix"]],
 };
 

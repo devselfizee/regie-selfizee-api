@@ -9,6 +9,7 @@ const FILTRES_LIEU_ID = {
   sousTypeId: "sous_type_id",
   standingId: "standing_id",
   zoneGeoId: "zone_geo_id",
+  antenneId: "antenne_id",
   tailleCommuneId: "taille_commune_id",
   emplacementZoneId: "emplacement_zone_id",
   eclairageId: "eclairage_id",

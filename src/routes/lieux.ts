@@ -2,6 +2,7 @@ import { Router } from "express";
 import { ContactRole, InterieurExterieur, LieuStatut, Prisma, Saisonnalite } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
+import { departement } from "../lib/departement.js";
 import { asynchrone } from "../lib/http.js";
 import { exiger, perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
@@ -38,6 +39,7 @@ const lieuSchema = z.object({
   typeLieuId: id,
   sousTypeId: idOpt,
   standingId: idOpt,
+  antenneId: idOpt,
 
   saisonnalite: z.enum(Saisonnalite).optional(),
 
@@ -95,7 +97,7 @@ function donneesLieu(input: LieuInput) {
 
 // ─── Lecture ────────────────────────────────────────────────
 
-// GET /api/lieux?q=&statut=&typeLieuId=&commercialId= — limité au périmètre de l'utilisateur
+// GET /api/lieux?q=&statut=&typeLieuId=&commercialId=&antenneId=&departement=&gammeId= — limité au périmètre de l'utilisateur
 lieuxRouter.get(
   "/",
   asynchrone<UtilisateurRequest>(async (req, res) => {
@@ -106,6 +108,9 @@ lieuxRouter.get(
       ...(req.query.statut ? { statut: req.query.statut as LieuStatut } : { statut: { not: "PROSPECT" } }),
       ...(req.query.typeLieuId ? { typeLieuId: Number(req.query.typeLieuId) } : {}),
       ...(req.query.commercialId ? { commercialId: Number(req.query.commercialId) } : {}),
+      ...(req.query.antenneId ? { antenneId: Number(req.query.antenneId) } : {}),
+      // Lieux qui ont en ce moment une borne de cette gamme
+      ...(req.query.gammeId ? { affectations: { some: { fin: null, borne: { gammeId: Number(req.query.gammeId) } } } } : {}),
       ...(perimetre?.commercialId !== undefined ? { commercialId: perimetre.commercialId } : {}),
       ...(q
         ? {
@@ -123,12 +128,13 @@ lieuxRouter.get(
       orderBy: { enseigne: "asc" },
       take: 1000,
       select: {
-        id: true, enseigne: true, raisonSociale: true, ville: true, statut: true, saisonnalite: true,
+        id: true, enseigne: true, raisonSociale: true, ville: true, codePostal: true, statut: true, saisonnalite: true,
         typeLieu: { select: { libelle: true } },
+        antenne: { select: { id: true, libelle: true } },
         commercial: { select: { nom: true, prenom: true } },
         affectations: {
           where: { fin: null },
-          select: { borne: { select: { id: true, identifiant: true, dernierHeartbeat: true, derniereVente: true } } },
+          select: { borne: { select: { id: true, identifiant: true, dernierHeartbeat: true, derniereVente: true, gamme: { select: { id: true, libelle: true } } } } },
         },
       },
     });
@@ -144,8 +150,12 @@ lieuxRouter.get(
     const caParLieu = new Map(ca.map((c) => [c.lieuId, c._sum]));
 
     const voitCa = req.utilisateur?.role !== "TECHNICIEN";
+    const dept = typeof req.query.departement === "string" ? req.query.departement.toUpperCase() : null;
     res.json(
-      lieux.map(({ affectations, ...l }) => ({
+      lieux
+        .map((l) => ({ ...l, departement: departement(l.codePostal) }))
+        .filter((l) => !dept || l.departement === dept)
+        .map(({ affectations, ...l }) => ({
         ...l,
         bornes: affectations.map((a) => a.borne),
         ca30jCents: voitCa ? (caParLieu.get(l.id)?.caTtcCents ?? 0) : null,
@@ -165,7 +175,7 @@ lieuxRouter.get(
     const lieu = await prisma.lieu.findUniqueOrThrow({
       where: { id: Number(req.params.id) },
       include: {
-        typeLieu: true, sousType: true, standing: true, zoneGeo: true, tailleCommune: true,
+        typeLieu: true, sousType: true, standing: true, zoneGeo: true, tailleCommune: true, antenne: true,
         emplacementZone: true, eclairage: true, origineLead: true,
         commercial: { select: { id: true, nom: true, prenom: true } },
         contacts: { orderBy: { id: "asc" } },
