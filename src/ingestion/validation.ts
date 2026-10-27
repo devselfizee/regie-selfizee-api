@@ -64,6 +64,7 @@ export interface TransactionJson {
   reference_sequence?: string;
   gratuite?: "mode_gratuit" | "code_staff" | "degrade" | "reimpression" | "sans_tirage";
   pikcloud_uuid?: string;
+  carte_fin?: string;
   produit: { code: string; libelle?: string; nb_tirages: number };
 }
 

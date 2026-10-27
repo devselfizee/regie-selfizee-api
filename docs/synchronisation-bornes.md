@@ -17,6 +17,7 @@ La synchronisation est **directe : borne → plateforme de suivi**, sans passer 
 
 **Nouveautés du 27/10/2026** (avenants « parcours invité » et « ventes n° 2 » du 26/10/2026) :
 - **Parcours invité** : nouvelle route `POST /ingest/v1/parcours`, une séance par objet, vente ou pas (§ 4 bis).
+- **Carte** : champ facultatif `carte_fin` (quatre derniers chiffres, avec `cb` ou `sans_contact`) ; `pikcloud_uuid` accepté avec ou sans tirets.
 - **Séances à 0 €** : nouvelle valeur `sans_tirage` de `gratuite` (photo enregistrée sans tirage ni paiement). Avec elle, `gratuite` peut être envoyé pour toute séance `aucun`.
 
 ## 1. Vue d'ensemble
@@ -117,7 +118,8 @@ Content-Type: application/json
 | `reference_monetique` | non | **Numéro d'autorisation** du ticket (`NO AUTO`, 6 chiffres) ou identifiant de paiement Stripe (`pi_…`) : clé du rapprochement avec les relevés du prestataire. Absent pour un refus, une annulation, une expiration. **Interdit pour les espèces et les séances gratuites.** |
 | `reference_sequence` | non | Numéro de séquence du terminal (6 chiffres). |
 | `gratuite` | non | Séance à 0 € : `mode_gratuit`, `code_staff`, `degrade` (terminal en panne, tirage offert), `reimpression` ou `sans_tirage` (photo enregistrée sans tirage ni paiement : voie numérique seule ou « non merci » sur l'offre). Exige `moyen_paiement` = `aucun`. |
-| `pikcloud_uuid` | non | Identifiant de la séance côté serveur web (`photo_uuid`). |
+| `pikcloud_uuid` | non | Identifiant de la photo côté PikCloud (`photo_uuid`), UUID avec ou sans tirets : la plateforme affiche la photo dans le récapitulatif de la commande. |
+| `carte_fin` | non | **Quatre derniers chiffres de la carte**, lus sur le ticket du terminal (4 chiffres). Seulement avec `cb` ou `sans_contact`, quand le ticket a été rapproché de la séance. Visibles des seuls administrateurs. |
 | `produit.code` | oui | `TIRAGE`, `TIRAGE_EXTRA` (paiement supplémentaire de la séance), `NUMERIQUE` (photo livrée en numérique seul), `POSTAL` (tirage expédié). |
 | `produit.libelle` | non | Libellé de la formule tel que la borne l'affiche (ex. « 2 tirages »). |
 | `produit.nb_tirages` | oui | Tirages payés, figés à l'envoi (0 à 100). `0` pour `NUMERIQUE` et pour un refus. Les réimpressions ultérieures ne modifient pas la vente. |

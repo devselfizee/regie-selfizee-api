@@ -202,6 +202,7 @@ export async function ingererLotTransactions(
         motif: c.t.motif ? (c.t.motif.toUpperCase() as MotifStatut) : null,
         gratuite: c.t.gratuite ? (c.t.gratuite.toUpperCase() as Gratuite) : null,
         pikcloudUuid: c.t.pikcloud_uuid ?? null,
+        carteFin: c.t.carte_fin ?? null,
         produitCode: c.t.produit.code,
         produitLibelle: c.t.produit.libelle ?? null,
         nbTirages: c.t.produit.nb_tirages,

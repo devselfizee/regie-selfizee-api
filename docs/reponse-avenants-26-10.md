@@ -18,9 +18,11 @@ Les deux avenants sont intégrés à la plateforme de suivi. La spécification �
 
 ## Ventes n° 2
 
+**Photo de la vente** : merci d'envoyer `pikcloud_uuid` (le `photo_uuid` PikCloud) sur chaque vente dont la photo a été enregistrée. La plateforme l'affiche dans le récapitulatif de la commande. Il est accepté avec ou sans tirets.
+
 | # | Demande | Réponse |
 |---|---|---|
-| 1 | `carte_fin` (quatre derniers chiffres) | **En attente de la décision de Selfizee** (responsable de traitement). Le schéma le refuse tant qu'elle n'est pas prise : n'envoyez rien de plus pour l'instant. |
+| 1 | `carte_fin` (quatre derniers chiffres) | **Accepté** (décision de Selfizee du 27/10/2026) : 4 chiffres, seulement avec `cb` ou `sans_contact`. Vous pouvez livrer. Ils ne sont visibles que des administrateurs, dans le récapitulatif de la commande, et permettent de retrouver une vente par ces chiffres. |
 | 2 | Paiement avec le téléphone | Noté. `sans_contact` s'affiche « sans contact (carte ou téléphone) », et « Téléphone » n'apparaît plus comme une catégorie vide. Si votre essai au banc permet de reconnaître le téléphone, `mobile` est déjà accepté. |
 | 3 | Valeur `sans_tirage` de `gratuite` | **Acceptée** (schéma 1.1). Vous pouvez livrer : `gratuite` est alors présent pour toute séance `aucun`. Ces séances ne comptent ni dans le CA ni dans les tirages. |
 | § 4.2 | Libellés | **Repris** sur la page Ventes : carte insérée, sans contact (carte ou téléphone), paiement en ligne, ticket non retrouvé, gratuit avec son motif, sans réponse du terminal, tirage offert (non débité), à rapprocher. Les cartes insérées et le sans contact sont regroupés en « carte bancaire » dans les statistiques, à la demande de Selfizee. |

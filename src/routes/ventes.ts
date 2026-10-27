@@ -8,6 +8,7 @@ import { jourEtHeureLocaux } from "../lib/temps.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { ajouterAuxAgregats } from "../ingestion/agregats.js";
 import { sha256Payload } from "../ingestion/journal.js";
+import { urlPhoto } from "../lib/photos.js";
 
 // Recherche de ventes et remboursements (admin). La borne ne rembourse jamais :
 // un remboursement est saisi ici, rattaché à la vente d'origine (avenant synchro, § 3.7).
@@ -57,7 +58,16 @@ ventesRouter.get(
     const type = f.tout ? "tout" : f.type;
     const where: Prisma.TransactionWhereInput = {
       AND: [
-        f.q ? { OR: [{ transactionIdModule: { contains: f.q, mode: "insensitive" } }, { referenceMonetique: { contains: f.q, mode: "insensitive" } }] } : TYPES[type],
+        f.q
+          ? {
+              OR: [
+                { transactionIdModule: { contains: f.q, mode: "insensitive" } },
+                { referenceMonetique: { contains: f.q, mode: "insensitive" } },
+                // « j'ai été débité deux fois » : retrouver par les 4 derniers chiffres de la carte
+                ...(/^\d{4}$/.test(f.q) ? [{ carteFin: f.q }] : []),
+              ],
+            }
+          : TYPES[type],
         f.moyenPaiement?.length ? { moyenPaiement: { in: f.moyenPaiement as Prisma.EnumMoyenPaiementFilter["in"] } } : {},
         f.lieuId ? { lieuId: f.lieuId } : {},
         f.borneId ? { borneId: f.borneId } : {},
@@ -100,7 +110,65 @@ ventesRouter.get(
         importId: v.importId.toString(),
         transactionOrigineId: v.transactionOrigineId?.toString() ?? null,
         rembourseCents: derivees.reduce((s, r) => s + r.montantTtcCents, 0),
+        photoUrl: urlPhoto(v.pikcloudUuid),
       })),
+    });
+  })
+);
+
+// GET /api/ventes/:id — récapitulatif d'une commande : le paiement, les autres paiements de la séance
+// (« +1 pour un pote »), les remboursements, la photo et le parcours de l'invité
+ventesRouter.get(
+  "/:id",
+  asynchrone(async (req, res) => {
+    const v = await prisma.transaction.findUnique({
+      where: { id: BigInt(req.params.id) },
+      include: {
+        borne: { select: { id: true, identifiant: true, parc: true, gamme: { select: { libelle: true } } } },
+        lieu: { select: { id: true, enseigne: true, ville: true } },
+        typeModule: { select: { libelle: true } },
+        module: { select: { numeroSerie: true, identifiantPrestataire: true } },
+        origine: { select: { id: true, transactionIdModule: true } },
+        derivees: { where: { statut: "REMBOURSEE" }, orderBy: { horodatage: "asc" }, select: { id: true, horodatage: true, montantTtcCents: true } },
+      },
+    });
+    if (!v) throw new HttpError(404, "INTROUVABLE");
+    // Séance : l'identifiant sans son n° de paiement (S180-20261016-Z95FN7-1 → S180-20261016-Z95FN7)
+    const seance = v.transactionIdModule.replace(/-RMB\d+$/, "").replace(/-\d+$/, "");
+    const [paiementsSeance, parcours, motifs] = await Promise.all([
+      prisma.transaction.findMany({
+        where: { borneId: v.borneId, transactionIdModule: { startsWith: `${seance}-` }, statut: { not: "REMBOURSEE" } },
+        orderBy: { horodatage: "asc" },
+        select: { id: true, transactionIdModule: true, horodatage: true, statut: true, montantTtcCents: true, produitCode: true, produitLibelle: true, nbTirages: true, moyenPaiement: true },
+      }),
+      prisma.parcours.findUnique({
+        where: { borneId_parcoursId: { borneId: v.borneId, parcoursId: seance } },
+        select: { debut: true, fin: true, dureeS: true, issue: true, etapes: true, cadre: true, photos: true, tirages: true, photoUuid: true, evenement: true },
+      }),
+      // Motifs des remboursements (journal d'audit)
+      v.derivees.length
+        ? prisma.auditLog.findMany({ where: { entite: "transaction", entiteId: v.id.toString(), action: "REMBOURSEMENT" }, orderBy: { createdAt: "asc" }, select: { apres: true } })
+        : Promise.resolve([]),
+    ]);
+    const photoUuid = v.pikcloudUuid ?? parcours?.photoUuid ?? null;
+    res.json({
+      ...v,
+      id: v.id.toString(),
+      importId: v.importId.toString(),
+      transactionOrigineId: v.transactionOrigineId?.toString() ?? null,
+      origine: v.origine ? { id: v.origine.id.toString(), transactionIdModule: v.origine.transactionIdModule } : null,
+      remboursements: v.derivees.map((r, i) => ({
+        id: r.id.toString(),
+        horodatage: r.horodatage,
+        montantTtcCents: r.montantTtcCents,
+        motif: (motifs[i]?.apres as { motif?: string } | null)?.motif ?? null,
+      })),
+      derivees: undefined,
+      rembourseCents: v.derivees.reduce((s, r) => s + r.montantTtcCents, 0),
+      seance: { code: seance, paiements: paiementsSeance.map((p) => ({ ...p, id: p.id.toString() })) },
+      parcours,
+      photoUuid,
+      photoUrl: urlPhoto(photoUuid),
     });
   })
 );

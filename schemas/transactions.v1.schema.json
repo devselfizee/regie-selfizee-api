@@ -215,8 +215,13 @@
         },
         "pikcloud_uuid": {
           "type": "string",
-          "format": "uuid",
-          "description": "Identifiant de la séance côté serveur web (photo_uuid), facultatif."
+          "pattern": "^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$",
+          "description": "Identifiant de la photo côté PikCloud (photo_uuid), UUID avec ou sans tirets, facultatif : sert à afficher la photo de la vente."
+        },
+        "carte_fin": {
+          "type": "string",
+          "pattern": "^[0-9]{4}$",
+          "description": "Quatre derniers chiffres de la carte, lus sur le ticket du terminal (avenant ventes n° 2). Seulement avec cb ou sans_contact, quand le ticket a été rapproché de la séance."
         }
       },
       "allOf": [
@@ -299,6 +304,23 @@
               },
               "statut": {
                 "const": "accepte"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "carte_fin"
+            ]
+          },
+          "then": {
+            "properties": {
+              "moyen_paiement": {
+                "enum": [
+                  "cb",
+                  "sans_contact"
+                ]
               }
             }
           }

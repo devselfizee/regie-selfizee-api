@@ -528,7 +528,9 @@ model Transaction {
   encaissement       Encaissement? // schéma 1.1, ventes acceptées
   motif              MotifStatut? // schéma 1.1 : précise annulé / expiré / refusé
   gratuite           Gratuite? // schéma 1.1 : séance à 0 €
-  pikcloudUuid       String?       @map("pikcloud_uuid") @db.Uuid // séance côté serveur web
+  pikcloudUuid       String?       @map("pikcloud_uuid") @db.Uuid // photo côté PikCloud (photo_uuid)
+  // 4 derniers chiffres de la carte (ticket du terminal), pour une réclamation ou un relevé ; admin seulement
+  carteFin           String?       @map("carte_fin") @db.Char(4)
 
   produitCode    String  @map("produit_code")
   produitLibelle String? @map("produit_libelle")

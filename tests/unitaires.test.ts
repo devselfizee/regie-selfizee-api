@@ -104,3 +104,19 @@ describe("avenant ventes n° 2 : gratuite « sans_tirage »", () => {
     expect(validerLotTransactions(lot("sans_tirage", "cb"))).toBe(false);
   });
 });
+
+describe("avenant ventes n° 2 : carte_fin", () => {
+  const lot = (carte: string, moyen: string) => ({
+    schema_version: "1.1", borne_id: "S513", envoye_le: "2026-10-27T10:00:00+01:00", logiciel_version: "1",
+    transactions: [{ transaction_id: "S513-20261027-K7PX2M-1", horodatage: "2026-10-27T09:00:00+01:00", montant_ttc_centimes: 350, devise: "EUR",
+      statut: "accepte", module: { type: "HEXAPAY" }, moyen_paiement: moyen, reference_monetique: "554821", produit: { code: "TIRAGE", nb_tirages: 1 }, carte_fin: carte,
+      pikcloud_uuid: "0f8c1c2e5b7a4c1e9d2a3f4b5c6d7e8f" }],
+  });
+  it("4 chiffres, seulement avec une carte ; photo_uuid avec ou sans tirets", async () => {
+    const { validerLotTransactions } = await import("../src/ingestion/validation.js");
+    expect(validerLotTransactions(lot("8621", "sans_contact"))).toBe(true);
+    expect(validerLotTransactions(lot("8621", "cb"))).toBe(true);
+    expect(validerLotTransactions(lot("862", "cb"))).toBe(false);
+    expect(validerLotTransactions(lot("8621", "web"))).toBe(false);
+  });
+});
