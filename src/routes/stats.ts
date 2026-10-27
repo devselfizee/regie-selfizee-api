@@ -26,8 +26,38 @@ const granularite = z.enum(Object.keys(GRANULARITES) as [keyof typeof GRANULARIT
 const n = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
 
 const FROM_AGG = Prisma.sql`FROM agg_jour a JOIN lieux l ON l.id = a.lieu_id JOIN bornes b ON b.id = a.borne_id`;
+const FROM_TRANSACTIONS = Prisma.sql`FROM transactions a JOIN lieux l ON l.id = a.lieu_id JOIN bornes b ON b.id = a.borne_id`;
+// Vraie vente : acceptée et débitée (ni gratuite, ni offerte, ni expirée…)
+const VENDUE = Prisma.sql`(a.statut = 'ACCEPTEE' AND a.moyen_paiement <> 'AUCUN' AND a.montant_ttc_cents > 0)`;
+// Séance photo : l'identifiant de transaction sans son n° de paiement (S180-20261016-Z95FN7-1 → S180-20261016-Z95FN7),
+// pour ne pas compter deux fois le « +1 pour un pote » d'une même séance
+const SEANCE = Prisma.sql`(a.borne_id::text || ':' || regexp_replace(a.transaction_id_module, '-[0-9]+$', ''))`;
+
+/**
+ * Activité photo : séances arrivées au paiement (« photos prises » : la borne ne transmet pas les séances
+ * abandonnées avant l'offre), séances payées, impressions payées et versions numériques vendues.
+ */
+async function activite(f: Filtres) {
+  const [r] = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT count(DISTINCT ${SEANCE}) FILTER (WHERE a.statut <> 'REMBOURSEE') prises,
+           count(DISTINCT ${SEANCE}) FILTER (WHERE ${VENDUE}) achetees,
+           coalesce(sum(a.nb_tirages) FILTER (WHERE ${VENDUE}), 0) impressions,
+           count(*) FILTER (WHERE ${VENDUE} AND a.produit_code = 'NUMERIQUE') numeriques
+    ${FROM_TRANSACTIONS}
+    WHERE ${et([...conditionsVentes(f, "a.jour_local"), ...conditionsLieu(f)])}`;
+  const prises = n(r.prises);
+  const achetees = n(r.achetees);
+  return {
+    photosPrises: prises,
+    photosAchetees: achetees,
+    impressionsPayantes: n(r.impressions),
+    versionsNumeriques: n(r.numeriques),
+    tauxConversion: prises ? achetees / prises : 0,
+  };
+}
 
 async function kpis(f: Filtres) {
+  const photo = activite(f);
   const [r] = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT sum(a.ca_ttc_cents) ca_ttc, sum(a.ca_ht_cents) ca_ht, sum(a.nb_acceptees) nb,
            sum(a.nb_refusees) refus, sum(a.nb_annulees) annul, sum(a.rembourse_ttc_cents) rembourse,
@@ -38,7 +68,12 @@ async function kpis(f: Filtres) {
     WHERE ${et([...conditionsVentes(f), ...conditionsLieu(f)])}`;
   const nb = n(r.nb);
   const refus = n(r.refus);
+  const a = await photo;
   return {
+    ...a,
+    // Panier moyen par photo achetée (séance payée, « +1 pour un pote » compris)
+    panierPhotoTtcCents: a.photosAchetees ? Math.round(n(r.ca_ttc) / a.photosAchetees) : 0,
+    panierPhotoHtCents: a.photosAchetees ? Math.round(n(r.ca_ht) / a.photosAchetees) : 0,
     caTtcCents: n(r.ca_ttc),
     caHtCents: n(r.ca_ht),
     nbVentes: nb,
@@ -59,13 +94,13 @@ async function kpis(f: Filtres) {
 }
 
 async function serie(f: Filtres, gran: keyof typeof GRANULARITES, decalageAns = 0) {
-  const rows = await prisma.$queryRaw<{ periode: Date; ca: unknown; nb: unknown }[]>`
+  const rows = await prisma.$queryRaw<{ periode: Date; ca: unknown; ca_ht: unknown; nb: unknown }[]>`
     SELECT (date_trunc(${GRANULARITES[gran]}, a.jour::timestamp) + make_interval(years => ${decalageAns}::int))::date periode,
-           sum(a.ca_ttc_cents) ca, sum(a.nb_acceptees) nb
+           sum(a.ca_ttc_cents) ca, sum(a.ca_ht_cents) ca_ht, sum(a.nb_acceptees) nb
     ${FROM_AGG}
     WHERE ${et([...conditionsVentes(f), ...conditionsLieu(f)])}
     GROUP BY 1 ORDER BY 1`;
-  return rows.map((r) => ({ periode: ymd(r.periode), caTtcCents: n(r.ca), nbVentes: n(r.nb) }));
+  return rows.map((r) => ({ periode: ymd(r.periode), caTtcCents: n(r.ca), caHtCents: n(r.ca_ht), nbVentes: n(r.nb) }));
 }
 
 async function comparaisons(f: Filtres) {
@@ -83,14 +118,14 @@ const finParis = (d: Date) => Prisma.sql`((${ymd(d)}::date + 1)::timestamp AT TI
 export async function classement(f: Filtres) {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     WITH ventes AS (
-      SELECT a.lieu_id, sum(a.ca_ttc_cents) ca, sum(a.nb_acceptees) nb,
+      SELECT a.lieu_id, sum(a.ca_ttc_cents) ca, sum(a.ca_ht_cents) ca_ht, sum(a.nb_acceptees) nb,
              count(DISTINCT a.jour) FILTER (WHERE a.nb_acceptees > 0) jours
       ${FROM_AGG}
       WHERE ${et(conditionsVentes(f))}
       GROUP BY a.lieu_id
     )
     SELECT l.id, l.enseigne, l.ville, tl.libelle type_lieu,
-           coalesce(v.ca, 0) ca, coalesce(v.nb, 0) nb, coalesce(v.jours, 0) jours
+           coalesce(v.ca, 0) ca, coalesce(v.ca_ht, 0) ca_ht, coalesce(v.nb, 0) nb, coalesce(v.jours, 0) jours
     FROM lieux l
     JOIN ref_valeurs tl ON tl.id = l.type_lieu_id
     LEFT JOIN ventes v ON v.lieu_id = l.id
@@ -102,6 +137,7 @@ export async function classement(f: Filtres) {
     ville: r.ville as string | null,
     typeLieu: r.type_lieu as string,
     caTtcCents: n(r.ca),
+    caHtCents: n(r.ca_ht),
     nbVentes: n(r.nb),
     joursAvecVente: n(r.jours),
     caParJourVenteCents: n(r.jours) ? Math.round(n(r.ca) / n(r.jours)) : 0,
@@ -138,6 +174,46 @@ async function parc(f: Filtres) {
     inactives: bornes.filter((b) => !b.active),
     bornesNonAffectees: n(nonAffectees),
   };
+}
+
+/** CA par heure de la journée sur la période (une seule journée : la courbe de la journée). */
+async function parHeure(f: Filtres) {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT h.heure, sum(h.ca_ttc_cents) ca, sum(h.nb_acceptees) nb
+    FROM agg_heure h JOIN lieux l ON l.id = h.lieu_id JOIN bornes b ON b.id = h.borne_id
+    WHERE h.jour BETWEEN ${ymd(f.du)}::date AND ${ymd(f.au)}::date
+      ${f.gammeId?.length ? Prisma.sql`AND b.gamme_id IN (${Prisma.join(f.gammeId)})` : Prisma.empty}
+      AND ${et(conditionsLieu(f))}
+    GROUP BY 1 ORDER BY 1`;
+  const parH = new Map(rows.map((r) => [n(r.heure), r]));
+  // agg_heure n'a que le TTC : HT à 20 % de TVA (taux des ventes en régie)
+  return Array.from({ length: 24 }, (_, heure) => {
+    const r = parH.get(heure);
+    return { heure, caTtcCents: n(r?.ca), caHtCents: Math.round(n(r?.ca) / 1.2), nbVentes: n(r?.nb) };
+  });
+}
+
+/** Les dernières vraies ventes (débitées) dans le périmètre et les filtres. */
+async function dernieresVentes(f: Filtres) {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT a.id, a.horodatage, a.montant_ttc_cents, a.montant_ht_cents, a.produit_code, a.produit_libelle, a.nb_tirages,
+           a.moyen_paiement::text moyen, l.id lieu_id, l.enseigne, b.identifiant
+    ${FROM_TRANSACTIONS}
+    WHERE ${VENDUE} AND ${et([...conditionsVentes(f, "a.jour_local"), ...conditionsLieu(f)])}
+    ORDER BY a.horodatage DESC LIMIT 10`;
+  return rows.map((r) => ({
+    id: String(r.id),
+    horodatage: r.horodatage as Date,
+    montantTtcCents: n(r.montant_ttc_cents),
+    montantHtCents: n(r.montant_ht_cents),
+    produitCode: r.produit_code as string,
+    produitLibelle: r.produit_libelle as string | null,
+    nbTirages: n(r.nb_tirages),
+    moyenPaiement: r.moyen as string,
+    lieuId: n(r.lieu_id),
+    lieu: r.enseigne as string,
+    borne: r.identifiant as string,
+  }));
 }
 
 /** Commissions des périodes calculées comprises dans la période affichée (réservé admin). */
@@ -194,13 +270,15 @@ statsRouter.get(
     const gran = granularite.parse(req.query.granularite);
     const { n1 } = periodesComparaison(f);
 
-    const [kpi, s, sN1, cl, p, commissions] = await Promise.all([
+    const [kpi, s, sN1, cl, p, commissions, heures, dernieres] = await Promise.all([
       comparaisons(f),
       serie(f, gran),
       serie({ ...f, ...n1 }, gran, 1),
       classement(f),
       parc(f),
       req.utilisateur?.role === "ADMIN" ? commissionsPeriode(f) : Promise.resolve(null),
+      parHeure(f),
+      dernieresVentes(f),
     ]);
 
     res.json({
@@ -212,6 +290,8 @@ statsRouter.get(
       classement: cl,
       parc: perimetreLieux(req.utilisateur) ? { ...p, bornesNonAffectees: 0 } : p,
       commissions,
+      parHeure: heures,
+      dernieresVentes: dernieres,
     });
   })
 );
