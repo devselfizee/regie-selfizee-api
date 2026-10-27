@@ -133,7 +133,7 @@ describe("schéma 1.1 : ventes vues de la borne", () => {
 describe("remboursement saisi en back-office", () => {
   it("partiel puis solde, rattaché à la vente et au lieu", async () => {
     await envoyer([vente(1, { reference_monetique: "554821" })]).expect(200);
-    const [v] = (await api.get("/api/ventes?q=554821").expect(200)).body;
+    const [v] = (await api.get("/api/ventes?q=554821").expect(200)).body.lignes;
     expect(v).toMatchObject({ transactionIdModule: "S513-20261005-K7PX2M-1", rembourseCents: 0, lieu: { enseigne: "Le Club" } });
 
     await api.post(`/api/ventes/${v.id}/remboursement`).send({ montantCents: 300, motif: "Tirage raté" }).expect(201);

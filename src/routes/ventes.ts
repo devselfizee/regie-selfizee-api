@@ -15,45 +15,93 @@ export const ventesRouter = Router();
 
 const jourIso = z.iso.date();
 
-// GET /api/ventes?q=&borneId=&du=&au=&tout=1 — 100 au plus, les plus récentes d'abord.
-// Par défaut, seulement les vraies ventes (débitées) et les remboursements ; tout=1 ajoute les séances
-// sans vente : gratuites, offertes, refusées, annulées, expirées (terminal sans réponse, aucun débit).
-// Une recherche (q) porte sur toutes.
+// Vraie vente : acceptée et débitée (ni gratuite, ni offerte, ni expirée…)
+const VENDUE: Prisma.TransactionWhereInput = { statut: "ACCEPTEE", montantTtcCents: { gt: 0 }, moyenPaiement: { not: "AUCUN" } };
+// Ce que montre la liste selon « type »
+const TYPES: Record<string, Prisma.TransactionWhereInput> = {
+  // Tous les paiements : chaque passage par un moyen de paiement (encaissé ou non) et les remboursements
+  paiements: { moyenPaiement: { not: "AUCUN" } },
+  ventes: { OR: [VENDUE, { statut: "REMBOURSEE" }] },
+  non_abouties: { statut: { in: ["REFUSEE", "ANNULEE", "EXPIREE", "OFFERTE"] } },
+  remboursements: { statut: "REMBOURSEE" },
+  gratuites: { statut: "ACCEPTEE", OR: [{ moyenPaiement: "AUCUN" }, { montantTtcCents: 0 }] },
+  tout: {},
+};
+const listeCodes = z
+  .string()
+  .regex(/^[A-Z_]+(,[A-Z_]+)*$/)
+  .transform((s) => s.split(","))
+  .optional();
+
+// GET /api/ventes?q=&du=&au=&lieuId=&borneId=&type=&moyenPaiement=&parc=&page= — liste paginée des paiements
+// (50 par page, les plus récents d'abord), avec le nombre total et l'encaissé de la sélection.
+// Une recherche (q : identifiant de transaction, n° d'autorisation, identifiant Stripe) porte sur tout.
 ventesRouter.get(
   "/",
   asynchrone(async (req, res) => {
     const f = z
-      .object({ q: z.string().trim().optional(), borneId: z.coerce.number().int().optional(), du: jourIso.optional(), au: jourIso.optional(), tout: z.string().optional() })
+      .object({
+        q: z.string().trim().optional(),
+        lieuId: z.coerce.number().int().optional(),
+        borneId: z.coerce.number().int().optional(),
+        du: jourIso.optional(),
+        au: jourIso.optional(),
+        type: z.enum(Object.keys(TYPES) as [string, ...string[]]).default("paiements"),
+        moyenPaiement: listeCodes,
+        parc: z.enum(["SELFIZEE", "CLIENT"]).optional(),
+        page: z.coerce.number().int().min(1).default(1),
+        // Compatibilité : tout=1 de l'ancienne page Ventes
+        tout: z.string().optional(),
+      })
       .parse(req.query);
+    const type = f.tout ? "tout" : f.type;
     const where: Prisma.TransactionWhereInput = {
       AND: [
-        // Une recherche par identifiant trouve la transaction quel que soit son statut
-        f.tout || f.q ? {} : { OR: [{ statut: "ACCEPTEE", montantTtcCents: { gt: 0 }, moyenPaiement: { not: "AUCUN" } }, { statut: "REMBOURSEE" }] },
-        f.q ? { OR: [{ transactionIdModule: { contains: f.q, mode: "insensitive" } }, { referenceMonetique: { contains: f.q, mode: "insensitive" } }] } : {},
+        f.q ? { OR: [{ transactionIdModule: { contains: f.q, mode: "insensitive" } }, { referenceMonetique: { contains: f.q, mode: "insensitive" } }] } : TYPES[type],
+        f.moyenPaiement?.length ? { moyenPaiement: { in: f.moyenPaiement as Prisma.EnumMoyenPaiementFilter["in"] } } : {},
+        f.lieuId ? { lieuId: f.lieuId } : {},
+        f.borneId ? { borneId: f.borneId } : {},
+        // Une vente suit le parc de sa borne
+        f.parc ? { borne: { parc: f.parc } } : {},
+        f.du || f.au ? { jourLocal: { ...(f.du ? { gte: new Date(`${f.du}T00:00:00Z`) } : {}), ...(f.au ? { lte: new Date(`${f.au}T00:00:00Z`) } : {}) } } : {},
       ],
-      ...(f.borneId ? { borneId: f.borneId } : {}),
-      ...(f.du || f.au ? { jourLocal: { ...(f.du ? { gte: new Date(`${f.du}T00:00:00Z`) } : {}), ...(f.au ? { lte: new Date(`${f.au}T00:00:00Z`) } : {}) } } : {}),
     };
-    const ventes = await prisma.transaction.findMany({
-      where,
-      orderBy: { horodatage: "desc" },
-      take: 100,
-      include: {
-        borne: { select: { id: true, identifiant: true } },
-        lieu: { select: { id: true, enseigne: true } },
-        typeModule: { select: { libelle: true } },
-        derivees: { where: { statut: "REMBOURSEE" }, select: { montantTtcCents: true } },
+    const parPage = 50;
+    const [total, ventes, encaisse, rembourse] = await Promise.all([
+      prisma.transaction.count({ where }),
+      prisma.transaction.findMany({
+        where,
+        orderBy: { horodatage: "desc" },
+        skip: (f.page - 1) * parPage,
+        take: parPage,
+        include: {
+          borne: { select: { id: true, identifiant: true, parc: true } },
+          lieu: { select: { id: true, enseigne: true } },
+          typeModule: { select: { libelle: true } },
+          derivees: { where: { statut: "REMBOURSEE" }, select: { montantTtcCents: true } },
+        },
+      }),
+      prisma.transaction.aggregate({ where: { AND: [where, VENDUE] }, _sum: { montantTtcCents: true }, _count: true }),
+      prisma.transaction.aggregate({ where: { AND: [where, { statut: "REMBOURSEE" }] }, _sum: { montantTtcCents: true } }),
+    ]);
+    res.json({
+      total,
+      page: f.page,
+      parPage,
+      // Encaissé de la sélection : vraies ventes moins remboursements
+      totaux: {
+        nbVentes: encaisse._count,
+        encaisseTtcCents: (encaisse._sum.montantTtcCents ?? 0) - (rembourse._sum.montantTtcCents ?? 0),
+        rembourseTtcCents: rembourse._sum.montantTtcCents ?? 0,
       },
-    });
-    res.json(
-      ventes.map(({ derivees, ...v }) => ({
+      lignes: ventes.map(({ derivees, ...v }) => ({
         ...v,
         id: v.id.toString(),
         importId: v.importId.toString(),
         transactionOrigineId: v.transactionOrigineId?.toString() ?? null,
         rembourseCents: derivees.reduce((s, r) => s + r.montantTtcCents, 0),
-      }))
-    );
+      })),
+    });
   })
 );
 
