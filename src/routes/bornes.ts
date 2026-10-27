@@ -39,10 +39,23 @@ bornesRouter.get(
         affectations: { where: { fin: null }, include: { lieu: { select: { id: true, enseigne: true, ville: true, parc: true } } } },
       },
     });
+    // Ventes reçues sans lieu (borne pas encore affectée à leur date) : à rattacher en l'affectant
+    const sansLieu = new Map(
+      (
+        await prisma.transaction.groupBy({
+          by: ["borneId"],
+          where: { lieuId: null, borneId: { in: bornes.map((b) => b.id) } },
+          _count: true,
+          _min: { horodatage: true },
+          _max: { horodatage: true },
+        })
+      ).map((g) => [g.borneId, { nb: g._count, du: g._min.horodatage, au: g._max.horodatage }])
+    );
     const maintenant = Date.now();
     res.json(
       bornes.map(({ affectations, ...b }) => ({
         ...sansCle(b),
+        ventesSansLieu: sansLieu.get(b.id) ?? null,
         lieuActuel: affectations[0]?.lieu ?? null,
         affectationActuelle: affectations[0] ? { id: affectations[0].id, debut: affectations[0].debut } : null,
         enLigne: b.dernierHeartbeat ? maintenant - b.dernierHeartbeat.getTime() < EN_LIGNE_MS : false,
