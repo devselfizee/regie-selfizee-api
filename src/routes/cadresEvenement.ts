@@ -12,6 +12,9 @@ const admin = exiger("ADMIN");
 // Sans le canvas ni le rendu : la liste ne sert qu'aux vignettes de l'écran Gabarits
 const resume = { gabarit: true, nom: true, formatId: true, gabaritStudioId: true, nbPoses: true, vignette: true, updatedAt: true } as const;
 
+/** Le config.json change avec les cadres : la fiche passe « modifiée depuis la publication ». */
+const toucherFiche = (lieuId: number) => prisma.configEvenement.updateMany({ where: { lieuId }, data: { updatedAt: new Date() } });
+
 async function lieuExiste(lieuId: number) {
   if (!(await prisma.lieu.findUnique({ where: { id: lieuId }, select: { id: true } }))) throw new HttpError(404, "INTROUVABLE");
 }
@@ -63,6 +66,7 @@ cadresEvenementRouter.put(
       update: donnees,
       select: { ...resume, id: true },
     });
+    await toucherFiche(lieuId);
     await prisma.auditLog.create({
       data: {
         userId: req.utilisateur?.id ?? null, entite: "cadre_evenement", entiteId: `${lieuId}:${gabarit}`, action: existant ? "MODIFICATION" : "CREATION",
@@ -81,6 +85,7 @@ cadresEvenementRouter.delete(
     const lieuId = Number(req.params.id);
     const gabarit = gabaritParam.parse(req.params.gabarit);
     await prisma.cadreEvenement.delete({ where: { lieuId_gabarit: { lieuId, gabarit } } });
+    await toucherFiche(lieuId);
     await prisma.auditLog.create({
       data: { userId: req.utilisateur?.id ?? null, entite: "cadre_evenement", entiteId: `${lieuId}:${gabarit}`, action: "SUPPRESSION" },
     });

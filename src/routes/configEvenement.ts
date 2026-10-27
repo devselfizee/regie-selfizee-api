@@ -5,7 +5,8 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { controler, genererCodeEvenement, genererMotDePasse, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
-import { genererConfig, type HoraireOuverture } from "../config-evenement/generation.js";
+import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
+import { genererZip } from "../config-evenement/zip.js";
 
 // Fiche événement d'un lieu (CDC page souvenir § 13) : la configuration de la borne, réservée aux admins.
 // Montée sous /api/lieux, à côté des routes de la fiche lieu.
@@ -13,6 +14,10 @@ export const configEvenementRouter = Router();
 const admin = exiger("ADMIN");
 
 const hhmm = (d: Date) => d.toISOString().slice(11, 16);
+
+/** Cadres dessinés au studio pour ce lieu (JSON Fabric, et rendu PNG pour le zip). */
+const cadresDuLieu = (lieuId: number, avecImage = false) =>
+  prisma.cadreEvenement.findMany({ where: { lieuId }, select: { gabarit: true, canvas: true, image: avecImage } });
 
 async function charger(lieuId: number) {
   const lieu = await prisma.lieu.findUnique({
@@ -100,7 +105,8 @@ configEvenementRouter.get(
       if (!c.configPubliee) throw new HttpError(404, "PAS_ENCORE_PUBLIE", "Cet événement n'a pas encore été publié");
       config = c.configPubliee;
     } else {
-      config = genererConfig({ code: c.code, motDePasseTableau: c.motDePasseTableau, reglages: reglagesSchema.parse(c.reglages), horaires, maintenant: c.updatedAt });
+      const cadres = await cadresDuLieu(lieu.id);
+      config = genererConfig({ code: c.code, motDePasseTableau: c.motDePasseTableau, reglages: reglagesSchema.parse(c.reglages), horaires, maintenant: c.updatedAt, cadres });
     }
     res.setHeader("Content-Disposition", `attachment; filename="config-${c.code}.json"`);
     res.type("application/json").send(JSON.stringify(config, null, 2));
@@ -123,7 +129,7 @@ configEvenementRouter.post(
       return;
     }
     const maintenant = new Date();
-    const config = genererConfig({ code: c.code, motDePasseTableau: c.motDePasseTableau, reglages, horaires, maintenant });
+    const config = genererConfig({ code: c.code, motDePasseTableau: c.motDePasseTableau, reglages, horaires, maintenant, cadres: await cadresDuLieu(lieuId) });
     await prisma.$transaction([
       prisma.configEvenement.update({
         where: { lieuId },
@@ -136,5 +142,23 @@ configEvenementRouter.post(
     ]);
     const apres = await charger(lieuId);
     res.json(reponse(apres.lieu, apres.horaires));
+  })
+);
+
+// GET /api/lieux/:id/evenement/zip — le zip de l'événement (config.json, cadres, aperçus, éléments du kit),
+// recalculé à chaque appel : il suit les réglages et les cadres enregistrés
+configEvenementRouter.get(
+  "/:id/evenement/zip",
+  admin,
+  asynchrone(async (req, res) => {
+    const { lieu, horaires } = await charger(Number(req.params.id));
+    const c = lieu.configEvenement;
+    if (!c) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
+    const reglages = reglagesSchema.parse(c.reglages);
+    const cadres = await cadresDuLieu(lieu.id, true);
+    const config = genererConfig({ code: c.code, motDePasseTableau: c.motDePasseTableau, reglages, horaires, maintenant: c.updatedAt, cadres });
+    const zip = await genererZip({ config, modele: lireModele(), choisis: reglages.gabarits.choisis, cadres, maintenant: c.updatedAt });
+    res.setHeader("Content-Disposition", `attachment; filename="evenement-${c.code}.zip"`);
+    res.type("application/zip").send(zip);
   })
 );

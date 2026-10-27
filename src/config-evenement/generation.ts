@@ -1,20 +1,22 @@
 import { readFileSync } from "node:fs";
 import type { Gabarit, Reglages } from "./reglages.js";
+import { compositionAvecCadre, type CompositionKit } from "./composition.js";
 
 // Génère le config.json chargé par la borne pour un lieu en régie (CDC page souvenir § 13.4).
 // La partie commune (filtre, pages, langues, gabarits du kit) vient de l'export étalon FJT5 ;
 // le reste vient des réglages de la fiche événement et des réglages fixés par le mode régie (§ 13.1).
+// Un gabarit habillé au studio prend les zones photo de son cadre (composition.ts).
 
-interface Modele {
+export interface Modele {
   customFilter: unknown;
   pages: unknown[];
   languages: unknown[];
   version: unknown;
-  gabarits: Record<Gabarit, { preview: string } & Record<string, unknown>>;
+  gabarits: Record<Gabarit, CompositionKit & { preview: string; overlay: string; lvOverlay?: string }>;
 }
 
 let modele: Modele | null = null;
-const lireModele = (): Modele =>
+export const lireModele = (): Modele =>
   (modele ??= JSON.parse(readFileSync(new URL("../../modeles/evenement-nightlife.json", import.meta.url), "utf8")) as Modele);
 
 /** Base du lien imprimé en QR (#TOKEN# = code d'événement + photo_uuid de la séance). */
@@ -32,13 +34,15 @@ export interface EntreeGeneration {
   reglages: Reglages;
   horaires: HoraireOuverture[];
   maintenant: Date;
+  /** Cadres dessinés au studio (JSON Fabric), un au plus par gabarit. */
+  cadres?: { gabarit: string; canvas: string }[];
 }
 
 const euros = (cents: number) => Math.round(cents) / 100;
 const nomPreview = (g: Gabarit, m: Modele) => m.gabarits[g].preview.replace(/^Frames\//, "").replace(/\.jpg$/, "");
 
 /** « 2026-10-23 14:05:09 », heure de Paris, comme updateDate des exports booth. */
-function horodatageParis(d: Date): string {
+export function horodatageParis(d: Date): string {
   const p = Object.fromEntries(
     new Intl.DateTimeFormat("fr-FR", {
       timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
@@ -49,7 +53,7 @@ function horodatageParis(d: Date): string {
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
 }
 
-export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, maintenant }: EntreeGeneration) {
+export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, maintenant, cadres = [] }: EntreeGeneration) {
   const m = lireModele();
   const t = r.tarifs;
   const paliers = [...t.paliers].sort((a, b) => a.de - b.de);
@@ -130,7 +134,10 @@ export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, 
       welcomeFormats: r.gabarits.accueil.map((g) => nomPreview(g, m)),
       sharePageQR: { qrBaseUrl: QR_BASE_URL },
     },
-    compositions: r.gabarits.choisis.map((g) => m.gabarits[g]),
+    compositions: r.gabarits.choisis.map((g) => {
+      const cadre = cadres.find((c) => c.gabarit === g);
+      return cadre ? compositionAvecCadre(m.gabarits[g], cadre.canvas) : m.gabarits[g];
+    }),
     pages: m.pages,
     languages: m.languages,
     version: m.version,
