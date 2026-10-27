@@ -15,17 +15,22 @@ La synchronisation est **directe : borne → plateforme de suivi**, sans passer 
 - **Lien avec Pikcloud** : champ `pikcloud_uuid`.
 - **Heartbeat** : `ruban_restant` facultatif, référentiel des codes d'erreur publié, codes inconnus acceptés.
 
+**Nouveautés du 27/10/2026** (avenants « parcours invité » et « ventes n° 2 » du 26/10/2026) :
+- **Parcours invité** : nouvelle route `POST /ingest/v1/parcours`, une séance par objet, vente ou pas (§ 4 bis).
+- **Séances à 0 €** : nouvelle valeur `sans_tirage` de `gratuite` (photo enregistrée sans tirage ni paiement). Avec elle, `gratuite` peut être envoyé pour toute séance `aucun`.
+
 ## 1. Vue d'ensemble
 
 | Envoi | Route | Fréquence |
 |---|---|---|
 | Ventes | `POST /ingest/v1/transactions` | Au verdict de chaque vente (voir § 3), par petits lots, plus le rattrapage après une coupure |
 | État de la borne | `POST /ingest/v1/heartbeats` | Toutes les **5 minutes**, même sans vente |
+| Parcours invité | `POST /ingest/v1/parcours` | Une fois par séance, à sa clôture, vente ou pas (§ 4 bis) |
 
 - **URL de base** : fournie par Selfizee, en **HTTPS**. Une URL de DEV est disponible pour les essais avec le simulateur de terminal ; l'URL de PROD sera livrée ensuite.
 - **Format** : JSON (UTF-8), en-tête `Content-Type: application/json`.
 - **Taille maximale d'une requête** : 2 Mo.
-- **Schémas JSON officiels** (à utiliser pour valider côté borne) : [`schemas/transactions.v1.schema.json`](../schemas/transactions.v1.schema.json) et [`schemas/heartbeat.v1.schema.json`](../schemas/heartbeat.v1.schema.json). Ils acceptent `schema_version` `"1.0"` et `"1.1"`. Des exemples sont dans [`schemas/examples/`](../schemas/examples/).
+- **Schémas JSON officiels** (à utiliser pour valider côté borne) : [`schemas/transactions.v1.schema.json`](../schemas/transactions.v1.schema.json) et [`schemas/heartbeat.v1.schema.json`](../schemas/heartbeat.v1.schema.json), plus [`schemas/parcours.v1.schema.json`](../schemas/parcours.v1.schema.json) pour les parcours (version `"1.0"`). Les deux premiers acceptent `schema_version` `"1.0"` et `"1.1"`. Des exemples sont dans [`schemas/examples/`](../schemas/examples/).
 
 ## 2. Authentification
 
@@ -111,7 +116,7 @@ Content-Type: application/json
 | `moyen_paiement` | oui | Voir le tableau des moyens ci-dessous. |
 | `reference_monetique` | non | **Numéro d'autorisation** du ticket (`NO AUTO`, 6 chiffres) ou identifiant de paiement Stripe (`pi_…`) : clé du rapprochement avec les relevés du prestataire. Absent pour un refus, une annulation, une expiration. **Interdit pour les espèces et les séances gratuites.** |
 | `reference_sequence` | non | Numéro de séquence du terminal (6 chiffres). |
-| `gratuite` | non | Séance à 0 € : `mode_gratuit`, `code_staff`, `degrade` (terminal en panne, tirage offert) ou `reimpression`. Exige `moyen_paiement` = `aucun`. |
+| `gratuite` | non | Séance à 0 € : `mode_gratuit`, `code_staff`, `degrade` (terminal en panne, tirage offert), `reimpression` ou `sans_tirage` (photo enregistrée sans tirage ni paiement : voie numérique seule ou « non merci » sur l'offre). Exige `moyen_paiement` = `aucun`. |
 | `pikcloud_uuid` | non | Identifiant de la séance côté serveur web (`photo_uuid`). |
 | `produit.code` | oui | `TIRAGE`, `TIRAGE_EXTRA` (paiement supplémentaire de la séance), `NUMERIQUE` (photo livrée en numérique seul), `POSTAL` (tirage expédié). |
 | `produit.libelle` | non | Libellé de la formule tel que la borne l'affiche (ex. « 2 tirages »). |
@@ -136,7 +141,7 @@ Content-Type: application/json
 | `mobile` | Apple Pay / Google Pay sur un terminal qui sait les distinguer (pas Hexapay, qui les présente comme du sans contact). |
 | `web` | Paiement sur le téléphone de l'invité par QR, débité par le serveur web (Stripe). Module `STRIPE_QR`. |
 | `especes` | Monnayeur. |
-| `aucun` | Séance à 0 € (avec `statut: "accepte"`, `montant_ttc_centimes: 0` et, de préférence, `gratuite`). |
+| `aucun` | Séance à 0 € (avec `statut: "accepte"`, `montant_ttc_centimes: 0` et `gratuite`, `sans_tirage` compris). |
 | `autre` | Moyen inconnu (ticket non retrouvé). |
 
 Les séances à 0 € sont **acceptées** : elles ne font ni vente ni chiffre d'affaires, mais comptent dans l'activité et la consommation de papier du lieu.
@@ -251,6 +256,44 @@ Content-Type: application/json
 | `ALIM_BATTERIE` | autre | Sur batterie |
 
 Un lot peut contenir jusqu'à **2 000** heartbeats (rattrapage). Réponse : `200 OK` avec `{ "recus": 2, "crees": 2, "doublons": 0 }`. Un heartbeat déjà reçu (même borne, même horodatage) est ignoré.
+
+## 4 bis. Envoi du parcours invité
+
+Un **parcours** décrit une séance du kit nightlife, de la première page après l'accueil jusqu'à la clôture, **vente ou pas**. La plateforme en tire l'entonnoir de conversion de chaque lieu : séances commencées, cadre choisi, photo prise, photo vue, offre vue, paiement affiché, demandé, accepté, imprimé. Les ventes restent envoyées par `/ingest/v1/transactions` : le parcours ne les remplace pas.
+
+`POST /ingest/v1/parcours`, même authentification, mêmes codes de réponse et mêmes règles de rattrapage que les ventes. Schéma : [`schemas/parcours.v1.schema.json`](../schemas/parcours.v1.schema.json). Un lot contient de **1 à 500** parcours.
+
+```json
+{
+  "schema_version": "1.0",
+  "borne_id": "S513",
+  "envoye_le": "2026-10-22T23:12:00+02:00",
+  "logiciel_version": "2026.10.26",
+  "rattrapage": false,
+  "parcours": [ { "…": "un parcours par séance" } ]
+}
+```
+
+| Champ | Requis | Description |
+|---|---|---|
+| `parcours_id` | oui | Généré par la borne, stable : `<borne>-<AAAAMMJJ>-<code séance>`, ou `<borne>-<AAAAMMJJ>-T<HHMMSS>` sans code (séance abandonnée avant l'enregistrement). Clé anti-doublon avec la borne. |
+| `evenement`, `kit` | oui | Code de l'événement photo (`FJT5`) ; `nightlife`. |
+| `code_seance` | non | Dès qu'il est tiré. Les `transaction_id` des ventes de la séance commencent par `<borne>-<AAAAMMJJ>-<code>`. |
+| `photo_uuid` | non | Seulement si la photo a été enregistrée. UUID, **avec ou sans tirets** (32 caractères hexadécimaux acceptés). |
+| `debut`, `fin` | oui | RFC 3339 **avec fuseau** (comme les ventes). La séance est rattachée au lieu où était la borne à `debut`. |
+| `duree_s` | oui | `fin − debut`, en secondes. |
+| `issue` | oui | `validee`, `retour`, `delai`, `appel` ou `autre`. |
+| `etapes` | oui | Une clé par étape **atteinte**, valeur = heure de la première fois : `cadre`, `prise`, `photo`, `revelation`, `offre`, `paiement`, `paiement_demande`, `impression`. Étape non atteinte : clé absente. |
+| `cadre` | non | Nom du cadre choisi (fichier d'aperçu sans extension). |
+| `photos`, `tirages` | oui | Poses prises ; tirages partis à l'imprimante, « +1 » compris. |
+| `recommencer`, `couleurs_relances`, `retours_offre` | non | Compteurs d'hésitation. |
+| `paiement` | non | Dès qu'un paiement a été demandé : `demandes`, `statut` (`accepte`, `refuse`, `annule`, `expire`, `offert`, `inconnu`), `montant_ttc_centimes`. |
+| `upsell` | non | « +1 pour un pote » : `proposes`, `acceptes`, `montant_ttc_centimes`. |
+| `appel`, `appel_engagee` | non | Photo d'appel lancée par la borne ; quelqu'un a touché la bandelette. |
+
+Tout champ non prévu est refusé. Comme pour les ventes, **un parcours mal formé est rejeté seul** (`SCHEMA_INVALIDE` dans `erreurs[]`) sans bloquer le reste du lot ; seule une enveloppe invalide renvoie `400`.
+
+**Réponse** `200` : `{ "import_id", "recus", "crees", "doublons", "rejetees", "non_affectees", "erreurs": [{ "index", "parcours_id", "code", "message" }] }`. Un renvoi identique (même `borne_id`, même `parcours_id`, même contenu) compte en `doublons` ; un contenu différent est refusé en `CONFLIT_DOUBLON` et l'original est gardé ; un même `parcours_id` deux fois dans le lot donne `DOUBLON_DANS_LE_LOT` pour le second.
 
 ## 5. Codes de réponse HTTP et comportement attendu
 
