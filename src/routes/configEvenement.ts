@@ -41,6 +41,8 @@ function reponse(lieu: Awaited<ReturnType<typeof charger>>["lieu"], horaires: Ho
   return {
     enregistre: Boolean(c),
     code: c?.code ?? null,
+    // Mot de passe du tableau de bord de la borne (customerDashboardPassword du config.json), à donner à l'exploitant
+    motDePasseTableau: c?.motDePasseTableau ?? null,
     version: c?.version ?? 0,
     publieeLe: c?.publieeLe ?? null,
     // La version enregistrée diffère-t-elle de la dernière publiée ?

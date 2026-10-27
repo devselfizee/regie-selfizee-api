@@ -38,6 +38,15 @@ beforeEach(() => {
   base.cadres = [{ gabarit: "bandelette", canvas }];
 });
 
+describe("GET /api/lieux/:id/evenement", () => {
+  it("donne le mot de passe du tableau de bord, le même que dans le config.json", async () => {
+    const fiche = (await api.get("/api/lieux/7/evenement").expect(200)).body;
+    expect(fiche).toMatchObject({ code: "RA7K", motDePasseTableau: "MDP23456" });
+    const config = JSON.parse((await api.get("/api/lieux/7/evenement/config.json").expect(200)).text);
+    expect(config.event.customerDashboardPassword).toBe(fiche.motDePasseTableau);
+  });
+});
+
 describe("GET /api/lieux/:id/evenement/config.json", () => {
   it("télécharge le config.json du brouillon, avec les zones du cadre de la bandelette", async () => {
     const r = await api.get("/api/lieux/7/evenement/config.json").expect(200);
