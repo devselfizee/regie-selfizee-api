@@ -575,6 +575,7 @@ enum Gratuite {
   CODE_STAFF
   DEGRADE
   REIMPRESSION
+  SANS_TIRAGE // photo enregistrée sans tirage ni paiement (avenant ventes n° 2)
 }
 
 enum MoyenPaiement {

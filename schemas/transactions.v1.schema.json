@@ -208,9 +208,10 @@
             "mode_gratuit",
             "code_staff",
             "degrade",
-            "reimpression"
+            "reimpression",
+            "sans_tirage"
           ],
-          "description": "Séance à 0 € : borne en mode gratuit, déblocage par code staff, tirage offert sur terminal en panne, réimpression staff."
+          "description": "Séance à 0 € : borne en mode gratuit, déblocage par code staff, tirage offert sur terminal en panne, réimpression staff, ou photo enregistrée sans tirage ni paiement (sans_tirage : voie numérique seule ou « non merci » sur l'offre ; avenant ventes n° 2)."
         },
         "pikcloud_uuid": {
           "type": "string",

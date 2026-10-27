@@ -50,7 +50,7 @@ export interface TransactionJson {
   moyen_paiement: "cb" | "sans_contact" | "especes" | "mobile" | "web" | "aucun" | "autre";
   reference_monetique?: string;
   reference_sequence?: string;
-  gratuite?: "mode_gratuit" | "code_staff" | "degrade" | "reimpression";
+  gratuite?: "mode_gratuit" | "code_staff" | "degrade" | "reimpression" | "sans_tirage";
   pikcloud_uuid?: string;
   produit: { code: string; libelle?: string; nb_tirages: number };
 }

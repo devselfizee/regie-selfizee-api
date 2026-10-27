@@ -91,3 +91,16 @@ describe("département depuis le code postal", () => {
     expect(departement(null)).toBeNull();
   });
 });
+
+describe("avenant ventes n° 2 : gratuite « sans_tirage »", () => {
+  const lot = (gratuite: string, moyen: string) => ({
+    schema_version: "1.1", borne_id: "S513", envoye_le: "2026-10-27T10:00:00+01:00", logiciel_version: "1",
+    transactions: [{ transaction_id: "S513-20261027-K7PX2M-1", horodatage: "2026-10-27T09:00:00+01:00", montant_ttc_centimes: 0, devise: "EUR",
+      statut: "accepte", module: { type: "HEXAPAY" }, moyen_paiement: moyen, produit: { code: "NUMERIQUE", nb_tirages: 0 }, gratuite }],
+  });
+  it("accepte sans_tirage avec le moyen « aucun », le refuse avec une carte", async () => {
+    const { validerLotTransactions } = await import("../src/ingestion/validation.js");
+    expect(validerLotTransactions(lot("sans_tirage", "aucun"))).toBe(true);
+    expect(validerLotTransactions(lot("sans_tirage", "cb"))).toBe(false);
+  });
+});
