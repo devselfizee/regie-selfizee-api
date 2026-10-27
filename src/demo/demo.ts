@@ -376,6 +376,7 @@ export async function effacerDemo() {
       await db.aggDisponibilite.deleteMany({ where: { borneId: { in: B } } });
       await db.transaction.deleteMany({ where: { ...tx, transactionOrigineId: { not: null } } });
       await db.transaction.deleteMany({ where: tx });
+      await db.parcours.deleteMany({ where: { OR: [{ borneId: { in: B } }, { lieuId: { in: L } }] } });
       await db.importLot.deleteMany({ where: { borneId: { in: B } } });
       await db.heartbeat.deleteMany({ where: { borneId: { in: B } } });
       await db.coutBorne.deleteMany({ where: { borneId: { in: B } } });

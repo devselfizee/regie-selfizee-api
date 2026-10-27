@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://regie-selfizee-api.orkessidev.com/schemas/parcours.v1.schema.json",
+  "title": "Parcours invité des bornes (kit nightlife), v1.0",
+  "description": "Un enregistrement par séance, vente ou pas, envoyé à la clôture de la séance (avenant « parcours invité » du 26/10/2026).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "borne_id", "envoye_le", "logiciel_version", "parcours"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "borne_id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9_-]{2,63}$" },
+    "envoye_le": { "$ref": "#/$defs/horodatage" },
+    "logiciel_version": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "rattrapage": { "type": "boolean" },
+    "parcours": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "$ref": "#/$defs/parcours" } }
+  },
+  "$defs": {
+    "horodatage": {
+      "type": "string",
+      "description": "RFC 3339 avec fuseau (+01:00, +02:00 ou Z).",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "parcours": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parcours_id", "evenement", "kit", "debut", "fin", "duree_s", "issue", "etapes", "photos", "tirages"],
+      "properties": {
+        "parcours_id": { "type": "string", "minLength": 1, "maxLength": 128, "description": "<borne>-<AAAAMMJJ>-<code séance>, ou <borne>-<AAAAMMJJ>-T<HHMMSS> sans code. Clé anti-doublon." },
+        "evenement": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "kit": { "enum": ["nightlife"] },
+        "code_seance": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "photo_uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}$", "description": "Identifiant PikCloud de la photo (UUID, avec ou sans tirets), seulement si la photo a été enregistrée." },
+        "debut": { "$ref": "#/$defs/horodatage" },
+        "fin": { "$ref": "#/$defs/horodatage" },
+        "duree_s": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "issue": { "enum": ["validee", "retour", "delai", "appel", "autre"] },
+        "etapes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cadre": { "$ref": "#/$defs/horodatage" },
+            "prise": { "$ref": "#/$defs/horodatage" },
+            "photo": { "$ref": "#/$defs/horodatage" },
+            "revelation": { "$ref": "#/$defs/horodatage" },
+            "offre": { "$ref": "#/$defs/horodatage" },
+            "paiement": { "$ref": "#/$defs/horodatage" },
+            "paiement_demande": { "$ref": "#/$defs/horodatage" },
+            "impression": { "$ref": "#/$defs/horodatage" }
+          }
+        },
+        "cadre": { "type": "string", "maxLength": 64 },
+        "photos": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "recommencer": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "couleurs_relances": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "retours_offre": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "tirages": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "paiement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["demandes", "statut", "montant_ttc_centimes"],
+          "properties": {
+            "demandes": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "statut": { "enum": ["accepte", "refuse", "annule", "expire", "offert", "inconnu"] },
+            "montant_ttc_centimes": { "type": "integer", "minimum": 0, "maximum": 100000 }
+          }
+        },
+        "upsell": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["proposes", "acceptes", "montant_ttc_centimes"],
+          "properties": {
+            "proposes": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "acceptes": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "montant_ttc_centimes": { "type": "integer", "minimum": 0, "maximum": 100000 }
+          }
+        },
+        "appel": { "type": "boolean" },
+        "appel_engagee": { "type": "boolean" }
+      }
+    }
+  }
+}

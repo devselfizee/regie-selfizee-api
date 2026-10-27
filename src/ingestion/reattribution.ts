@@ -22,6 +22,16 @@ export async function reattribuerTransactions(borneId: number, debut: Date, fin:
       WHERE t.borne_id = ${borneId} AND a.borne_id = t.borne_id
         AND t.horodatage >= ${debut} AND t.horodatage < ${borneFin}
         AND t.horodatage >= a.debut AND (a.fin IS NULL OR t.horodatage < a.fin)`,
+    // Parcours invité : rattachés au lieu où était la borne au début de la séance
+    prisma.$executeRaw`
+      UPDATE parcours SET lieu_id = NULL, affectation_id = NULL
+      WHERE borne_id = ${borneId} AND debut >= ${debut} AND debut < ${borneFin}`,
+    prisma.$executeRaw`
+      UPDATE parcours p SET lieu_id = a.lieu_id, affectation_id = a.id
+      FROM affectations_borne a
+      WHERE p.borne_id = ${borneId} AND a.borne_id = p.borne_id
+        AND p.debut >= ${debut} AND p.debut < ${borneFin}
+        AND p.debut >= a.debut AND (a.fin IS NULL OR p.debut < a.fin)`,
   ]);
 
   await recalculerAgregats(borneId, jourEtHeureLocaux(debut).jour, jourEtHeureLocaux(borneFin).jour);

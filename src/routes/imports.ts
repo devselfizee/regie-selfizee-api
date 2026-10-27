@@ -2,7 +2,8 @@ import { Router } from "express";
 import type { ImportErreurStatut, ImportStatut, ImportType, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { ingererLotTransactions } from "../ingestion/transactions.js";
-import { erreursUniquementSurLignes, formaterErreurs, validerLotTransactions, type LotTransactionsJson } from "../ingestion/validation.js";
+import { erreursParLigne, erreursUniquementSurLignes, formaterErreurs, validerLotParcours, validerLotTransactions, type LotParcoursJson, type LotTransactionsJson } from "../ingestion/validation.js";
+import { ingererLotParcours } from "../ingestion/parcours.js";
 
 export const importsRouter = Router();
 
@@ -76,7 +77,7 @@ const filtreBorne = (q: unknown) => (typeof q === "string" && q.trim() ? q.trim(
 importsRouter.get("/journal", async (req, res, next) => {
   try {
     const borne = filtreBorne(req.query.borne);
-    const type = ["TRANSACTIONS", "HEARTBEAT", "RELEVE_MONETIQUE"].includes(String(req.query.type)) ? (String(req.query.type) as ImportType) : undefined;
+    const type = ["TRANSACTIONS", "HEARTBEAT", "RELEVE_MONETIQUE", "PARCOURS"].includes(String(req.query.type)) ? (String(req.query.type) as ImportType) : undefined;
     const statut = ["OK", "PARTIEL", "REJETE"].includes(String(req.query.statut)) ? (String(req.query.statut) as ImportStatut) : undefined;
     const page = Math.max(1, Number(req.query.page) || 1);
     const where: Prisma.ImportLotWhereInput = {
@@ -143,8 +144,15 @@ importsRouter.get("/signes-de-vie", async (req, res, next) => {
 importsRouter.post("/journal/:id/rejouer", async (req, res, next) => {
   try {
     const lot = await prisma.importLot.findUniqueOrThrow({ where: { id: BigInt(req.params.id) }, include: { borne: true } });
-    if (lot.type !== "TRANSACTIONS" || !lot.borne) {
-      return res.status(400).json({ error: "NON_REJOUABLE", message: "Seul un lot de ventes d'une borne connue peut être rejoué" });
+    if (!["TRANSACTIONS", "PARCOURS"].includes(lot.type) || !lot.borne) {
+      return res.status(400).json({ error: "NON_REJOUABLE", message: "Seul un lot de ventes ou de parcours d'une borne connue peut être rejoué" });
+    }
+    if (lot.type === "PARCOURS") {
+      if (!validerLotParcours(lot.payload) && !erreursUniquementSurLignes(validerLotParcours.errors ?? [], "parcours")) {
+        return res.status(400).json({ error: "SCHEMA_INVALIDE", message: formaterErreurs(validerLotParcours.errors) });
+      }
+      const invalides = validerLotParcours(lot.payload) ? new Map<number, string>() : erreursParLigne(validerLotParcours.errors ?? [], "parcours");
+      return res.json(await ingererLotParcours(lot.borne, lot.payload as unknown as LotParcoursJson, req.ip, "RATTRAPAGE_MANUEL", invalides));
     }
     if (!validerLotTransactions(lot.payload) && !erreursUniquementSurLignes(validerLotTransactions.errors ?? [])) {
       return res.status(400).json({ error: "SCHEMA_INVALIDE", message: formaterErreurs(validerLotTransactions.errors) });

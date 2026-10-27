@@ -7,6 +7,7 @@ import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../m
 import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison, ymd, type Filtres } from "../stats/filtres.js";
 import { joursOuverts } from "../alertes/ouverture.js";
 import { disponibilite } from "../stats/disponibilite.js";
+import { entonnoir, photosPrisesParcours } from "../stats/parcours.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
 export function filtresAutorises(req: UtilisateurRequest): Filtres {
@@ -45,10 +46,14 @@ async function activite(f: Filtres) {
            count(*) FILTER (WHERE ${VENDUE} AND a.produit_code = 'NUMERIQUE') numeriques
     ${FROM_TRANSACTIONS}
     WHERE ${et([...conditionsVentes(f, "a.jour_local"), ...conditionsLieu(f)])}`;
-  const prises = n(r.prises);
+  // Avec les parcours invité (avenant du 26/10/2026), « photos prises » compte vraiment les photos prises,
+  // abandons avant l'offre compris ; sinon, les séances arrivées au paiement
+  const parcours = await photosPrisesParcours(f);
+  const prises = parcours ?? n(r.prises);
   const achetees = n(r.achetees);
   return {
     photosPrises: prises,
+    sourcePhotosPrises: parcours === null ? ("paiement" as const) : ("parcours" as const),
     photosAchetees: achetees,
     impressionsPayantes: n(r.impressions),
     versionsNumeriques: n(r.numeriques),
@@ -439,5 +444,25 @@ statsRouter.get(
         heartbeatsRecus: n(b.heartbeats),
       })),
     });
+  })
+);
+
+// GET /api/stats/parcours?du=&au=&<filtres> — entonnoir du parcours invité (avenant du 26/10/2026)
+statsRouter.get(
+  "/parcours",
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const f = filtresAutorises(req);
+    res.json({ periode: periode(f), ...(await entonnoir(f)) });
+  })
+);
+
+// GET /api/stats/lieux/:id/parcours?du=&au= — entonnoir d'un lieu
+statsRouter.get(
+  "/lieux/:id/parcours",
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const lieuId = Number(req.params.id);
+    await verifierAccesLieu(req.utilisateur, lieuId);
+    const f: Filtres = { ...lireFiltres(req.query), lieuId: [lieuId] };
+    res.json({ periode: periode(f), ...(await entonnoir(f)) });
   })
 );

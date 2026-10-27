@@ -31,8 +31,20 @@ export function formaterErreurs(erreurs: ErrorObject[] | null | undefined): stri
  * Les erreurs portent-elles uniquement sur des transactions individuelles ?
  * Si oui, on accepte le lot et on rejette seulement les lignes fautives.
  */
-export function erreursUniquementSurLignes(erreurs: ErrorObject[]): boolean {
-  return erreurs.every((e) => /^\/transactions\/\d+(\/|$)/.test(e.instancePath));
+export function erreursUniquementSurLignes(erreurs: ErrorObject[], tableau = "transactions"): boolean {
+  const ligne = new RegExp(`^/${tableau}/\\d+(/|$)`);
+  return erreurs.every((e) => ligne.test(e.instancePath));
+}
+
+/** Erreurs du schéma regroupées par ligne du tableau (index → message). */
+export function erreursParLigne(erreurs: ErrorObject[], tableau: string): Map<number, string> {
+  const ligne = new RegExp(`^/${tableau}/(\\d+)`);
+  const parLigne = new Map<number, ErrorObject[]>();
+  for (const e of erreurs) {
+    const m = ligne.exec(e.instancePath);
+    if (m) parLigne.set(Number(m[1]), [...(parLigne.get(Number(m[1])) ?? []), e]);
+  }
+  return new Map([...parLigne].map(([i, es]) => [i, formaterErreurs(es)]));
 }
 
 // Types des payloads (miroir des schémas JSON v1, versions 1.0 et 1.1)
@@ -78,4 +90,42 @@ export interface LotHeartbeatsJson {
   schema_version: "1.0" | "1.1";
   borne_id: string;
   heartbeats: HeartbeatJson[];
+}
+
+// ─── Parcours invité (avenant du 26/10/2026) ───
+const schemaParcours = lire("parcours.v1.schema.json");
+export const validerLotParcours = ajv.compile(schemaParcours);
+
+export type EtapeParcours = "cadre" | "prise" | "photo" | "revelation" | "offre" | "paiement" | "paiement_demande" | "impression";
+
+export interface ParcoursJson {
+  parcours_id: string;
+  evenement: string;
+  kit: "nightlife";
+  code_seance?: string;
+  photo_uuid?: string;
+  debut: string;
+  fin: string;
+  duree_s: number;
+  issue: "validee" | "retour" | "delai" | "appel" | "autre";
+  etapes: Partial<Record<EtapeParcours, string>>;
+  cadre?: string;
+  photos: number;
+  recommencer?: number;
+  couleurs_relances?: number;
+  retours_offre?: number;
+  tirages: number;
+  paiement?: { demandes: number; statut: "accepte" | "refuse" | "annule" | "expire" | "offert" | "inconnu"; montant_ttc_centimes: number };
+  upsell?: { proposes: number; acceptes: number; montant_ttc_centimes: number };
+  appel?: boolean;
+  appel_engagee?: boolean;
+}
+
+export interface LotParcoursJson {
+  schema_version: "1.0";
+  borne_id: string;
+  envoye_le: string;
+  logiciel_version: string;
+  rattrapage?: boolean;
+  parcours: ParcoursJson[];
 }

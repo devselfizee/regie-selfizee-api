@@ -184,6 +184,8 @@ model Lieu {
   aggJours        AggJour[]
   aggHeures       AggHeure[]
 
+  parcours Parcours[]
+
   @@index([typeLieuId])
   @@index([commercialId])
   @@index([antenneId])
@@ -380,6 +382,8 @@ model Borne {
   aggHeures     AggHeure[]
   aggDispos     AggDisponibilite[]
 
+  parcours Parcours[]
+
   @@map("bornes")
 }
 
@@ -407,6 +411,8 @@ model AffectationBorne {
   borne        Borne         @relation(fields: [borneId], references: [id])
   lieu         Lieu          @relation(fields: [lieuId], references: [id])
   transactions Transaction[]
+
+  parcours Parcours[]
 
   @@index([borneId, debut])
   @@index([lieuId])
@@ -437,6 +443,8 @@ model ImportLot {
   erreurs      ImportErreur[]
   transactions Transaction[]
 
+  parcours Parcours[]
+
   @@index([borneId, recuLe])
   @@index([payloadSha256])
   @@map("import_lots")
@@ -453,6 +461,7 @@ enum ImportType {
   TRANSACTIONS
   HEARTBEAT
   RELEVE_MONETIQUE
+  PARCOURS // parcours invité (avenant du 26/10/2026)
 }
 
 enum ImportStatut {
@@ -1101,4 +1110,54 @@ model CadreEvenement {
 
   @@unique([lieuId, gabarit])
   @@map("cadres_evenement")
+}
+
+// Parcours invité : une séance du kit nightlife, vente ou pas, de la première page à la clôture
+// (avenant « parcours invité » du 26/10/2026). Sert à l'entonnoir de conversion.
+model Parcours {
+  id                   BigInt   @id @default(autoincrement())
+  borneId              Int      @map("borne_id")
+  parcoursId           String   @map("parcours_id") // généré par la borne, clé anti-doublon avec la borne
+  importId             BigInt   @map("import_id")
+  // Lieu où était la borne au début de la séance (comme les ventes)
+  lieuId               Int?     @map("lieu_id")
+  affectationId        Int?     @map("affectation_id")
+  evenement            String
+  kit                  String
+  codeSeance           String?  @map("code_seance") // lien avec les ventes : <borne>-<AAAAMMJJ>-<code>
+  photoUuid            String?  @map("photo_uuid") // lien avec la page souvenir (PikCloud)
+  debut                DateTime @db.Timestamptz(3)
+  fin                  DateTime @db.Timestamptz(3)
+  jourLocal            DateTime @map("jour_local") @db.Date
+  heureLocale          Int      @map("heure_locale")
+  dureeS               Int      @map("duree_s")
+  issue                String // validee, retour, delai, appel, autre
+  etapes               Json // { cadre, prise, photo, revelation, offre, paiement, paiement_demande, impression } : heure de la première fois
+  cadre                String?
+  photos               Int
+  recommencer          Int?
+  couleursRelances     Int?     @map("couleurs_relances")
+  retoursOffre         Int?     @map("retours_offre")
+  tirages              Int
+  paiementDemandes     Int?     @map("paiement_demandes")
+  paiementStatut       String?  @map("paiement_statut")
+  paiementMontantCents Int?     @map("paiement_montant_cents")
+  upsellProposes       Int?     @map("upsell_proposes")
+  upsellAcceptes       Int?     @map("upsell_acceptes")
+  upsellMontantCents   Int?     @map("upsell_montant_cents")
+  appel                Boolean?
+  appelEngagee         Boolean? @map("appel_engagee")
+  // Objet reçu tel quel : un renvoi identique est un doublon, différent un conflit
+  brut                 Json
+  recuLe               DateTime @default(now()) @map("recu_le") @db.Timestamptz(3)
+
+  borne       Borne             @relation(fields: [borneId], references: [id])
+  lieu        Lieu?             @relation(fields: [lieuId], references: [id])
+  affectation AffectationBorne? @relation(fields: [affectationId], references: [id])
+  import      ImportLot         @relation(fields: [importId], references: [id])
+
+  @@unique([borneId, parcoursId])
+  @@index([lieuId, jourLocal])
+  @@index([borneId, debut])
+  @@map("parcours")
 }
