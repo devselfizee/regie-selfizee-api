@@ -77,8 +77,18 @@ bornesRouter.get(
         heartbeats: { orderBy: { horodatage: "desc" }, take: 1 },
       },
     });
-    const nonAffectees = await prisma.transaction.count({ where: { borneId: borne.id, lieuId: null } });
-    res.json({ ...sansCle(borne), nonAffectees });
+    const sansLieu = await prisma.transaction.aggregate({
+      where: { borneId: borne.id, lieuId: null },
+      _count: true,
+      _min: { horodatage: true },
+      _max: { horodatage: true },
+    });
+    res.json({
+      ...sansCle(borne),
+      nonAffectees: sansLieu._count,
+      // Ventes reçues sans lieu : à réintégrer en avançant la date d'arrivée dans le lieu
+      ventesSansLieu: sansLieu._count ? { nb: sansLieu._count, du: sansLieu._min.horodatage, au: sansLieu._max.horodatage } : null,
+    });
   })
 );
 
