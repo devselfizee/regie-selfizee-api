@@ -144,7 +144,7 @@ describe("remboursement saisi en back-office", () => {
 
     const agg = await prisma.aggJour.aggregate({ where: { lieuId }, _sum: { nbRemboursees: true, rembourseTtcCents: true, caTtcCents: true } });
     expect(agg._sum).toEqual({ nbRemboursees: 2, rembourseTtcCents: 800, caTtcCents: 800 });
-    expect((await api.get("/api/ventes?q=K7PX2M-1").expect(200)).body.find((x: { id: string }) => x.id === v.id).rembourseCents).toBe(800);
+    expect((await api.get("/api/ventes?q=K7PX2M-1").expect(200)).body.lignes.find((x: { id: string }) => x.id === v.id).rembourseCents).toBe(800);
     expect(await prisma.auditLog.count({ where: { action: "REMBOURSEMENT" } })).toBe(2);
 
     await prisma.user.create({ data: { email: "co@test.fr", nom: "C", prenom: "C", role: "COMMERCIAL" } });
