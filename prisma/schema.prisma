@@ -445,6 +445,8 @@ model ImportLot {
   nbRecues         Int          @default(0) @map("nb_recues")
   nbCreees         Int          @default(0) @map("nb_creees")
   nbDoublons       Int          @default(0) @map("nb_doublons")
+  // Parmi les doublons : ventes complétées par le renvoi (avenant ventes n° 3)
+  nbCompletees     Int          @default(0) @map("nb_completees")
   nbRejetees       Int          @default(0) @map("nb_rejetees")
 
   borne        Borne?         @relation(fields: [borneId], references: [id])

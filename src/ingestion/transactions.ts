@@ -40,6 +40,8 @@ export interface ResultatLot {
   recues: number;
   creees: number;
   doublons: number;
+  /** Parmi les doublons : lignes complétées par le renvoi */
+  completees: number;
   rejetees: number;
   non_affectees: number;
   erreurs: ErreurLigne[];
@@ -109,6 +111,17 @@ export const completer = (
   }
   return maj;
 };
+
+/** Ce qui diffère entre la vente reçue et son renvoi (message du CONFLIT_DOUBLON) */
+export const ecarts = (e: Prisma.TransactionGetPayload<object>, c: Candidate): string[] =>
+  [
+    e.horodatage.getTime() !== c.horodatage.getTime() && `horodatage ${e.horodatage.toISOString()} → ${c.horodatage.toISOString()}`,
+    e.montantTtcCents !== c.t.montant_ttc_centimes && `montant ${e.montantTtcCents} → ${c.t.montant_ttc_centimes}`,
+    e.statut !== c.statut && `statut ${e.statut} → ${c.statut}`,
+    e.devise !== c.t.devise && `devise ${e.devise} → ${c.t.devise}`,
+    e.typeModuleId !== c.typeModuleId && "type de module",
+    e.produitCode !== c.t.produit.code && `produit ${e.produitCode} → ${c.t.produit.code}`,
+  ].filter((x): x is string => !!x);
 
 /**
  * Intègre un lot de transactions déjà authentifié (borne) et dont l'enveloppe est valide.
@@ -208,7 +221,7 @@ export async function ingererLotTransactions(
       if (Object.keys(maj).length)
         completees.push({ id: e.id, maj, jour: e.jourLocal, agregats: e.lieuId !== null && ("moyenPaiement" in maj || "encaissement" in maj) });
     }
-    else erreurs.push({ index: c.index, transaction_id: e.transactionIdModule, code: "CONFLIT_DOUBLON", message: `transaction_id déjà reçu (#${e.id}) avec un statut, un montant ou un horodatage différent : non écrasé` });
+    else erreurs.push({ index: c.index, transaction_id: e.transactionIdModule, code: "CONFLIT_DOUBLON", message: `transaction_id déjà reçu (#${e.id}), différent sur : ${ecarts(e, c).join(", ")} ; non écrasé` });
     candidates.delete(e.transactionIdModule);
   }
   if (completees.length) {
@@ -334,6 +347,7 @@ export async function ingererLotTransactions(
       nbRecues: lot.transactions.length,
       nbCreees: inserees.length,
       nbDoublons: doublons,
+      nbCompletees: completees.length,
       nbRejetees: erreurs.length,
       erreurs: {
         create: erreurs.map((e) => ({
@@ -384,6 +398,7 @@ export async function ingererLotTransactions(
     recues: lot.transactions.length,
     creees: inserees.length,
     doublons,
+    completees: completees.length,
     rejetees: erreurs.length,
     non_affectees: nonAffectees.length,
     erreurs,

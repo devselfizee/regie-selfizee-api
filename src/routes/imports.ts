@@ -95,13 +95,25 @@ importsRouter.get("/journal", async (req, res, next) => {
         take: parPageJournal,
         select: {
           id: true, source: true, type: true, borneIdentifiant: true, schemaVersion: true, recuLe: true, ipSource: true, statut: true,
-          nbRecues: true, nbCreees: true, nbDoublons: true, nbRejetees: true,
+          nbRecues: true, nbCreees: true, nbDoublons: true, nbCompletees: true, nbRejetees: true,
           borne: { select: { id: true, identifiant: true } },
           erreurs: { select: { code: true }, take: 3 },
         },
       }),
     ]);
-    res.json({ total, page, parPage: parPageJournal, lots });
+    // Refus par motif, pour lire un lot sans l'ouvrir
+    const parCode = lots.length
+      ? await prisma.importErreur.groupBy({ by: ["importId", "code"], where: { importId: { in: lots.map((l) => l.id) } }, _count: { _all: true } })
+      : [];
+    res.json({
+      total,
+      page,
+      parPage: parPageJournal,
+      lots: lots.map((l) => ({
+        ...l,
+        refusParCode: parCode.filter((c) => c.importId === l.id).map((c) => ({ code: c.code, nb: c._count._all })).sort((a, b) => b.nb - a.nb),
+      })),
+    });
   } catch (err) {
     next(err);
   }
