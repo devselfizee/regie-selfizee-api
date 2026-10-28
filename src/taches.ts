@@ -5,6 +5,7 @@ import { envoyerRecapitulatif, notifierAlertes } from "./alertes/notifications.j
 import { calculerReversements } from "./commissions/service.js";
 import { completerCodesPostaux, synchroniserVacances } from "./calendrier/calendrier.js";
 import { synchroniserMeteo } from "./calendrier/meteo.js";
+import { antennesConfigure, synchroniserVillesPrincipales } from "./antennes/villes.js";
 
 const MINUTE = 60_000;
 const HEURE_RECAP = 8; // récapitulatif quotidien des alertes, heure de Paris
@@ -14,7 +15,8 @@ const HEURE_RECAP = 8; // récapitulatif quotidien des alertes, heure de Paris
  * - reversements des périodes terminées, toutes les heures (idempotent, périodes validées figées) ;
  * - alertes, toutes les 15 minutes, avec notifications des nouvelles alertes ;
  * - récapitulatif quotidien des alertes à 8 h ;
- * - vacances scolaires et météo des lieux, toutes les 6 heures (DONNEES_EXTERNES=0 pour couper).
+ * - vacances scolaires, météo des lieux et villes principales de l'application Antennes, toutes les 6 heures
+ *   (DONNEES_EXTERNES=0 pour couper).
  */
 export function demarrerPlanificateur() {
   const reversements = () =>
@@ -48,6 +50,10 @@ export function demarrerPlanificateur() {
     await synchroniserVacances().catch((err) => console.error("Vacances scolaires :", err));
     const m = await synchroniserMeteo().catch((err) => (console.error("Météo :", err), null));
     if (m?.erreurs.length) console.error("Météo :", m.erreurs.join(" ; "));
+    if (antennesConfigure()) {
+      const v = await synchroniserVillesPrincipales().catch((err) => (console.error("Villes principales (Antennes) :", err), null));
+      if (v && v.creees + v.majees + v.rapprochees + v.desactivees) console.log("Villes principales (Antennes) :", JSON.stringify(v));
+    }
   };
 
   setTimeout(() => {

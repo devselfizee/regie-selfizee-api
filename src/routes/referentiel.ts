@@ -2,8 +2,9 @@ import { Router } from "express";
 import { RefCategorie } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { asynchrone } from "../lib/http.js";
+import { asynchrone, HttpError } from "../lib/http.js";
 import { exiger } from "../middleware/utilisateur.js";
+import { antennesConfigure, synchroniserVillesPrincipales } from "../antennes/villes.js";
 
 export const referentielRouter = Router();
 
@@ -119,5 +120,24 @@ referentielRouter.patch(
   exiger("ADMIN"),
   asynchrone(async (req, res) => {
     res.json(await prisma.typeModulePaiement.update({ where: { id: Number(req.params.id) }, data: patchSimple.parse(req.body) }));
+  })
+);
+
+// GET /api/referentiel/antennes — la synchronisation avec l'application Antennes est-elle configurée ?
+referentielRouter.get(
+  "/antennes",
+  exiger("ADMIN"),
+  asynchrone(async (_req, res) => {
+    res.json({ configure: antennesConfigure() });
+  })
+);
+
+// POST /api/referentiel/antennes/synchroniser — aligne les villes principales sur l'application Antennes
+referentielRouter.post(
+  "/antennes/synchroniser",
+  exiger("ADMIN"),
+  asynchrone(async (_req, res) => {
+    if (!antennesConfigure()) throw new HttpError(400, "NON_CONFIGURE", "ANTENNES_API_URL et ANTENNES_API_TOKEN ne sont pas configurés sur l'API");
+    res.json(await synchroniserVillesPrincipales());
   })
 );
