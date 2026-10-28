@@ -153,7 +153,7 @@ suiviLieuRouter.get(
         titre:
           j.entite === "config_evenement"
             ? j.action === "PUBLICATION" ? "Fiche événement publiée sur la borne" : "Fiche événement (borne) modifiée"
-            : j.action === "CREATION" ? "Fiche créée" : "Fiche modifiée",
+            : j.action === "CREATION" ? "Fiche créée" : j.action === "TARIFS" ? "Tarifs du lieu modifiés" : "Fiche modifiée",
         auteur: auteur(j.user),
       });
     for (const c of contrats)

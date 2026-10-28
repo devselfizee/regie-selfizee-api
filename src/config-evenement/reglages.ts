@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto";
 import { z } from "zod";
+import { erreursGrille, GRILLE_DEFAUT, grilleSchema, type Grille } from "../tarifs/grille.js";
 
 // Réglages de l'événement d'un lieu (CDC page souvenir § 13) : ce que l'exploitant saisit
 // dans la fiche événement. Montants en centimes ; le config.json de la borne les veut en euros.
@@ -41,12 +42,10 @@ export const reglagesSchema = z
       accueil: z.array(z.enum(GABARITS)).max(GABARITS.length),
     }),
     tarifs: z.object({
-      // Grille dégressive : le premier palier (à partir de 1 tirage) est le prix unitaire
-      paliers: z.array(z.object({ de: z.number().int().min(1).max(50), prixCents: z.number().int().min(0).max(100_00) })).min(1).max(10),
-      palierMisEnAvant: z.number().int().min(1).max(50).nullable(),
-      libelleMisEnAvant: texte.default("Le plus populaire"),
-      // « +1 pour un pote » pendant l'impression ; 0 = question masquée
-      plusUnCents: z.number().int().min(0).max(100_00),
+      // Reprendre les tarifs du lieu (ses tarifs propres, sinon ceux de base du parc) : la grille
+      // ci-dessous est alors remplacée à la lecture. Faux pour les fiches enregistrées avant.
+      herite: z.boolean().default(false),
+      ...grilleSchema.shape,
       codesPromo: z.boolean(),
       jeu: z.object({
         actif: z.boolean(),
@@ -83,14 +82,8 @@ export function reglagesParDefaut(lieu: { enseigne: string; ville: string | null
     },
     gabarits: { choisis: ["bandelette", "pola"], accueil: ["bandelette", "pola"] },
     tarifs: {
-      paliers: [
-        { de: 1, prixCents: 350 },
-        { de: 2, prixCents: 300 },
-        { de: 3, prixCents: 250 },
-      ],
-      palierMisEnAvant: 2,
-      libelleMisEnAvant: "Le plus populaire",
-      plusUnCents: 200,
+      herite: true,
+      ...GRILLE_DEFAUT,
       codesPromo: true,
       jeu: { actif: true, lots: { free: 5, pct50: 10, pct30: 35, none: 50 }, maxLotsParJour: 50 },
       // Faux tant que l'API des crédits de réimpression n'est pas en production (CDC § 13.3)
@@ -123,14 +116,7 @@ export function controler(r: Reglages, aDesHoraires: boolean): Controle[] {
     avertir("Aucun gabarit avec carte et QR : pas de carte, pas de collecte d'e-mails sur la page souvenir.");
   if (r.gabarits.choisis.includes("carte")) avertir("La photo + deux cartes demande un ruban 15x20 dans l'imprimante (DS620).");
 
-  const p = r.tarifs.paliers;
-  if (p[0]?.de !== 1) erreur("Le premier palier de prix doit commencer à 1 tirage.");
-  for (let i = 1; i < p.length; i++) {
-    if (p[i].de <= p[i - 1].de) erreur("Les paliers doivent aller dans l'ordre croissant des quantités.");
-    if (p[i].prixCents > p[i - 1].prixCents) erreur("La grille doit être dégressive : un palier coûte plus cher que le précédent.");
-  }
-  if (r.tarifs.palierMisEnAvant !== null && !p.some((x) => x.de === r.tarifs.palierMisEnAvant))
-    erreur("Le palier mis en avant n'existe pas dans la grille.");
+  for (const m of erreursGrille(r.tarifs)) erreur(m);
 
   const lots = r.tarifs.jeu.lots;
   if (r.tarifs.jeu.actif) {
@@ -156,4 +142,11 @@ export function genererMotDePasse(tirer: (n: number) => number = randomInt): str
   let mdp = "";
   for (let i = 0; i < 8; i++) mdp += ALPHABET[tirer(ALPHABET.length)];
   return mdp;
+}
+
+/** Réglages tels que la borne les recevra : la grille du lieu remplace celle de l'événement s'il en hérite. */
+export function avecGrilleDuLieu(r: Reglages, grilleLieu: Grille): Reglages {
+  if (!r.tarifs.herite) return r;
+  const { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents } = grilleLieu;
+  return { ...r, tarifs: { ...r.tarifs, paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents } };
 }

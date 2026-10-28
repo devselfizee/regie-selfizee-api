@@ -43,6 +43,7 @@ model User {
   auditLogs        AuditLog[]
   commentaires     CommentaireLieu[]
   mentions         MentionCommentaire[]
+  grillesTarifs    GrilleTarifs[]
 
   @@map("users")
 }
@@ -193,6 +194,7 @@ model Lieu {
 
   parcours Parcours[]
   commentaires CommentaireLieu[]
+  grilleTarifs GrilleTarifs?
 
   @@index([typeLieuId])
   @@index([commercialId])
@@ -1059,6 +1061,22 @@ model MeteoJour {
 }
 
 // ─── Audit ──────────────────────────────────────────────────
+
+// ─── Tarifs : base du parc (lieu_id nul, une seule ligne) et tarifs par défaut d'un lieu ───
+
+model GrilleTarifs {
+  id        Int      @id @default(autoincrement())
+  lieuId    Int?     @unique @map("lieu_id")
+  // Grille validée par grilleSchema (src/tarifs/grille.ts)
+  grille    Json
+  majParId  Int?     @map("maj_par_id")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lieu   Lieu? @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  majPar User? @relation(fields: [majParId], references: [id], onDelete: SetNull)
+
+  @@map("grilles_tarifs")
+}
 
 // ─── Suivi de la fiche lieu : commentaires de l'équipe, avec mentions ───
 

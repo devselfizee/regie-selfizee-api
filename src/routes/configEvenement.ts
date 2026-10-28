@@ -4,7 +4,8 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
-import { controler, genererCodeEvenement, genererMotDePasse, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
+import { avecGrilleDuLieu, controler, genererCodeEvenement, genererMotDePasse, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
+import { grilleEffective } from "../tarifs/grille.js";
 import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
 import { genererZip } from "../config-evenement/zip.js";
 
@@ -31,14 +32,21 @@ async function charger(lieuId: number) {
   });
   if (!lieu) throw new HttpError(404, "INTROUVABLE");
   const horaires: HoraireOuverture[] = lieu.horaires.map((h) => ({ jourSemaine: h.jourSemaine, ouverture: hhmm(h.ouverture), fermeture: hhmm(h.fermeture) }));
-  return { lieu, horaires };
+  // Tarifs par défaut du lieu (les siens, sinon ceux de base du parc) : repris par l'événement qui en hérite
+  const tarifsLieu = await grilleEffective(lieuId);
+  return { lieu, horaires, tarifsLieu };
 }
 
-function reponse(lieu: Awaited<ReturnType<typeof charger>>["lieu"], horaires: HoraireOuverture[]) {
+/** Réglages enregistrés, avec la grille du lieu si l'événement en hérite (ce que la borne recevra). */
+const reglagesEffectifs = (brut: unknown, tarifsLieu: Awaited<ReturnType<typeof charger>>["tarifsLieu"]) =>
+  avecGrilleDuLieu(reglagesSchema.parse(brut), tarifsLieu.grille);
+
+function reponse({ lieu, horaires, tarifsLieu }: Awaited<ReturnType<typeof charger>>) {
   const c = lieu.configEvenement;
   // Réglages enregistrés relus avec le schéma : les champs ajoutés depuis prennent leur défaut
-  const reglages: Reglages = c ? reglagesSchema.parse(c.reglages) : reglagesParDefaut(lieu);
+  const reglages: Reglages = avecGrilleDuLieu(c ? reglagesSchema.parse(c.reglages) : reglagesParDefaut(lieu), tarifsLieu.grille);
   return {
+    tarifsLieu,
     enregistre: Boolean(c),
     code: c?.code ?? null,
     // Mot de passe du tableau de bord de la borne (customerDashboardPassword du config.json), à donner à l'exploitant
@@ -58,8 +66,7 @@ configEvenementRouter.get(
   "/:id/evenement",
   admin,
   asynchrone(async (req, res) => {
-    const { lieu, horaires } = await charger(Number(req.params.id));
-    res.json(reponse(lieu, horaires));
+    res.json(reponse(await charger(Number(req.params.id))));
   })
 );
 
@@ -89,8 +96,7 @@ configEvenementRouter.put(
     await prisma.auditLog.create({
       data: { userId: req.utilisateur?.id ?? null, entite: "config_evenement", entiteId: String(lieuId), action: lieu.configEvenement ? "MODIFICATION" : "CREATION", apres: reglages },
     });
-    const apres = await charger(lieuId);
-    res.json(reponse(apres.lieu, apres.horaires));
+    res.json(reponse(await charger(lieuId)));
   })
 );
 
@@ -99,7 +105,7 @@ configEvenementRouter.get(
   "/:id/evenement/config.json",
   admin,
   asynchrone(async (req, res) => {
-    const { lieu, horaires } = await charger(Number(req.params.id));
+    const { lieu, horaires, tarifsLieu } = await charger(Number(req.params.id));
     const c = lieu.configEvenement;
     if (!c) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
     let config: unknown;
@@ -108,7 +114,7 @@ configEvenementRouter.get(
       config = c.configPubliee;
     } else {
       const cadres = await cadresDuLieu(lieu.id);
-      config = genererConfig({ code: c.code, motDePasseTableau: c.motDePasseTableau, reglages: reglagesSchema.parse(c.reglages), horaires, maintenant: c.updatedAt, cadres });
+      config = genererConfig({ code: c.code, motDePasseTableau: c.motDePasseTableau, reglages: reglagesEffectifs(c.reglages, tarifsLieu), horaires, maintenant: c.updatedAt, cadres });
     }
     res.setHeader("Content-Disposition", `attachment; filename="config-${c.code}.json"`);
     res.type("application/json").send(JSON.stringify(config, null, 2));
@@ -121,10 +127,10 @@ configEvenementRouter.post(
   admin,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
-    const { lieu, horaires } = await charger(lieuId);
+    const { lieu, horaires, tarifsLieu } = await charger(lieuId);
     const c = lieu.configEvenement;
     if (!c) throw new HttpError(400, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
-    const reglages = reglagesSchema.parse(c.reglages);
+    const reglages = reglagesEffectifs(c.reglages, tarifsLieu);
     const erreurs = controler(reglages, horaires.length > 0).filter((x) => x.niveau === "erreur");
     if (erreurs.length) {
       res.status(400).json({ error: "CONTROLES", message: erreurs.map((x) => x.message).join(" "), controles: erreurs });
@@ -142,8 +148,7 @@ configEvenementRouter.post(
         data: { userId: req.utilisateur?.id ?? null, entite: "config_evenement", entiteId: String(lieuId), action: "PUBLICATION", apres: { code: c.code, version: c.version + 1 } },
       }),
     ]);
-    const apres = await charger(lieuId);
-    res.json(reponse(apres.lieu, apres.horaires));
+    res.json(reponse(await charger(lieuId)));
   })
 );
 
@@ -153,10 +158,10 @@ configEvenementRouter.get(
   "/:id/evenement/zip",
   admin,
   asynchrone(async (req, res) => {
-    const { lieu, horaires } = await charger(Number(req.params.id));
+    const { lieu, horaires, tarifsLieu } = await charger(Number(req.params.id));
     const c = lieu.configEvenement;
     if (!c) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
-    const reglages = reglagesSchema.parse(c.reglages);
+    const reglages = reglagesEffectifs(c.reglages, tarifsLieu);
     const cadres = await cadresDuLieu(lieu.id, true);
     const config = genererConfig({ code: c.code, motDePasseTableau: c.motDePasseTableau, reglages, horaires, maintenant: c.updatedAt, cadres });
     const zip = await genererZip({ config, modele: lireModele(), choisis: reglages.gabarits.choisis, cadres, maintenant: c.updatedAt });

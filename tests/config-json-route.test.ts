@@ -14,13 +14,15 @@ reglages.gabarits.choisis = ["bandelette", "pola"];
 const base = vi.hoisted(() => {
   // Sans Keycloak : l'application prend l'utilisateur de développement (admin)
   delete process.env.KEYCLOAK_URL;
-  return { lieu: null as unknown, cadres: [] as unknown[] };
+  return { lieu: null as unknown, cadres: [] as unknown[], grilleLieu: null as unknown };
 });
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
     user: { upsert: async () => ({ id: 1, email: "dev@local", nom: "Dev", prenom: "", role: "ADMIN", lieuId: null, isActive: true, keycloakSub: null }) },
     lieu: { findUnique: async () => base.lieu },
     cadreEvenement: { findMany: async () => base.cadres },
+    // Pas de tarifs de base saisis ; tarifs propres au lieu selon le test
+    grilleTarifs: { findFirst: async () => null, findUnique: async () => base.grilleLieu },
   },
 }));
 const { creerApp } = await import("../src/app.js");
@@ -36,6 +38,34 @@ const enregistree = { code: "RA7K", motDePasseTableau: "MDP23456", reglages, ver
 beforeEach(() => {
   base.lieu = fiche(enregistree);
   base.cadres = [{ gabarit: "bandelette", canvas }];
+  base.grilleLieu = null;
+});
+
+describe("tarifs de l'événement", () => {
+  const grillePropre = { paliers: [{ de: 1, prixCents: 500 }], palierMisEnAvant: null, libelleMisEnAvant: "Le plus populaire", plusUnCents: 300 };
+
+  it("un événement qui hérite prend les tarifs propres du lieu, jusque dans le config.json", async () => {
+    base.lieu = fiche({ ...enregistree, reglages: { ...reglages, tarifs: { ...reglages.tarifs, herite: true } } });
+    base.grilleLieu = { grille: grillePropre };
+    const f = (await api.get("/api/lieux/7/evenement").expect(200)).body;
+    expect(f.tarifsLieu.origine).toBe("LIEU");
+    expect(f.reglages.tarifs.paliers).toEqual([{ de: 1, prixCents: 500 }]);
+    const config = JSON.parse((await api.get("/api/lieux/7/evenement/config.json").expect(200)).text);
+    expect(JSON.stringify(config)).toContain('"printPrice":5');
+  });
+
+  it("un événement à tarifs propres garde les siens", async () => {
+    base.lieu = fiche({ ...enregistree, reglages: { ...reglages, tarifs: { ...reglages.tarifs, herite: false, paliers: [{ de: 1, prixCents: 420 }], palierMisEnAvant: null } } });
+    base.grilleLieu = { grille: grillePropre };
+    const f = (await api.get("/api/lieux/7/evenement").expect(200)).body;
+    expect(f.reglages.tarifs.paliers).toEqual([{ de: 1, prixCents: 420 }]);
+  });
+
+  it("sans tarifs du lieu ni de base : la grille d'usine", async () => {
+    const f = (await api.get("/api/lieux/7/evenement").expect(200)).body;
+    expect(f.tarifsLieu.origine).toBe("DEFAUT");
+    expect(f.reglages.tarifs.paliers[0]).toEqual({ de: 1, prixCents: 350 });
+  });
 });
 
 describe("GET /api/lieux/:id/evenement", () => {
