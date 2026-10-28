@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import JSZip from "jszip";
 import sharp from "sharp";
-import type { Gabarit } from "./reglages.js";
-import type { Modele } from "./generation.js";
+import type { Reglages } from "./reglages.js";
+import { compositionsDeLEvenement, type Modele } from "./generation.js";
 import type { Roi, Trou } from "./composition.js";
 
 // Zip de l'événement chargé par la borne (CDC page souvenir § 13.4), sur le modèle du studio Kalifun
@@ -18,7 +18,7 @@ const DOSSIERS_KIT = ["Tr", "Backgrounds", "Button"];
 const DOSSIERS_VIDES = ["Form", "GreenScreen"];
 
 export interface CadreZip {
-  gabarit: string;
+  compositionId: string;
   /** Rendu du studio, data URL PNG, aux dimensions de la zone dessinée */
   image: string;
 }
@@ -86,10 +86,10 @@ export async function assemblerApercu(apercuKit: Buffer, cadre: Buffer, roiKit: 
 }
 
 /** Le zip complet : config.json, cadres et aperçus des gabarits choisis, éléments du kit. */
-export async function genererZip({ config, modele, choisis, cadres, maintenant }: {
+export async function genererZip({ config, modele, reglages, cadres, maintenant }: {
   config: Config;
   modele: Modele;
-  choisis: Gabarit[];
+  reglages: Reglages;
   cadres: CadreZip[];
   maintenant: Date;
 }): Promise<Buffer> {
@@ -97,19 +97,19 @@ export async function genererZip({ config, modele, choisis, cadres, maintenant }
   zip.file("config.json", JSON.stringify(config, null, 2));
   zip.file("Update/update.json", horodatageUpdate(maintenant));
 
-  for (const g of choisis) {
-    const kit = modele.gabarits[g];
+  // Fichiers du kit lus sous leur nom, écrits sous celui de la composition (numéroté si le gabarit revient)
+  for (const { composition, kit, fichiers } of compositionsDeLEvenement(reglages, modele)) {
     const cadreKit = lireKit(kit.overlay);
     const apercuKit = lireKit(kit.preview);
-    const cadre = cadres.find((c) => c.gabarit === g);
+    const cadre = cadres.find((c) => c.compositionId === composition.id);
     if (!cadre) {
-      zip.file(kit.overlay, cadreKit);
-      zip.file(kit.preview, apercuKit);
+      zip.file(fichiers.overlay, cadreKit);
+      zip.file(fichiers.preview, apercuKit);
       continue;
     }
     const assemble = await assemblerCadre(cadreKit, depuisDataUrl(cadre.image), kit.previewROI);
-    zip.file(kit.overlay, assemble);
-    zip.file(kit.preview, await assemblerApercu(apercuKit, assemble, kit.previewROI));
+    zip.file(fichiers.overlay, assemble);
+    zip.file(fichiers.preview, await assemblerApercu(apercuKit, assemble, kit.previewROI));
   }
   // Le live view du pola pointe sur son cadre : déjà dans le zip
   for (const dossier of DOSSIERS_KIT) {

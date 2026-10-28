@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { Gabarit, Reglages } from "./reglages.js";
+import type { Composition, Gabarit, Reglages } from "./reglages.js";
 import { compositionAvecCadre, type CompositionKit } from "./composition.js";
 
 // Génère le config.json chargé par la borne pour un lieu en régie (CDC page souvenir § 13.4).
@@ -34,12 +34,35 @@ export interface EntreeGeneration {
   reglages: Reglages;
   horaires: HoraireOuverture[];
   maintenant: Date;
-  /** Cadres dessinés au studio (JSON Fabric), un au plus par gabarit. */
-  cadres?: { gabarit: string; canvas: string }[];
+  /** Cadres dessinés au studio (JSON Fabric), un au plus par composition. */
+  cadres?: { compositionId: string; canvas: string }[];
+  /** Nom d'un événement ponctuel (« Halloween ») : ajouté au nom affiché par la borne */
+  nomEvenement?: string | null;
+}
+
+export type GabaritKit = Modele["gabarits"][Gabarit];
+
+/** Un fichier du kit pour la n-ième composition du même gabarit : strip_frame.png, strip_frame_1.png… */
+const numeroter = (chemin: string, n: number) => (n === 0 || !chemin ? chemin : chemin.replace(/(\.\w+)$/, `_${n}$1`));
+
+/**
+ * Les compositions de l'événement, dans l'ordre de l'écran de choix, chacune avec la composition du kit
+ * de son gabarit et ses noms de fichiers (numérotés quand un même gabarit revient : 8 polas…).
+ * `kit` garde les noms du kit, à lire dans modeles/evenement-nightlife/.
+ */
+export function compositionsDeLEvenement(r: Reglages, m: Modele = lireModele()): { composition: Composition; kit: GabaritKit; fichiers: GabaritKit }[] {
+  const vus = new Map<Gabarit, number>();
+  return r.gabarits.choisis.map((composition) => {
+    const kit = m.gabarits[composition.gabarit];
+    const n = vus.get(composition.gabarit) ?? 0;
+    vus.set(composition.gabarit, n + 1);
+    const fichiers = { ...kit, overlay: numeroter(kit.overlay, n), preview: numeroter(kit.preview, n), ...(kit.lvOverlay ? { lvOverlay: numeroter(kit.lvOverlay, n) } : {}) };
+    return { composition, kit, fichiers };
+  });
 }
 
 const euros = (cents: number) => Math.round(cents) / 100;
-const nomPreview = (g: Gabarit, m: Modele) => m.gabarits[g].preview.replace(/^Frames\//, "").replace(/\.jpg$/, "");
+const nomPreview = (preview: string) => preview.replace(/^Frames\//, "").replace(/\.jpg$/, "");
 
 /** « 2026-10-23 14:05:09 », heure de Paris, comme updateDate des exports booth. */
 export function horodatageParis(d: Date): string {
@@ -53,8 +76,9 @@ export function horodatageParis(d: Date): string {
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second}`;
 }
 
-export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, maintenant, cadres = [] }: EntreeGeneration) {
+export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, maintenant, cadres = [], nomEvenement }: EntreeGeneration) {
   const m = lireModele();
+  const compositions = compositionsDeLEvenement(r, m);
   const t = r.tarifs;
   const paliers = [...t.paliers].sort((a, b) => a.de - b.de);
   const l = r.lieu;
@@ -64,7 +88,7 @@ export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, 
       code,
       customerDashboardPassword: motDePasseTableau,
       endDate: l.dateFin,
-      name: l.nom.toUpperCase(),
+      name: (nomEvenement ? `${l.nom} · ${nomEvenement}` : l.nom).toUpperCase(),
       startDate: l.dateDebut,
       allowRetry: true,
       updateDate: horodatageParis(maintenant),
@@ -72,7 +96,7 @@ export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, 
     customFilter: m.customFilter,
     userSettings: {
       // Fixés par le mode régie (CDC § 13.1), sans question à l'exploitant
-      uiKit: "nightlife",
+      uiKit: r.theme,
       welcomeShowPrice: false,
       reprintEnabled: true,
       mirrorView: true,
@@ -131,12 +155,15 @@ export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, 
         .sort((a, b) => a.jourSemaine - b.jourSemaine || a.ouverture.localeCompare(b.ouverture))
         .map((h) => ({ day: h.jourSemaine, open: h.ouverture, close: h.fermeture })),
       // Les gabarits (écran 2)
-      welcomeFormats: r.gabarits.accueil.map((g) => nomPreview(g, m)),
+      welcomeFormats: r.gabarits.accueil.flatMap((id) => {
+        const c = compositions.find((x) => x.composition.id === id);
+        return c ? [nomPreview(c.fichiers.preview)] : [];
+      }),
       sharePageQR: { qrBaseUrl: QR_BASE_URL },
     },
-    compositions: r.gabarits.choisis.map((g) => {
-      const cadre = cadres.find((c) => c.gabarit === g);
-      return cadre ? compositionAvecCadre(m.gabarits[g], cadre.canvas) : m.gabarits[g];
+    compositions: compositions.map(({ composition, fichiers }) => {
+      const cadre = cadres.find((c) => c.compositionId === composition.id);
+      return cadre ? compositionAvecCadre(fichiers, cadre.canvas) : fichiers;
     }),
     pages: m.pages,
     languages: m.languages,

@@ -185,7 +185,8 @@ model Lieu {
   reversements    Reversement[]
   alertes         Alerte[]
   evenements      EvenementLieu[]
-  configEvenement ConfigEvenement?
+  // Événements de la borne : l'habituel du lieu et les ponctuels (Halloween, une soirée…)
+  configsEvenement ConfigEvenement[]
   cadresEvenement CadreEvenement[]
   meteo           MeteoJour[]
   partenaires     User[]              @relation("PartenaireLieu")
@@ -1127,10 +1128,15 @@ model AuditLog {
 }
 
 // Événement de la borne d'un lieu en régie (CDC page souvenir § 13) : réglages saisis dans
-// la fiche événement, d'où est généré le config.json chargé par la borne.
+// la fiche événement, d'où est généré le config.json chargé par la borne. Un lieu a son
+// événement habituel (un seul, index partiel en base) et des événements ponctuels (Halloween,
+// une soirée…), chacun avec son code : on passe de l'un à l'autre en tapant le code sur la borne.
 model ConfigEvenement {
   id                Int       @id @default(autoincrement())
-  lieuId            Int       @unique @map("lieu_id")
+  lieuId            Int       @map("lieu_id")
+  habituel          Boolean   @default(true)
+  // Nom d'un événement ponctuel (« Halloween », « Soirée étudiante ») ; null pour l'habituel
+  nom               String?
   // Code d'événement régie : R + 3 caractères (CDC § 14.1)
   code              String    @unique @db.VarChar(8)
   motDePasseTableau String    @map("mot_de_passe_tableau")
@@ -1143,15 +1149,21 @@ model ConfigEvenement {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  lieu   Lieu             @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  cadres CadreEvenement[]
 
+  @@index([lieuId])
   @@map("config_evenements")
 }
 
-// Cadre dessiné au studio pour un gabarit du kit de la fiche événement (CDC page souvenir § 13.2) :
-// un par gabarit et par lieu. Le rendu PNG ira dans le zip de l'événement, le JSON Fabric rouvre l'éditeur.
+// Cadre dessiné au studio pour une composition d'un événement (CDC page souvenir § 13.2) : un par
+// composition (un même gabarit du kit peut revenir plusieurs fois : 8 polas…). Le rendu PNG va dans
+// le zip de l'événement, le JSON Fabric rouvre l'éditeur.
 model CadreEvenement {
-  id              Int      @id @default(autoincrement())
+  id                Int      @id @default(autoincrement())
+  configEvenementId Int      @map("config_evenement_id")
+  // Identifiant de la composition dans les réglages de l'événement (gabarits.choisis[].id)
+  compositionId     String   @map("composition_id") @db.VarChar(40)
   lieuId          Int      @map("lieu_id")
   // Gabarit du kit : bandelette, pola, planche, carte (src/config-evenement/reglages.ts)
   gabarit         String   @db.VarChar(20)
@@ -1168,9 +1180,11 @@ model CadreEvenement {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  lieu      Lieu            @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  evenement ConfigEvenement @relation(fields: [configEvenementId], references: [id], onDelete: Cascade)
 
-  @@unique([lieuId, gabarit])
+  @@unique([configEvenementId, compositionId])
+  @@index([lieuId])
   @@map("cadres_evenement")
 }
 

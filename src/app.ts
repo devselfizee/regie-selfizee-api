@@ -56,7 +56,7 @@ export function creerApp() {
   );
 
   // Cadres du studio : rendu PNG + JSON Fabric avec ses illustrations, jusqu'à 25 Mo (lu avant la limite générale)
-  app.use("/api/lieux/:id/evenement/cadres", express.json({ limit: "30mb" }));
+  app.use(["/api/lieux/:id/evenement/cadres", "/api/lieux/:id/evenements-ponctuels/:eid/cadres"], express.json({ limit: "30mb" }));
 
   // Back-office : CORS + Keycloak
   app.use(

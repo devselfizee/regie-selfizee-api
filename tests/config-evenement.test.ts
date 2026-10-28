@@ -15,7 +15,7 @@ const ETALON_FJT5 = {
 
 const laRuche = (): Reglages => {
   const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
-  r.gabarits.choisis = ["bandelette", "pola", "planche", "carte"];
+  r.gabarits.choisis = [{ id: "bandelette", gabarit: "bandelette" }, { id: "pola", gabarit: "pola" }, { id: "planche", gabarit: "planche" }, { id: "carte", gabarit: "carte" }];
   r.lieu.avisGoogleUrl = "https://g.page/r/exemple/review";
   return r;
 };
@@ -46,7 +46,7 @@ describe("config.json d'un événement régie", () => {
 
   it("suit l'ordre des gabarits choisis et les formats mis en avant", () => {
     const r = laRuche();
-    r.gabarits = { choisis: ["carte", "pola"], accueil: ["carte"] };
+    r.gabarits = { choisis: [{ id: "carte", gabarit: "carte" }, { id: "pola", gabarit: "pola" }], accueil: ["carte"] };
     const c = generer(r);
     expect(c.compositions.map((x) => x.preview)).toEqual(["Frames/carte_preview.jpg", "Frames/polaroid_preview.jpg"]);
     expect(c.userSettings.welcomeFormats).toEqual(["carte_preview"]);
@@ -84,7 +84,7 @@ describe("contrôles avant publication", () => {
 
   it("avertit sans carte à QR et pour le ruban 15x20", () => {
     const sansQr = laRuche();
-    sansQr.gabarits = { choisis: ["pola"], accueil: [] };
+    sansQr.gabarits = { choisis: [{ id: "pola", gabarit: "pola" }], accueil: [] };
     expect(controler(sansQr, true).some((c) => c.message.includes("pas de collecte"))).toBe(true);
     expect(controler(laRuche(), true).some((c) => c.message.includes("15x20"))).toBe(true);
   });

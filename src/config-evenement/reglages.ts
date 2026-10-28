@@ -8,6 +8,13 @@ import { erreursGrille, GRILLE_DEFAUT, grilleSchema, type Grille } from "../tari
 export const GABARITS = ["bandelette", "pola", "planche", "carte"] as const;
 export type Gabarit = (typeof GABARITS)[number];
 
+// Thème de l'interface de la borne (userSettings.uiKit) : « halloween » et les thèmes personnalisés
+// viendront quand la borne saura les afficher
+export const THEMES = ["nightlife"] as const;
+
+/** Compositions sur l'écran de choix de la borne, au plus (pages.chooseFormat.maximumStaticDisplayCount). */
+export const MAX_COMPOSITIONS = 9;
+
 export const TONS = ["club", "bar", "famille", "pro"] as const;
 export const ILLUSTRATIONS = ["festif", "chic"] as const;
 export const LOTS = ["free", "pct50", "pct30", "none"] as const;
@@ -16,8 +23,16 @@ const texte = z.string().trim().max(200);
 const facultatif = (s: z.ZodType<string>) => s.nullable().optional().transform((v) => (v ? v : null));
 const jour = z.iso.date();
 
+// Une composition de l'écran de choix : un gabarit du kit, avec son cadre au studio s'il y en a un.
+// Un même gabarit peut revenir plusieurs fois (8 polas, 2 bandelettes…), chacun son id.
+const compositionSchema = z.object({ id: z.string().regex(/^[a-z0-9-]{1,40}$/), gabarit: z.enum(GABARITS) });
+export type Composition = z.infer<typeof compositionSchema>;
+// Fiches enregistrées avant : un gabarit par nom ; sa composition garde le nom du gabarit pour id
+const versCompositions = (v: unknown) => (Array.isArray(v) ? v.map((x) => (typeof x === "string" ? { id: x, gabarit: x } : x)) : v);
+
 export const reglagesSchema = z
   .object({
+    theme: z.enum(THEMES).default("nightlife"),
     lieu: z.object({
       nom: texte.min(1),
       ville: facultatif(texte),
@@ -37,9 +52,9 @@ export const reglagesSchema = z
     }),
     gabarits: z.object({
       // Dans l'ordre de l'écran de choix de la borne
-      choisis: z.array(z.enum(GABARITS)).max(GABARITS.length),
-      // Formats mis en avant sur l'écran d'accueil (welcomeFormats)
-      accueil: z.array(z.enum(GABARITS)).max(GABARITS.length),
+      choisis: z.preprocess(versCompositions, z.array(compositionSchema).max(MAX_COMPOSITIONS)),
+      // Compositions mises en avant sur l'écran d'accueil (welcomeFormats), par id
+      accueil: z.array(z.string()).max(MAX_COMPOSITIONS),
     }),
     tarifs: z.object({
       // Reprendre les tarifs du lieu (ses tarifs propres, sinon ceux de base du parc) : la grille
@@ -67,6 +82,7 @@ export function reglagesParDefaut(lieu: { enseigne: string; ville: string | null
   const fin = new Date(debut);
   fin.setUTCFullYear(fin.getUTCFullYear() + 2);
   return {
+    theme: "nightlife",
     lieu: {
       nom: lieu.enseigne,
       ville: lieu.ville,
@@ -80,7 +96,13 @@ export function reglagesParDefaut(lieu: { enseigne: string; ville: string | null
       hashtag: null,
       assistance: { proprietaire: "selfizee", telephone: null, email: null },
     },
-    gabarits: { choisis: ["bandelette", "pola"], accueil: ["bandelette", "pola"] },
+    gabarits: {
+      choisis: [
+        { id: "bandelette", gabarit: "bandelette" },
+        { id: "pola", gabarit: "pola" },
+      ],
+      accueil: ["bandelette", "pola"],
+    },
     tarifs: {
       herite: true,
       ...GRILLE_DEFAUT,
@@ -109,12 +131,15 @@ export function controler(r: Reglages, aDesHoraires: boolean): Controle[] {
 
   if (r.lieu.dateFin < r.lieu.dateDebut) erreur("La date de fin est avant la date de début.");
 
-  if (!r.gabarits.choisis.length) erreur("Choisissez au moins un gabarit.");
-  if (new Set(r.gabarits.choisis).size !== r.gabarits.choisis.length) erreur("Un gabarit est choisi deux fois.");
-  if (r.gabarits.accueil.some((g) => !r.gabarits.choisis.includes(g))) erreur("Un format mis en avant à l'accueil n'est pas dans les gabarits choisis.");
-  if (r.gabarits.choisis.length && !r.gabarits.choisis.some((g) => AVEC_QR.includes(g)))
+  const choisis = r.gabarits.choisis;
+  const ids = choisis.map((c) => c.id);
+  if (!choisis.length) erreur("Choisissez au moins un gabarit.");
+  if (choisis.length > MAX_COMPOSITIONS) erreur(`L'écran de choix de la borne affiche ${MAX_COMPOSITIONS} formats au plus.`);
+  if (new Set(ids).size !== ids.length) erreur("Deux compositions ont le même identifiant.");
+  if (r.gabarits.accueil.some((id) => !ids.includes(id))) erreur("Un format mis en avant à l'accueil n'est pas dans les gabarits choisis.");
+  if (choisis.length && !choisis.some((c) => AVEC_QR.includes(c.gabarit)))
     avertir("Aucun gabarit avec carte et QR : pas de carte, pas de collecte d'e-mails sur la page souvenir.");
-  if (r.gabarits.choisis.includes("carte")) avertir("La photo + deux cartes demande un ruban 15x20 dans l'imprimante (DS620).");
+  if (choisis.some((c) => c.gabarit === "carte")) avertir("La photo + deux cartes demande un ruban 15x20 dans l'imprimante (DS620).");
 
   for (const m of erreursGrille(r.tarifs)) erreur(m);
 

@@ -9,17 +9,25 @@ import { lireModele } from "../src/config-evenement/generation.js";
 
 const canvas = readFileSync(new URL("./fixtures/cadre-bandelette.json", import.meta.url), "utf8");
 const reglages = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
-reglages.gabarits.choisis = ["bandelette", "pola"];
+reglages.gabarits.choisis = [{ id: "bandelette", gabarit: "bandelette" }, { id: "pola", gabarit: "pola" }];
 
 const base = vi.hoisted(() => {
   // Sans Keycloak : l'application prend l'utilisateur de développement (admin)
   delete process.env.KEYCLOAK_URL;
-  return { lieu: null as unknown, cadres: [] as unknown[], grilleLieu: null as unknown };
+  return { lieu: null as unknown, cadres: [] as unknown[], grilleLieu: null as unknown, ponctuel: null as null | Record<string, unknown> };
 });
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
     user: { upsert: async () => ({ id: 1, email: "dev@local", nom: "Dev", prenom: "", role: "ADMIN", lieuId: null, isActive: true, keycloakSub: null }) },
     lieu: { findUnique: async () => base.lieu },
+    // Événement habituel = configEvenement de la fiche simulée ; un événement ponctuel au plus (id 71)
+    configEvenement: {
+      findFirst: async ({ where }: { where: { habituel: boolean; id?: number } }) => {
+        const habituel = (base.lieu as { configEvenement: Record<string, unknown> | null } | null)?.configEvenement;
+        if (where.habituel) return habituel ? { id: 70, habituel: true, nom: null, ...habituel } : null;
+        return base.ponctuel?.id === where.id ? base.ponctuel : null;
+      },
+    },
     cadreEvenement: { findMany: async () => base.cadres },
     // Pas de tarifs de base saisis ; tarifs propres au lieu selon le test
     grilleTarifs: { findFirst: async () => null, findUnique: async () => base.grilleLieu },
@@ -37,8 +45,32 @@ const enregistree = { code: "RA7K", motDePasseTableau: "MDP23456", reglages, ver
 
 beforeEach(() => {
   base.lieu = fiche(enregistree);
-  base.cadres = [{ gabarit: "bandelette", canvas }];
+  base.cadres = [{ compositionId: "bandelette", canvas }];
   base.grilleLieu = null;
+  base.ponctuel = null;
+});
+
+describe("événement ponctuel", () => {
+  it("a son propre config.json : son code, son nom, ses compositions", async () => {
+    base.ponctuel = {
+      ...enregistree, id: 71, habituel: false, nom: "Halloween", code: "RH4L", motDePasseTableau: "HAL23456",
+      reglages: { ...reglages, gabarits: { choisis: [{ id: "pola", gabarit: "pola" }, { id: "pola-x7k2", gabarit: "pola" }], accueil: ["pola-x7k2"] } },
+    };
+    base.cadres = [];
+    const r = await api.get("/api/lieux/7/evenements-ponctuels/71/config.json").expect(200);
+    expect(r.headers["content-disposition"]).toBe('attachment; filename="config-RH4L.json"');
+    const config = JSON.parse(r.text);
+    expect(config.event).toMatchObject({ code: "RH4L", name: "LA RUCHE · HALLOWEEN", customerDashboardPassword: "HAL23456" });
+    expect(config.compositions.map((c: { overlay: string }) => c.overlay)).toEqual(["Frames/polaroid_frame.png", "Frames/polaroid_frame_1.png"]);
+    expect(config.userSettings.welcomeFormats).toEqual(["polaroid_preview_1"]);
+    const f = (await api.get("/api/lieux/7/evenements-ponctuels/71").expect(200)).body;
+    expect(f).toMatchObject({ id: 71, habituel: false, nom: "Halloween", code: "RH4L" });
+  });
+
+  it("inconnu : 404", async () => {
+    await api.get("/api/lieux/7/evenements-ponctuels/99").expect(404);
+    await api.get("/api/lieux/7/evenements-ponctuels/99/config.json").expect(404);
+  });
 });
 
 describe("tarifs de l'événement", () => {

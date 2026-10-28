@@ -64,6 +64,33 @@ describe("fiche événement", () => {
     expect(r.message).toMatch(/au moins un gabarit/);
   });
 
+  it("crée un événement ponctuel : son code, les réglages de l'habituel, les tarifs du lieu, pas de cadre", async () => {
+    const { reglages } = (await api.get(`/api/lieux/${lieuId}/evenement`)).body;
+    reglages.lieu.avisGoogleUrl = "https://g.page/r/exemple/review";
+    const habituel = (await api.put(`/api/lieux/${lieuId}/evenement`).send({ reglages }).expect(200)).body;
+
+    const h = (await api.post(`/api/lieux/${lieuId}/evenements-ponctuels`).send({ nom: "Halloween", dateDebut: "2026-10-31", dateFin: "2026-11-01" }).expect(201)).body;
+    expect(h).toMatchObject({ habituel: false, nom: "Halloween", version: 0 });
+    expect(h.code).not.toBe(habituel.code);
+    expect(h.reglages.lieu).toMatchObject({ avisGoogleUrl: "https://g.page/r/exemple/review", dateDebut: "2026-10-31", dateFin: "2026-11-01" });
+    expect(h.reglages.tarifs.herite).toBe(true);
+
+    // Trois polas : un même gabarit plusieurs fois
+    h.reglages.gabarits = { choisis: [{ id: "pola", gabarit: "pola" }, { id: "pola-a1", gabarit: "pola" }, { id: "pola-b2", gabarit: "pola" }], accueil: ["pola-b2"] };
+    await api.put(`/api/lieux/${lieuId}/evenements-ponctuels/${h.id}`).send({ reglages: h.reglages, nom: "Halloween 2026" }).expect(200);
+    const config = JSON.parse((await api.get(`/api/lieux/${lieuId}/evenements-ponctuels/${h.id}/config.json`).expect(200)).text);
+    expect(config.event).toMatchObject({ code: h.code, name: "LA RUCHE · HALLOWEEN 2026" });
+    expect(config.compositions).toHaveLength(3);
+
+    const liste = (await api.get(`/api/lieux/${lieuId}/evenements-ponctuels`).expect(200)).body;
+    expect(liste).toMatchObject([{ id: h.id, nom: "Halloween 2026", code: h.code, dateDebut: "2026-10-31" }]);
+    // L'habituel n'a pas bougé
+    expect((await api.get(`/api/lieux/${lieuId}/evenement`).expect(200)).body.code).toBe(habituel.code);
+
+    await api.delete(`/api/lieux/${lieuId}/evenements-ponctuels/${h.id}`).expect(204);
+    await api.get(`/api/lieux/${lieuId}/evenements-ponctuels/${h.id}`).expect(404);
+  });
+
   it("est réservée aux admins", async () => {
     await prisma.user.create({ data: { email: "commercial@test.fr", nom: "C", prenom: "C", role: "COMMERCIAL" } });
     await api.get(`/api/lieux/${lieuId}/evenement`).set("X-Dev-Utilisateur", "commercial@test.fr").expect(403);

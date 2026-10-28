@@ -49,19 +49,19 @@ describe("composition d'un gabarit habillé au studio", () => {
 
   it("le config.json ne change que les gabarits qui ont un cadre", () => {
     const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
-    r.gabarits.choisis = ["bandelette", "pola"];
-    const config = genererConfig({ code: "RA7K", motDePasseTableau: "MDP23456", reglages: r, horaires: [], maintenant: new Date(), cadres: [{ gabarit: "bandelette", canvas }] });
+    r.gabarits.choisis = [{ id: "bandelette", gabarit: "bandelette" }, { id: "pola", gabarit: "pola" }];
+    const config = genererConfig({ code: "RA7K", motDePasseTableau: "MDP23456", reglages: r, horaires: [], maintenant: new Date(), cadres: [{ compositionId: "bandelette", canvas }] });
     expect(config.compositions[0].holes).not.toEqual(kit.bandelette.holes);
     expect(config.compositions[1]).toEqual(kit.pola);
   });
 
   it("zip : config.json, cadre assemblé, aperçu refait, éléments du kit", async () => {
     const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
-    r.gabarits.choisis = ["bandelette", "pola"];
+    r.gabarits.choisis = [{ id: "bandelette", gabarit: "bandelette" }, { id: "pola", gabarit: "pola" }];
     const maintenant = new Date("2026-10-27T10:00:00Z");
-    const cadres = [{ gabarit: "bandelette", canvas, image: rendu }];
+    const cadres = [{ compositionId: "bandelette", canvas, image: rendu }];
     const config = genererConfig({ code: "RA7K", motDePasseTableau: "MDP23456", reglages: r, horaires: [], maintenant, cadres });
-    const zip = await JSZip.loadAsync(await genererZip({ config, modele: lireModele(), choisis: r.gabarits.choisis, cadres, maintenant }));
+    const zip = await JSZip.loadAsync(await genererZip({ config, modele: lireModele(), reglages: r, cadres, maintenant }));
     const noms = Object.keys(zip.files);
     for (const n of ["config.json", "Update/update.json", "Frames/strip_frame.png", "Frames/strip_preview.jpg", "Frames/polaroid_frame.png", "Frames/polaroid_preview.jpg", "Tr/fr_FR.png", "Backgrounds/welcom.jpg", "Button/rebound.png", "Form/", "GreenScreen/"])
       expect(noms).toContain(n);
@@ -79,5 +79,22 @@ describe("composition d'un gabarit habillé au studio", () => {
     const studio = Buffer.from(rendu.split(",")[1], "base64");
     expect(await pixel(cadre, 10, 10)).toEqual(await pixel(studio, 10, 10));
     expect(await sharp(await zip.file("Frames/strip_preview.jpg")!.async("nodebuffer")).metadata()).toMatchObject({ width: 1240, height: 1844, format: "jpeg" });
+  }, 60_000);
+
+  it("zip : un même gabarit plusieurs fois, fichiers numérotés, chacun son cadre", async () => {
+    const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
+    r.gabarits = { choisis: [{ id: "bandelette", gabarit: "bandelette" }, { id: "bandelette-k2", gabarit: "bandelette" }], accueil: ["bandelette-k2"] };
+    const maintenant = new Date("2026-10-28T10:00:00Z");
+    const cadres = [{ compositionId: "bandelette-k2", canvas, image: rendu }];
+    const config = genererConfig({ code: "RA7K", motDePasseTableau: "MDP23456", reglages: r, horaires: [], maintenant, cadres });
+    expect(config.compositions.map((c) => c.overlay)).toEqual(["Frames/strip_frame.png", "Frames/strip_frame_1.png"]);
+    expect(config.compositions[0].holes).toEqual(kit.bandelette.holes);
+    expect(config.compositions[1].holes).not.toEqual(kit.bandelette.holes);
+    expect(config.userSettings.welcomeFormats).toEqual(["strip_preview_1"]);
+    const zip = await JSZip.loadAsync(await genererZip({ config, modele: lireModele(), reglages: r, cadres, maintenant }));
+    for (const n of ["Frames/strip_frame.png", "Frames/strip_preview.jpg", "Frames/strip_frame_1.png", "Frames/strip_preview_1.jpg"]) expect(Object.keys(zip.files)).toContain(n);
+    const kitStrip = readFileSync(new URL("../modeles/evenement-nightlife/Frames/strip_frame.png", import.meta.url));
+    expect(Buffer.compare(await zip.file("Frames/strip_frame.png")!.async("nodebuffer"), kitStrip)).toBe(0);
+    expect(Buffer.compare(await zip.file("Frames/strip_frame_1.png")!.async("nodebuffer"), kitStrip)).not.toBe(0);
   }, 60_000);
 });
