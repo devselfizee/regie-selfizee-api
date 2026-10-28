@@ -2,7 +2,8 @@ import { prisma } from "../lib/prisma.js";
 
 // Villes principales de l'application Antennes (Georgie) : source de la liste « Villes principales »
 // de la Régie (RefValeur ANTENNE, rattachée aux lieux par lieux.antenne_id).
-// GET {ANTENNES_API_URL}/ws/antennes/villes-principales, jeton ANTENNES_API_TOKEN (variables Coolify).
+// GET {ANTENNES_API_URL}/ws/antennes/villes-principales?ws_token={ANTENNES_API_TOKEN} (variables Coolify ;
+// ANTENNES_API_URL=https://antennes-api.orkessi.com).
 // Code de la valeur : ANT-<id Antennes>, stable quand la ville est renommée.
 
 interface VilleAntennes {
@@ -20,13 +21,16 @@ export const antennesConfigure = () => Boolean(process.env.ANTENNES_API_URL && p
 
 /** Liste complète des villes principales (toutes, actives ou non) */
 export async function lireVillesPrincipales(): Promise<VilleAntennes[]> {
-  const base = (process.env.ANTENNES_API_URL ?? "").replace(/\/+$/, "");
-  const url = base.endsWith("/villes-principales") ? base : `${base}/ws/antennes/villes-principales`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${process.env.ANTENNES_API_TOKEN}`, Accept: "application/json" },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`API Antennes ${res.status} : ${(await res.text()).slice(0, 200)}`);
+  // Adresse du site, ou adresse complète de la route (avec ou sans ?ws_token=)
+  const brute = (process.env.ANTENNES_API_URL ?? "").trim();
+  const url = new URL(brute.includes("/villes-principales") ? brute : `${brute.replace(/\/+$/, "")}/ws/antennes/villes-principales`);
+  url.searchParams.set("ws_token", process.env.ANTENNES_API_TOKEN ?? "");
+  // Liste complète, actives ou non : sans limit, l'API renvoie tout
+  url.searchParams.delete("limit");
+  url.searchParams.delete("statut");
+  const res = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
+  // Le message ne reprend jamais l'adresse : elle contient le jeton
+  if (!res.ok) throw new Error(`API Antennes : HTTP ${res.status}`);
   const corps = (await res.json()) as unknown;
   // Liste brute, ou enveloppée ({ data: [...] }, { items: [...] }, { villes_principales: [...] })
   const liste = Array.isArray(corps)
