@@ -1135,7 +1135,7 @@ model ConfigEvenement {
   id                Int       @id @default(autoincrement())
   lieuId            Int       @map("lieu_id")
   habituel          Boolean   @default(true)
-  // Nom d'un événement ponctuel (« Halloween », « Soirée étudiante ») ; null pour l'habituel
+  // Nom d'un événement ponctuel (« Halloween », « Noël ») ; null pour l'habituel
   nom               String?
   // Code d'événement régie : R + 3 caractères (CDC § 14.1)
   code              String    @unique @db.VarChar(8)
