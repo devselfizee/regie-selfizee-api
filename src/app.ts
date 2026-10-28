@@ -22,6 +22,7 @@ import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter 
 import { mesPhotosRouter } from "./routes/mesPhotos.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
 import { cadresEvenementRouter } from "./routes/cadresEvenement.js";
+import { commentairesRouter, suiviLieuRouter } from "./routes/suivi.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
 
@@ -80,6 +81,8 @@ export function creerApp() {
   app.use("/api/lieux", evenementsLieuRouter);
   app.use("/api/lieux", configEvenementRouter);
   app.use("/api/lieux", cadresEvenementRouter);
+  app.use("/api/lieux", suiviLieuRouter);
+  app.use("/api/commentaires", exiger("ADMIN", "COMMERCIAL", "TECHNICIEN"), commentairesRouter);
   app.use("/api/evenements", evenementsRouter);
   app.use("/api/imports", tech, importsRouter);
   app.use("/api/bornes", tech, bornesRouter);

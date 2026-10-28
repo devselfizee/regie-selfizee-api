@@ -41,6 +41,8 @@ model User {
   alertesAssignees Alerte[]
   interventions    Intervention[]
   auditLogs        AuditLog[]
+  commentaires     CommentaireLieu[]
+  mentions         MentionCommentaire[]
 
   @@map("users")
 }
@@ -190,6 +192,7 @@ model Lieu {
   aggHeures       AggHeure[]
 
   parcours Parcours[]
+  commentaires CommentaireLieu[]
 
   @@index([typeLieuId])
   @@index([commercialId])
@@ -1054,6 +1057,38 @@ model MeteoJour {
 }
 
 // ─── Audit ──────────────────────────────────────────────────
+
+// ─── Suivi de la fiche lieu : commentaires de l'équipe, avec mentions ───
+
+model CommentaireLieu {
+  id        Int       @id @default(autoincrement())
+  lieuId    Int       @map("lieu_id")
+  auteurId  Int?      @map("auteur_id")
+  texte     String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  modifieLe DateTime? @map("modifie_le") @db.Timestamptz(3)
+
+  lieu     Lieu                 @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  auteur   User?                @relation(fields: [auteurId], references: [id], onDelete: SetNull)
+  mentions MentionCommentaire[]
+
+  @@index([lieuId, createdAt])
+  @@map("commentaires_lieu")
+}
+
+// Personne mentionnée (« @Prénom Nom ») : prévenue par e-mail, la mention reste « non lue » jusqu'à l'ouverture du suivi
+model MentionCommentaire {
+  commentaireId Int       @map("commentaire_id")
+  userId        Int       @map("user_id")
+  luLe          DateTime? @map("lu_le") @db.Timestamptz(3)
+
+  commentaire CommentaireLieu @relation(fields: [commentaireId], references: [id], onDelete: Cascade)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentaireId, userId])
+  @@index([userId, luLe])
+  @@map("mentions_commentaire")
+}
 
 model AuditLog {
   id        BigInt   @id @default(autoincrement())

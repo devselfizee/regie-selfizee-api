@@ -257,6 +257,7 @@ lieuxRouter.post(
         fermetures: fermetures ? { create: fermetures } : undefined,
       },
     });
+    await prisma.auditLog.create({ data: { userId: req.utilisateur?.id ?? null, entite: "lieu", entiteId: String(lieu.id), action: "CREATION" } });
     res.status(201).json(lieu);
   })
 );
@@ -297,6 +298,7 @@ lieuxRouter.put(
         },
       });
     });
+    await prisma.auditLog.create({ data: { userId: req.utilisateur?.id ?? null, entite: "lieu", entiteId: String(lieuId), action: "MODIFICATION" } });
     res.json(lieu);
   })
 );
