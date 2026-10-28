@@ -342,14 +342,18 @@ statsRouter.get(
           ${FROM_AGG} JOIN types_module_paiement tm ON tm.id = a.type_module_id
           WHERE ${ventes} GROUP BY 1 ORDER BY ca DESC`,
         prisma.$queryRaw<Record<string, unknown>[]>`
-          -- Une ligne par produit ET par nombre de tirages : sous un même code (TIRAGE), la borne vend 1, 2 ou 3 tirages
-          SELECT a.produit_code code, a.nb_tirages tirages, max(a.produit_libelle) libelle, count(*) nb, sum(a.montant_ttc_cents) ca
-          ${FROM_TX} WHERE ${VENDUE} AND ${ventesTx} GROUP BY 1, 2 ORDER BY 1, 2`,
+          -- Une ligne par formule (produit et nombre de tirages) ET par montant payé : « Formules vendues » et
+          -- « Montants payés » réunis (retour de Sébastien), des plus vendues aux moins vendues
+          SELECT a.produit_code code, a.nb_tirages tirages, a.montant_ttc_cents montant, max(a.produit_libelle) libelle, count(*) nb, sum(a.montant_ttc_cents) ca
+          ${FROM_TX} WHERE ${VENDUE} AND ${ventesTx} GROUP BY 1, 2, 3 ORDER BY nb DESC, ca DESC`,
         prisma.$queryRaw<Record<string, unknown>[]>`
           SELECT a.montant_ttc_cents montant, count(*) nb
           ${FROM_TX} WHERE a.statut = 'ACCEPTEE' AND a.montant_ttc_cents > 0 AND ${ventesTx} GROUP BY 1 ORDER BY 1`,
         prisma.$queryRaw<Record<string, unknown>[]>`
           SELECT b.id, b.identifiant, g.libelle gamme, af.debut, af.fin, b.dernier_heartbeat, b.derniere_vente,
+                 -- Dernier niveau de papier remonté par la borne, et quand
+                 (SELECT hb.papier_restant FROM heartbeats hb WHERE hb.borne_id = b.id AND hb.papier_restant IS NOT NULL ORDER BY hb.horodatage DESC LIMIT 1) papier,
+                 (SELECT hb.horodatage FROM heartbeats hb WHERE hb.borne_id = b.id AND hb.papier_restant IS NOT NULL ORDER BY hb.horodatage DESC LIMIT 1) papier_le,
                  (SELECT count(*) FROM heartbeats hb
                   WHERE hb.borne_id = b.id
                     AND hb.horodatage >= greatest(af.debut, ${debutParis(f.du)})
@@ -437,6 +441,7 @@ statsRouter.get(
       formules: formules.map((p) => ({
         code: p.code as string,
         nbTirages: n(p.tirages),
+        montantCents: n(p.montant),
         // Libellé d'un tirage : d'après le nombre de tirages, pas le texte de la borne (« 3 tirages » couvrait toutes les quantités)
         libelle: p.code === "TIRAGE" ? `${n(p.tirages)} tirage${n(p.tirages) > 1 ? "s" : ""}` : (p.libelle as string | null),
         nbVentes: n(p.nb),
@@ -453,6 +458,8 @@ statsRouter.get(
         dernierHeartbeat: b.dernier_heartbeat as Date | null,
         derniereVente: b.derniere_vente as Date | null,
         heartbeatsRecus: n(b.heartbeats),
+        papierRestant: b.papier === null || b.papier === undefined ? null : n(b.papier),
+        papierLe: (b.papier_le as Date | null) ?? null,
       })),
     });
   })

@@ -64,6 +64,7 @@ const lieuSchema = z.object({
   commercialId: idOpt,
   origineLeadId: idOpt,
   notes: texteOpt,
+  papierSurPlace: z.boolean().optional(),
 
   // Sous-listes : remplacées intégralement à chaque enregistrement
   clienteleIds: z.array(id).optional(),

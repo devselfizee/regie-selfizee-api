@@ -154,9 +154,11 @@ model Lieu {
   antenneId        Int?      @map("antenne_id") // antenne Selfizee (liste ANTENNE)
   origineLeadId    Int?      @map("origine_lead_id")
 
-  notes     String?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  // Le lieu change lui-même le papier de la borne (sinon : Selfizee ou le technicien)
+  papierSurPlace Boolean  @default(false) @map("papier_sur_place")
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   typeLieu        RefValeur  @relation("LieuType", fields: [typeLieuId], references: [id])
   sousType        RefValeur? @relation("LieuSousType", fields: [sousTypeId], references: [id])

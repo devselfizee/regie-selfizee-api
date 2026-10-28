@@ -37,6 +37,8 @@ bornesRouter.get(
         gamme: true,
         modules: { where: { retireLe: null }, include: { type: true } },
         affectations: { where: { fin: null }, include: { lieu: { select: { id: true, enseigne: true, ville: true, parc: true } } } },
+        // Dernier niveau de papier remonté par la borne
+        heartbeats: { where: { papierRestant: { not: null } }, orderBy: { horodatage: "desc" }, take: 1, select: { papierRestant: true, horodatage: true } },
       },
     });
     // Ventes reçues sans lieu (borne pas encore affectée à leur date) : à rattacher en l'affectant
@@ -53,8 +55,9 @@ bornesRouter.get(
     );
     const maintenant = Date.now();
     res.json(
-      bornes.map(({ affectations, ...b }) => ({
+      bornes.map(({ affectations, heartbeats, ...b }) => ({
         ...sansCle(b),
+        papier: heartbeats[0] ? { restant: heartbeats[0].papierRestant, le: heartbeats[0].horodatage } : null,
         ventesSansLieu: sansLieu.get(b.id) ?? null,
         lieuActuel: affectations[0]?.lieu ?? null,
         affectationActuelle: affectations[0] ? { id: affectations[0].id, debut: affectations[0].debut } : null,
