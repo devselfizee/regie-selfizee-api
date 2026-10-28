@@ -2,7 +2,7 @@ import { Prisma, type Borne, type Encaissement, type ImportSource, type Gratuite
 import { prisma } from "../lib/prisma.js";
 import { htDepuisTtc, pctVersBp } from "../lib/montants.js";
 import { jourEtHeureLocaux, offsetMinutes } from "../lib/temps.js";
-import { ajouterAuxAgregats, type LigneAgregee } from "./agregats.js";
+import { ajouterAuxAgregats, recalculerAgregats, type LigneAgregee } from "./agregats.js";
 import { sha256Payload } from "./journal.js";
 import {
   formaterErreurs,
@@ -45,7 +45,7 @@ export interface ResultatLot {
   erreurs: ErreurLigne[];
 }
 
-interface Candidate {
+export interface Candidate {
   index: number;
   t: TransactionJson;
   horodatage: Date;
@@ -69,8 +69,50 @@ const identique = (
   a.produitCode === c.t.produit.code;
 
 /**
+ * Renvoi d'une vente déjà reçue (avenant n° 2, 28/10/2026) : même statut, montant, devise et horodatage
+ * (et même module, même produit) → la ligne est complétée avec les champs facultatifs du renvoi,
+ * jamais son statut ni son montant. Renvoie les champs à mettre à jour (vide : simple doublon),
+ * ou null si le contenu diffère (conflit, ligne jamais écrasée).
+ */
+export const completer = (
+  e: Prisma.TransactionGetPayload<object>,
+  c: Candidate,
+  moduleId: number | null
+): Prisma.TransactionUncheckedUpdateInput | null => {
+  if (
+    e.horodatage.getTime() !== c.horodatage.getTime() ||
+    e.montantTtcCents !== c.t.montant_ttc_centimes ||
+    e.statut !== c.statut ||
+    e.devise !== c.t.devise ||
+    e.typeModuleId !== c.typeModuleId ||
+    e.produitCode !== c.t.produit.code
+  )
+    return null;
+  const maj: Prisma.TransactionUncheckedUpdateInput = {};
+  const si = <K extends keyof Prisma.TransactionUncheckedUpdateInput>(cle: K, ancien: unknown, nouveau: Prisma.TransactionUncheckedUpdateInput[K] | undefined) => {
+    // Un champ renvoyé remplace l'ancien (lecture la plus récente du ticket) ; un champ absent ne l'efface pas
+    if (nouveau !== undefined && nouveau !== null && nouveau !== ancien) maj[cle] = nouveau;
+  };
+  si("referenceMonetique", e.referenceMonetique, c.t.reference_monetique);
+  si("referenceSequence", e.referenceSequence, c.t.reference_sequence);
+  si("moyenPaiement", e.moyenPaiement, c.moyenPaiement);
+  si("encaissement", e.encaissement, c.t.encaissement ? (c.t.encaissement.toUpperCase() as Encaissement) : undefined);
+  si("motif", e.motif, c.t.motif ? (c.t.motif.toUpperCase() as MotifStatut) : undefined);
+  si("carteFin", e.carteFin, c.t.carte_derniers_chiffres ?? c.t.carte_fin);
+  si("pikcloudUuid", e.pikcloudUuid, c.t.pikcloud_uuid);
+  si("moduleId", e.moduleId, moduleId);
+  si("produitLibelle", e.produitLibelle, c.t.produit.libelle);
+  // Un moyen devenu connu rend la vente rapprochable (sauf si elle est déjà rapprochée)
+  if (maj.moyenPaiement && (e.rapprochement === "NON_RAPPROCHE" || e.rapprochement === "NON_APPLICABLE")) {
+    const r = nonRapprochable(c.moyenPaiement, c.t.montant_ttc_centimes, c.moduleRapprochable) ? "NON_APPLICABLE" : "NON_RAPPROCHE";
+    if (r !== e.rapprochement) maj.rapprochement = r;
+  }
+  return maj;
+};
+
+/**
  * Intègre un lot de transactions déjà authentifié (borne) et dont l'enveloppe est valide.
- * Idempotent : (borne, transaction_id) existant et identique → doublon, sans effet.
+ * Idempotent : (borne, transaction_id) existant → doublon ; un renvoi enrichi complète la ligne (voir completer).
  * Les vérifications se font en mémoire, puis le lot est écrit en une seule transaction SQL
  * (insertions et agrégats), ce qui garde un rattrapage de 500 ventes rapide.
  */
@@ -155,14 +197,30 @@ export async function ingererLotTransactions(
     }),
   ]);
   const dejaIntegrees: string[] = [];
+  const completees: { id: bigint; maj: Prisma.TransactionUncheckedUpdateInput; jour: Date; agregats: boolean }[] = [];
   for (const e of existantes) {
     const c = candidates.get(e.transactionIdModule)!;
-    if (identique(e, c)) {
+    const module = c.t.module.numero_serie ? modules.find((m) => m.typeId === c.typeModuleId && m.numeroSerie === c.t.module.numero_serie) : undefined;
+    const maj = completer(e, c, module?.id ?? null);
+    if (maj) {
       doublons++;
       dejaIntegrees.push(e.transactionIdModule);
+      if (Object.keys(maj).length)
+        completees.push({ id: e.id, maj, jour: e.jourLocal, agregats: e.lieuId !== null && ("moyenPaiement" in maj || "encaissement" in maj) });
     }
-    else erreurs.push({ index: c.index, transaction_id: e.transactionIdModule, code: "CONFLIT_DOUBLON", message: `transaction_id déjà reçu (#${e.id}) avec un contenu différent : non écrasé` });
+    else erreurs.push({ index: c.index, transaction_id: e.transactionIdModule, code: "CONFLIT_DOUBLON", message: `transaction_id déjà reçu (#${e.id}) avec un statut, un montant ou un horodatage différent : non écrasé` });
     candidates.delete(e.transactionIdModule);
+  }
+  if (completees.length) {
+    await prisma.$transaction(
+      async (db) => {
+        for (const x of completees) await db.transaction.update({ where: { id: x.id }, data: x.maj });
+      },
+      { timeout: 60_000 }
+    );
+    // Moyen ou encaissement changés : les agrégats de ces jours sont reconstruits (le CA, lui, ne bouge pas)
+    const jours = completees.filter((x) => x.agregats).map((x) => x.jour.getTime());
+    if (jours.length) await recalculerAgregats(borne.id, new Date(Math.min(...jours)), new Date(Math.max(...jours)));
   }
   const idsOrigine = [...new Set([...candidates.values()].map((c) => c.t.transaction_origine_id).filter((x): x is string => !!x))];
   const origines = new Map(
@@ -202,7 +260,7 @@ export async function ingererLotTransactions(
         motif: c.t.motif ? (c.t.motif.toUpperCase() as MotifStatut) : null,
         gratuite: c.t.gratuite ? (c.t.gratuite.toUpperCase() as Gratuite) : null,
         pikcloudUuid: c.t.pikcloud_uuid ?? null,
-        carteFin: c.t.carte_fin ?? null,
+        carteFin: c.t.carte_derniers_chiffres ?? c.t.carte_fin ?? null,
         produitCode: c.t.produit.code,
         produitLibelle: c.t.produit.libelle ?? null,
         nbTirages: c.t.produit.nb_tirages,

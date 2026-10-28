@@ -20,6 +20,11 @@ La synchronisation est **directe : borne → plateforme de suivi**, sans passer 
 - **Carte** : champ facultatif `carte_fin` (quatre derniers chiffres, avec `cb` ou `sans_contact`) ; `pikcloud_uuid` accepté avec ou sans tirets.
 - **Séances à 0 €** : nouvelle valeur `sans_tirage` de `gratuite` (photo enregistrée sans tirage ni paiement). Avec elle, `gratuite` peut être envoyé pour toute séance `aucun`.
 
+**Nouveautés du 28/10/2026** (avenant n° 2 à la synchronisation des ventes) :
+- **Carte** : champ facultatif `carte_derniers_chiffres` (4 chiffres, jamais avec `especes`, `aucun` ou `web`), même donnée que `carte_fin`, qui reste accepté.
+- **`pikcloud_uuid`** : 32 hexadécimaux sans tirets (jeton du QR du kit nightlife) ou UUID avec tirets, envoyé tel quel.
+- **Renvoi d'une vente déjà reçue** : il **complète** la ligne au lieu d'être rejeté (voir `doublons` dans la réponse).
+
 ## 1. Vue d'ensemble
 
 | Envoi | Route | Fréquence |
@@ -119,6 +124,7 @@ Content-Type: application/json
 | `reference_sequence` | non | Numéro de séquence du terminal (6 chiffres). |
 | `gratuite` | non | Séance à 0 € : `mode_gratuit`, `code_staff`, `degrade` (terminal en panne, tirage offert), `reimpression` ou `sans_tirage` (photo enregistrée sans tirage ni paiement : voie numérique seule ou « non merci » sur l'offre). Exige `moyen_paiement` = `aucun`. |
 | `pikcloud_uuid` | non | Identifiant de la photo côté PikCloud (`photo_uuid`), UUID avec ou sans tirets : la plateforme affiche la photo dans le récapitulatif de la commande. |
+| `carte_derniers_chiffres` | non | **Quatre derniers chiffres de la carte** tels qu'imprimés sur le ticket (`^[0-9]{4}$`), quand le ticket est rapproché de la vente. Jamais avec `especes`, `aucun` ou `web`. Visibles des seuls administrateurs. |
 | `carte_fin` | non | **Quatre derniers chiffres de la carte**, lus sur le ticket du terminal (4 chiffres). Seulement avec `cb` ou `sans_contact`, quand le ticket a été rapproché de la séance. Visibles des seuls administrateurs. |
 | `produit.code` | oui | `TIRAGE`, `TIRAGE_EXTRA` (paiement supplémentaire de la séance), `NUMERIQUE` (photo livrée en numérique seul), `POSTAL` (tirage expédié). |
 | `produit.libelle` | non | Libellé de la formule tel que la borne l'affiche (ex. « 2 tirages »). |
@@ -148,7 +154,7 @@ Content-Type: application/json
 
 Les séances à 0 € sont **acceptées** : elles ne font ni vente ni chiffre d'affaires, mais comptent dans l'activité et la consommation de papier du lieu.
 
-**Interdit : aucune donnée de carte bancaire** (numéro, date d'expiration, nom du porteur…). Tout champ non prévu par le schéma est refusé, ce qui empêche qu'une telle donnée soit enregistrée par erreur. Les quatre derniers chiffres du ticket ne doivent pas être envoyés.
+**Interdit : aucune donnée de carte bancaire** (numéro, date d'expiration, nom du porteur…). Tout champ non prévu par le schéma est refusé, ce qui empêche qu'une telle donnée soit enregistrée par erreur. Seuls les quatre derniers chiffres imprimés sur le ticket (`carte_derniers_chiffres`) sont admis.
 
 **Règles de cohérence** (vente rejetée en `SCHEMA_INVALIDE` sinon) :
 - `encaissement` seulement avec `accepte` ;
@@ -187,7 +193,7 @@ La borne ne rembourse jamais. Un remboursement est saisi par Selfizee dans la pl
 | Champ | Signification |
 |---|---|
 | `creees` | Ventes nouvelles enregistrées. |
-| `doublons` | Ventes déjà reçues à l'identique : ignorées, sans effet. |
+| `doublons` | Ventes déjà reçues. Si le renvoi a le même `statut`, `montant_ttc_centimes`, `devise` et `horodatage` (et le même module et code produit), la ligne existante est **complétée** avec ses champs facultatifs : `reference_monetique`, `reference_sequence`, `moyen_paiement`, `encaissement`, `motif`, `carte_derniers_chiffres`, `pikcloud_uuid`, `module.numero_serie`, `produit.libelle`. Un champ renvoyé remplace l'ancien ; un champ absent ne l'efface pas. Le statut et le montant ne changent jamais par ce chemin. |
 | `rejetees` / `erreurs` | Ventes refusées, avec leur position dans le lot (`index`, à partir de 0) et le motif. Elles sont conservées côté plateforme dans la file d'erreurs : **inutile de les renvoyer telles quelles**. |
 | `non_affectees` | Ventes reçues alors que la borne n'est affectée à aucun lieu à cette date. Elles sont gardées et signalées à Selfizee : rien à faire côté borne. |
 
@@ -198,7 +204,7 @@ Codes d'erreur par vente :
 | `SCHEMA_INVALIDE` | Champ manquant, mauvais format, champ non prévu, règle de cohérence non respectée (le `message` précise laquelle). |
 | `MODULE_INCONNU` | `module.type` absent du référentiel de la plateforme. |
 | `DEVISE_NON_GEREE` | Devise autre que `EUR`. |
-| `CONFLIT_DOUBLON` | Ce `transaction_id` a déjà été reçu (ou figure deux fois dans le lot) **avec un contenu différent**. La vente d'origine n'est jamais écrasée. |
+| `CONFLIT_DOUBLON` | Ce `transaction_id` a déjà été reçu (ou figure deux fois dans le lot) **avec un statut, un montant, une devise, un horodatage, un module ou un produit différent**. La vente d'origine n'est jamais écrasée. |
 | `HORODATAGE_FUTUR` | Vente datée de plus d'une heure dans le futur : horloge de la borne à resynchroniser. |
 
 ## 4. Envoi du heartbeat (état de la borne)

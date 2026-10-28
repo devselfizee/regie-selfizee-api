@@ -65,6 +65,8 @@ export interface TransactionJson {
   gratuite?: "mode_gratuit" | "code_staff" | "degrade" | "reimpression" | "sans_tirage";
   pikcloud_uuid?: string;
   carte_fin?: string;
+  /** Même donnée que carte_fin, nom de l'avenant n° 2 (28/10/2026) */
+  carte_derniers_chiffres?: string;
   produit: { code: string; libelle?: string; nb_tirages: number };
 }
 
