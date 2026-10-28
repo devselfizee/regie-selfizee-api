@@ -24,6 +24,11 @@ const STATUTS: Record<TransactionJson["statut"], TransactionStatut> = {
 const nonRapprochable = (moyen: MoyenPaiement, montant: number, moduleRapprochable: boolean) =>
   !moduleRapprochable || moyen === "ESPECES" || moyen === "AUCUN" || moyen === "WEB" || montant === 0;
 
+// Une vente déjà reçue renvoyée avec un statut, un montant ou un horodatage différent est écrasée
+// par le renvoi (demande du 28/10/2026 : les bornes mises à jour renvoient tout leur historique).
+// Jamais une vente rapprochée, remboursée ou dans une commission validée. RENVOI_ECRASE=0 : refus (CONFLIT_DOUBLON).
+const ECRASER_SI_CONFLIT = process.env.RENVOI_ECRASE !== "0";
+
 const TVA_DEFAUT_BP = Number(process.env.TVA_DEFAUT_BP ?? 2000);
 // Au-delà, une date dans le futur trahit une horloge de borne déréglée : la vente est rejetée
 const TOLERANCE_FUTUR_MS = 60 * 60_000;
@@ -40,7 +45,7 @@ export interface ResultatLot {
   recues: number;
   creees: number;
   doublons: number;
-  /** Parmi les doublons : lignes complétées par le renvoi */
+  /** Parmi les doublons : lignes complétées ou écrasées par le renvoi */
   completees: number;
   rejetees: number;
   non_affectees: number;
@@ -209,6 +214,31 @@ export async function ingererLotTransactions(
       where: { numeroSerie: { in: [...candidates.values()].map((c) => c.t.module.numero_serie).filter((n): n is string => !!n) } },
     }),
   ]);
+  const idsOrigine = [...new Set([...candidates.values()].map((c) => c.t.transaction_origine_id).filter((x): x is string => !!x))];
+  const origines = new Map(
+    (await prisma.transaction.findMany({ where: { borneId: borne.id, transactionIdModule: { in: idsOrigine } }, select: { id: true, transactionIdModule: true } })).map(
+      (o) => [o.transactionIdModule, o.id]
+    )
+  );
+
+  // Lieu actif à la date de chaque transaction (CDC §3.2)
+  const affectationA = (h: Date) => affectations.find((a) => a.debut <= h && (!a.fin || a.fin > h));
+  // Ventes déjà reçues qu'on ne réécrit jamais : remboursées, ou dans une commission déjà validée
+  const [rembourseesIds, reversementsFiges] = existantes.length
+    ? await Promise.all([
+        prisma.transaction.findMany({ where: { transactionOrigineId: { in: existantes.map((e) => e.id) }, statut: "REMBOURSEE" }, select: { transactionOrigineId: true } }),
+        prisma.reversement.findMany({
+          where: { lieuId: { in: [...new Set(existantes.map((e) => e.lieuId).filter((x): x is number => x !== null))] }, statut: { notIn: ["A_CALCULER", "CALCULE"] } },
+          select: { lieuId: true, periodeDebut: true, periodeFin: true },
+        }),
+      ])
+    : [[], []];
+  const remboursees = new Set(rembourseesIds.map((x) => x.transactionOrigineId));
+  const figee = (e: (typeof existantes)[number]) =>
+    e.rapprochement === "RAPPROCHE" ||
+    remboursees.has(e.id) ||
+    reversementsFiges.some((v) => v.lieuId === e.lieuId && v.periodeDebut <= e.jourLocal && v.periodeFin >= e.jourLocal);
+  const ecrasees: { e: (typeof existantes)[number]; c: Candidate }[] = [];
   const dejaIntegrees: string[] = [];
   const completees: { id: bigint; maj: Prisma.TransactionUncheckedUpdateInput; jour: Date; agregats: boolean }[] = [];
   for (const e of existantes) {
@@ -221,7 +251,18 @@ export async function ingererLotTransactions(
       if (Object.keys(maj).length)
         completees.push({ id: e.id, maj, jour: e.jourLocal, agregats: e.lieuId !== null && ("moyenPaiement" in maj || "encaissement" in maj) });
     }
-    else erreurs.push({ index: c.index, transaction_id: e.transactionIdModule, code: "CONFLIT_DOUBLON", message: `transaction_id déjà reçu (#${e.id}), différent sur : ${ecarts(e, c).join(", ")} ; non écrasé` });
+    else if (ECRASER_SI_CONFLIT && !figee(e)) {
+      // Renvoi de tout l'historique par une borne mise à jour : sa lecture la plus récente fait foi
+      doublons++;
+      dejaIntegrees.push(e.transactionIdModule);
+      ecrasees.push({ e, c });
+    } else
+      erreurs.push({
+        index: c.index,
+        transaction_id: e.transactionIdModule,
+        code: "CONFLIT_DOUBLON",
+        message: `transaction_id déjà reçu (#${e.id}), différent sur : ${ecarts(e, c).join(", ")} ; non écrasé${ECRASER_SI_CONFLIT ? " (vente rapprochée, remboursée ou dans une commission validée)" : ""}`,
+      });
     candidates.delete(e.transactionIdModule);
   }
   if (completees.length) {
@@ -235,16 +276,7 @@ export async function ingererLotTransactions(
     const jours = completees.filter((x) => x.agregats).map((x) => x.jour.getTime());
     if (jours.length) await recalculerAgregats(borne.id, new Date(Math.min(...jours)), new Date(Math.max(...jours)));
   }
-  const idsOrigine = [...new Set([...candidates.values()].map((c) => c.t.transaction_origine_id).filter((x): x is string => !!x))];
-  const origines = new Map(
-    (await prisma.transaction.findMany({ where: { borneId: borne.id, transactionIdModule: { in: idsOrigine } }, select: { id: true, transactionIdModule: true } })).map(
-      (o) => [o.transactionIdModule, o.id]
-    )
-  );
-
-  // Lieu actif à la date de chaque transaction (CDC §3.2)
-  const affectationA = (h: Date) => affectations.find((a) => a.debut <= h && (!a.fin || a.fin > h));
-  const lignes = [...candidates.values()].map((c) => {
+  const ligneDe = (c: Candidate) => {
     const affectation = affectationA(c.horodatage);
     const { jour, heure } = jourEtHeureLocaux(c.horodatage);
     const module = c.t.module.numero_serie ? modules.find((m) => m.typeId === c.typeModuleId && m.numeroSerie === c.t.module.numero_serie) : undefined;
@@ -283,7 +315,31 @@ export async function ingererLotTransactions(
         rapprochement: nonRapprochable(c.moyenPaiement, c.t.montant_ttc_centimes, c.moduleRapprochable) ? ("NON_APPLICABLE" as const) : ("NON_RAPPROCHE" as const),
       } satisfies Prisma.TransactionCreateManyInput,
     };
-  });
+  };
+  const lignes = [...candidates.values()].map(ligneDe);
+
+  if (ecrasees.length) {
+    await prisma.$transaction(
+      async (db) => {
+        for (const { e, c } of ecrasees) {
+          const { borneId: _b, transactionIdModule: _t, ...data } = ligneDe(c).data;
+          await db.transaction.update({ where: { id: e.id }, data });
+          await db.auditLog.create({
+            data: {
+              entite: "transaction",
+              entiteId: e.id.toString(),
+              action: "ECRASEE_PAR_RENVOI",
+              avant: { horodatage: e.horodatage, montantTtcCents: e.montantTtcCents, statut: e.statut, moyenPaiement: e.moyenPaiement, produitCode: e.produitCode, importId: e.importId.toString() },
+              apres: { horodatage: data.horodatage, montantTtcCents: data.montantTtcCents, statut: data.statut, moyenPaiement: data.moyenPaiement, produitCode: data.produitCode, importId: importLot.id.toString() },
+            },
+          });
+        }
+      },
+      { timeout: 60_000 }
+    );
+    const jours = ecrasees.flatMap(({ e, c }) => [e.jourLocal.getTime(), jourEtHeureLocaux(c.horodatage).jour.getTime()]);
+    await recalculerAgregats(borne.id, new Date(Math.min(...jours)), new Date(Math.max(...jours)));
+  }
 
   // ─── 3. Écriture en une transaction : insertions + agrégats ───
   const inserees = lignes.length
@@ -347,7 +403,7 @@ export async function ingererLotTransactions(
       nbRecues: lot.transactions.length,
       nbCreees: inserees.length,
       nbDoublons: doublons,
-      nbCompletees: completees.length,
+      nbCompletees: completees.length + ecrasees.length,
       nbRejetees: erreurs.length,
       erreurs: {
         create: erreurs.map((e) => ({
@@ -398,7 +454,7 @@ export async function ingererLotTransactions(
     recues: lot.transactions.length,
     creees: inserees.length,
     doublons,
-    completees: completees.length,
+    completees: completees.length + ecrasees.length,
     rejetees: erreurs.length,
     non_affectees: nonAffectees.length,
     erreurs,

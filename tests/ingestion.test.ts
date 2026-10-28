@@ -81,17 +81,17 @@ describe("POST /ingest/v1/transactions", () => {
     expect(aggApres.map(({ majLe, ...a }) => a)).toEqual(aggAvant.map(({ majLe, ...a }) => a));
   });
 
-  it("n'écrase jamais une transaction renvoyée avec un contenu différent", async () => {
+  // Tant que RENVOI_ECRASE n'est pas à 0 (bornes qui renvoient tout leur historique, 28/10/2026)
+  it("écrase une transaction renvoyée avec un contenu différent, et le trace", async () => {
     await envoyer(exemple("transactions.ok.json"));
     const lot = exemple("transactions.ok.json");
     lot.transactions = [{ ...lot.transactions[0], montant_ttc_centimes: 99900 }];
 
     const res = await envoyer(lot);
-    expect(res.body).toMatchObject({ creees: 0, rejetees: 1 });
-    expect(res.body.erreurs[0].code).toBe("CONFLIT_DOUBLON");
+    expect(res.body).toMatchObject({ creees: 0, doublons: 1, completees: 1, rejetees: 0 });
     const t = await prisma.transaction.findFirstOrThrow({ where: { transactionIdModule: "ING-20261005-000184" } });
-    expect(t.montantTtcCents).toBe(800);
-    expect(await prisma.importErreur.count({ where: { code: "CONFLIT_DOUBLON" } })).toBe(1);
+    expect(t.montantTtcCents).toBe(99900);
+    expect(await prisma.auditLog.count({ where: { action: "ECRASEE_PAR_RENVOI" } })).toBe(1);
   });
 
   it("rejette seulement les lignes invalides et garde les autres", async () => {
