@@ -151,7 +151,7 @@ export async function evaluerAlertes(maintenant = new Date()) {
     const debutFenetre = new Date(maintenant.getTime() - rZero.parametres.heures * HEURE);
     const ventesRecentes = await prisma.transaction.count({
       // Ventes payées seulement : une séance gratuite (schéma 1.1) n'est pas une vente
-      where: { lieuId: lieu.id, statut: "ACCEPTEE", montantTtcCents: { gt: 0 }, horodatage: { gte: debutFenetre, lte: maintenant } },
+      where: { lieuId: lieu.id, statut: "ACCEPTEE", montantTtcCents: { gt: 0 }, test: false, horodatage: { gte: debutFenetre, lte: maintenant } },
     });
     if (ventesRecentes > 0) {
       resolues += await resoudre("ZERO_VENTE", { lieuId: lieu.id }, "Résolue automatiquement : les ventes ont repris", maintenant);
@@ -164,6 +164,7 @@ export async function evaluerAlertes(maintenant = new Date()) {
             lieuId: lieu.id,
             statut: "ACCEPTEE",
             montantTtcCents: { gt: 0 },
+            test: false,
             horodatage: { gte: new Date(debutFenetre.getTime() - k * 7 * JOUR), lt: new Date(maintenant.getTime() - k * 7 * JOUR) },
           },
         });
@@ -189,7 +190,7 @@ export async function evaluerAlertes(maintenant = new Date()) {
       const depuis = new Date(maintenant.getTime() - 24 * HEURE);
       const parStatut = await prisma.transaction.groupBy({
         by: ["statut"],
-        where: { lieuId: lieu.id, horodatage: { gte: depuis, lte: maintenant }, statut: { in: ["ACCEPTEE", "REFUSEE"] } },
+        where: { lieuId: lieu.id, horodatage: { gte: depuis, lte: maintenant }, statut: { in: ["ACCEPTEE", "REFUSEE"] }, test: false },
         _count: true,
       });
       const refus = parStatut.find((s) => s.statut === "REFUSEE")?._count ?? 0;
@@ -265,7 +266,7 @@ export async function evaluerAlertes(maintenant = new Date()) {
     const rHors = regle("VENTE_HORS_HORAIRES", lieu.id);
     if (rHors.actif && lieu.horaires.length) {
       const ventes = await prisma.transaction.findMany({
-        where: { lieuId: lieu.id, statut: "ACCEPTEE", jourLocal: hier },
+        where: { lieuId: lieu.id, statut: "ACCEPTEE", test: false, jourLocal: hier },
         select: { horodatage: true },
       });
       const hors = ventes.filter((v) => !ouvertA(o, v.horodatage));

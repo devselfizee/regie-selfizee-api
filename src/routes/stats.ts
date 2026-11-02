@@ -63,6 +63,11 @@ async function activite(f: Filtres) {
 
 async function kpis(f: Filtres) {
   const photo = activite(f);
+  // Ventes des cartes de test : hors chiffres, montrées à part
+  const tests = prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT count(*) FILTER (WHERE ${VENDUE}) nb, coalesce(sum(a.montant_ttc_cents) FILTER (WHERE ${VENDUE}), 0) ca
+    ${FROM_TRANSACTIONS}
+    WHERE ${et([...conditionsVentes(f, "a.jour_local", true), ...conditionsLieu(f)])}`;
   const [r] = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT sum(a.ca_ttc_cents) ca_ttc, sum(a.ca_ht_cents) ca_ht, sum(a.nb_acceptees) nb,
            sum(a.nb_refusees) refus, sum(a.nb_annulees) annul, sum(a.rembourse_ttc_cents) rembourse,
@@ -74,6 +79,7 @@ async function kpis(f: Filtres) {
   const nb = n(r.nb);
   const refus = n(r.refus);
   const a = await photo;
+  const [t] = await tests;
   return {
     ...a,
     // Panier moyen par photo achetée (séance payée, « +1 pour un pote » compris)
@@ -95,6 +101,7 @@ async function kpis(f: Filtres) {
     nbIncertaines: n(r.incertaines),
     caIncertainTtcCents: n(r.ca_incertain),
     lieuxAvecVentes: n(r.lieux_actifs),
+    tests: { nbVentes: n(t.nb), caTtcCents: n(t.ca) },
   };
 }
 

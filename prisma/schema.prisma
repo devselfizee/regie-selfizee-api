@@ -44,6 +44,7 @@ model User {
   commentaires     CommentaireLieu[]
   mentions         MentionCommentaire[]
   grillesTarifs    GrilleTarifs[]
+  cartesTest       CarteTest[]
 
   @@map("users")
 }
@@ -174,26 +175,26 @@ model Lieu {
   commercial      User?      @relation("LieuCommercial", fields: [commercialId], references: [id])
   antenne         RefValeur? @relation("LieuAntenne", fields: [antenneId], references: [id])
 
-  contacts        LieuContact[]
-  clienteles      LieuClientele[]
-  horaires        LieuHoraire[]
-  saisons         LieuSaison[]
-  fermetures      LieuFermeture[]
-  affectations    AffectationBorne[]
-  transactions    Transaction[]
-  contrats        ContratCommission[]
-  reversements    Reversement[]
-  alertes         Alerte[]
-  evenements      EvenementLieu[]
+  contacts         LieuContact[]
+  clienteles       LieuClientele[]
+  horaires         LieuHoraire[]
+  saisons          LieuSaison[]
+  fermetures       LieuFermeture[]
+  affectations     AffectationBorne[]
+  transactions     Transaction[]
+  contrats         ContratCommission[]
+  reversements     Reversement[]
+  alertes          Alerte[]
+  evenements       EvenementLieu[]
   // Événements de la borne : l'habituel du lieu et les ponctuels (Halloween, une soirée…)
   configsEvenement ConfigEvenement[]
-  cadresEvenement CadreEvenement[]
-  meteo           MeteoJour[]
-  partenaires     User[]              @relation("PartenaireLieu")
-  aggJours        AggJour[]
-  aggHeures       AggHeure[]
+  cadresEvenement  CadreEvenement[]
+  meteo            MeteoJour[]
+  partenaires      User[]              @relation("PartenaireLieu")
+  aggJours         AggJour[]
+  aggHeures        AggHeure[]
 
-  parcours Parcours[]
+  parcours     Parcours[]
   commentaires CommentaireLieu[]
   grilleTarifs GrilleTarifs?
 
@@ -540,6 +541,8 @@ model Transaction {
   pikcloudUuid       String?       @map("pikcloud_uuid") @db.Uuid // photo côté PikCloud (photo_uuid)
   // 4 derniers chiffres de la carte (ticket du terminal), pour une réclamation ou un relevé ; admin seulement
   carteFin           String?       @map("carte_fin") @db.Char(4)
+  // Payée avec une carte de test (CarteTest) : hors chiffres réels (agrégats, stats, commissions, exports)
+  test               Boolean       @default(false)
 
   produitCode    String  @map("produit_code")
   produitLibelle String? @map("produit_libelle")
@@ -1164,21 +1167,21 @@ model CadreEvenement {
   configEvenementId Int      @map("config_evenement_id")
   // Identifiant de la composition dans les réglages de l'événement (gabarits.choisis[].id)
   compositionId     String   @map("composition_id") @db.VarChar(40)
-  lieuId          Int      @map("lieu_id")
+  lieuId            Int      @map("lieu_id")
   // Gabarit du kit : bandelette, pola, planche, carte (src/config-evenement/reglages.ts)
-  gabarit         String   @db.VarChar(20)
-  nom             String
+  gabarit           String   @db.VarChar(20)
+  nom               String
   // Format et gabarit du studio (marque-page, polaroid… ; src/config-evenement/cadres.ts)
-  formatId        String   @map("format_id") @db.VarChar(60)
-  gabaritStudioId String?  @map("gabarit_studio_id") @db.VarChar(60)
-  nbPoses         Int      @map("nb_poses")
+  formatId          String   @map("format_id") @db.VarChar(60)
+  gabaritStudioId   String?  @map("gabarit_studio_id") @db.VarChar(60)
+  nbPoses           Int      @map("nb_poses")
   // État Fabric du canvas (JSON sérialisé, illustrations en base64 comprises)
-  canvas          String
+  canvas            String
   // Rendu du cadre en taille réelle (data URL PNG) et vignette (data URL JPEG)
-  image           String
-  vignette        String?
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  image             String
+  vignette          String?
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   lieu      Lieu            @relation(fields: [lieuId], references: [id], onDelete: Cascade)
   evenement ConfigEvenement @relation(fields: [configEvenementId], references: [id], onDelete: Cascade)
@@ -1242,4 +1245,18 @@ model Parcours {
 enum Parc {
   SELFIZEE
   CLIENT
+}
+
+// Cartes de test (4 derniers chiffres) : leurs ventes sont marquées transactions.test
+model CarteTest {
+  id               Int      @id @default(autoincrement())
+  derniersChiffres String   @unique @map("derniers_chiffres") @db.Char(4)
+  // Ex. « Carte Crédit Agricole Sébastien »
+  nom              String
+  creeParId        Int?     @map("cree_par_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  creePar User? @relation(fields: [creeParId], references: [id], onDelete: SetNull)
+
+  @@map("cartes_test")
 }

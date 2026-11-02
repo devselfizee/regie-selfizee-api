@@ -4,6 +4,7 @@ import { htDepuisTtc, pctVersBp } from "../lib/montants.js";
 import { jourEtHeureLocaux, offsetMinutes } from "../lib/temps.js";
 import { ajouterAuxAgregats, recalculerAgregats, type LigneAgregee } from "./agregats.js";
 import { sha256Payload } from "./journal.js";
+import { chiffresCartesTest } from "./cartesTest.js";
 import {
   formaterErreurs,
   validerTransaction,
@@ -207,13 +208,15 @@ export async function ingererLotTransactions(
 
   // ─── 2. Recherches groupées : déjà reçues, affectations, modules, ventes d'origine ───
   const ids = [...candidates.keys()];
-  const [existantes, affectations, modules] = await Promise.all([
+  const [existantes, affectations, modules, cartesTest] = await Promise.all([
     prisma.transaction.findMany({ where: { borneId: borne.id, transactionIdModule: { in: ids } } }),
     prisma.affectationBorne.findMany({ where: { borneId: borne.id } }),
     prisma.modulePaiement.findMany({
       where: { numeroSerie: { in: [...candidates.values()].map((c) => c.t.module.numero_serie).filter((n): n is string => !!n) } },
     }),
+    chiffresCartesTest(),
   ]);
+  const estTest = (carteFin: string | null | undefined) => !!carteFin && cartesTest.has(carteFin);
   const idsOrigine = [...new Set([...candidates.values()].map((c) => c.t.transaction_origine_id).filter((x): x is string => !!x))];
   const origines = new Map(
     (await prisma.transaction.findMany({ where: { borneId: borne.id, transactionIdModule: { in: idsOrigine } }, select: { id: true, transactionIdModule: true } })).map(
@@ -248,8 +251,10 @@ export async function ingererLotTransactions(
     if (maj) {
       doublons++;
       dejaIntegrees.push(e.transactionIdModule);
+      // Chiffres de la carte arrivés avec le renvoi : la vente peut devenir une vente de test
+      if ("carteFin" in maj && estTest(maj.carteFin as string) !== e.test) maj.test = !e.test;
       if (Object.keys(maj).length)
-        completees.push({ id: e.id, maj, jour: e.jourLocal, agregats: e.lieuId !== null && ("moyenPaiement" in maj || "encaissement" in maj) });
+        completees.push({ id: e.id, maj, jour: e.jourLocal, agregats: e.lieuId !== null && ("moyenPaiement" in maj || "encaissement" in maj || "test" in maj) });
     }
     else if (ECRASER_SI_CONFLIT && !figee(e)) {
       // Renvoi de tout l'historique par une borne mise à jour : sa lecture la plus récente fait foi
@@ -272,7 +277,7 @@ export async function ingererLotTransactions(
       },
       { timeout: 60_000 }
     );
-    // Moyen ou encaissement changés : les agrégats de ces jours sont reconstruits (le CA, lui, ne bouge pas)
+    // Moyen, encaissement ou carte de test changés : les agrégats de ces jours sont reconstruits (le CA, lui, ne bouge pas)
     const jours = completees.filter((x) => x.agregats).map((x) => x.jour.getTime());
     if (jours.length) await recalculerAgregats(borne.id, new Date(Math.min(...jours)), new Date(Math.max(...jours)));
   }
@@ -306,6 +311,7 @@ export async function ingererLotTransactions(
         gratuite: c.t.gratuite ? (c.t.gratuite.toUpperCase() as Gratuite) : null,
         pikcloudUuid: c.t.pikcloud_uuid ?? null,
         carteFin: c.t.carte_derniers_chiffres ?? c.t.carte_fin ?? null,
+        test: estTest(c.t.carte_derniers_chiffres ?? c.t.carte_fin),
         produitCode: c.t.produit.code,
         produitLibelle: c.t.produit.libelle ?? null,
         nbTirages: c.t.produit.nb_tirages,
@@ -380,6 +386,7 @@ export async function ingererLotTransactions(
                   montantHtCents: l.data.montantHtCents,
                   nbTirages: l.data.nbTirages,
                   encaissement: l.data.encaissement,
+                  test: l.data.test,
                 })
               )
           );

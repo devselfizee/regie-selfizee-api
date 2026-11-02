@@ -34,9 +34,10 @@ const listeCodes = z
   .transform((s) => s.split(","))
   .optional();
 
-// GET /api/ventes?q=&du=&au=&lieuId=&borneId=&type=&moyenPaiement=&parc=&page= — liste paginée des paiements
+// GET /api/ventes?q=&du=&au=&lieuId=&borneId=&type=&moyenPaiement=&parc=&cartes=&page= — liste paginée des paiements
 // (50 par page, les plus récents d'abord), avec le nombre total et l'encaissé de la sélection.
 // Une recherche (q : identifiant de transaction, n° d'autorisation, identifiant Stripe) porte sur tout.
+// cartes : reelles (par défaut, sans les cartes de test), test (seulement elles) ou toutes.
 ventesRouter.get(
   "/",
   asynchrone(async (req, res) => {
@@ -50,6 +51,7 @@ ventesRouter.get(
         type: z.enum(Object.keys(TYPES) as [string, ...string[]]).default("paiements"),
         moyenPaiement: listeCodes,
         parc: z.enum(["SELFIZEE", "CLIENT"]).optional(),
+        cartes: z.enum(["reelles", "test", "toutes"]).default("reelles"),
         page: z.coerce.number().int().min(1).default(1),
         // Compatibilité : tout=1 de l'ancienne page Ventes
         tout: z.string().optional(),
@@ -73,11 +75,13 @@ ventesRouter.get(
         f.borneId ? { borneId: f.borneId } : {},
         // Une vente suit le parc du lieu (compte client) où elle a été faite
         f.parc ? { lieu: { parc: f.parc } } : {},
+        // Une recherche trouve aussi les ventes de test
+        f.q || f.cartes === "toutes" ? {} : { test: f.cartes === "test" },
         f.du || f.au ? { jourLocal: { ...(f.du ? { gte: new Date(`${f.du}T00:00:00Z`) } : {}), ...(f.au ? { lte: new Date(`${f.au}T00:00:00Z`) } : {}) } } : {},
       ],
     };
     const parPage = 50;
-    const [total, ventes, encaisse, rembourse] = await Promise.all([
+    const [total, ventes, encaisse, rembourse, cartesTest] = await Promise.all([
       prisma.transaction.count({ where }),
       prisma.transaction.findMany({
         where,
@@ -93,7 +97,9 @@ ventesRouter.get(
       }),
       prisma.transaction.aggregate({ where: { AND: [where, VENDUE] }, _sum: { montantTtcCents: true }, _count: true }),
       prisma.transaction.aggregate({ where: { AND: [where, { statut: "REMBOURSEE" }] }, _sum: { montantTtcCents: true } }),
+      prisma.carteTest.findMany({ select: { derniersChiffres: true, nom: true } }),
     ]);
+    const nomCarte = new Map(cartesTest.map((c) => [c.derniersChiffres, c.nom]));
     res.json({
       total,
       page: f.page,
@@ -111,6 +117,7 @@ ventesRouter.get(
         transactionOrigineId: v.transactionOrigineId?.toString() ?? null,
         rembourseCents: derivees.reduce((s, r) => s + r.montantTtcCents, 0),
         photoUrl: urlPhoto(v.pikcloudUuid),
+        carteTest: v.test && v.carteFin ? (nomCarte.get(v.carteFin) ?? "Carte de test") : null,
       })),
     });
   })
@@ -133,6 +140,7 @@ ventesRouter.get(
       },
     });
     if (!v) throw new HttpError(404, "INTROUVABLE");
+    const carteTest = v.test && v.carteFin ? await prisma.carteTest.findUnique({ where: { derniersChiffres: v.carteFin }, select: { nom: true } }) : null;
     // Séance : l'identifiant sans son n° de paiement (S180-20261016-Z95FN7-1 → S180-20261016-Z95FN7)
     const seance = v.transactionIdModule.replace(/-RMB\d+$/, "").replace(/-\d+$/, "");
     const [paiementsSeance, parcours, motifs] = await Promise.all([
@@ -169,6 +177,7 @@ ventesRouter.get(
       parcours,
       photoUuid,
       photoUrl: urlPhoto(photoUuid),
+      carteTest: v.test ? (carteTest?.nom ?? "Carte de test") : null,
     });
   })
 );
@@ -233,6 +242,8 @@ ventesRouter.post(
           produitLibelle: origine.produitLibelle,
           nbTirages: 0,
           transactionOrigineId: origine.id,
+          // Remboursement d'une vente de test : de test aussi
+          test: origine.test,
           logicielVersion: "back-office",
           importId: lot.id,
           // Un remboursement par carte apparaît sur le relevé (débit) : à rapprocher comme la vente
@@ -243,7 +254,7 @@ ventesRouter.post(
         await ajouterAuxAgregats(db, [
           {
             jour, heure, lieuId: r.lieuId, borneId: r.borneId, typeModuleId: r.typeModuleId, moyenPaiement: r.moyenPaiement,
-            statut: r.statut, montantTtcCents: r.montantTtcCents, montantHtCents: r.montantHtCents, nbTirages: 0,
+            statut: r.statut, montantTtcCents: r.montantTtcCents, montantHtCents: r.montantHtCents, nbTirages: 0, test: r.test,
           },
         ]);
       }

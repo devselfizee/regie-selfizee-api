@@ -18,6 +18,8 @@ export interface LigneAgregee {
   montantHtCents: number;
   nbTirages: number;
   encaissement?: Encaissement | null;
+  /** Payée avec une carte de test : jamais dans les agrégats */
+  test?: boolean;
 }
 
 /** Séance gratuite (schéma 1.1) : acceptée à 0 € ou sans moyen de paiement. Ni vente ni CA, mais de l'activité. */
@@ -40,12 +42,14 @@ interface Groupe {
  * une mise à jour par groupe et non par vente. Appelé dans la même transaction SQL que
  * l'insertion : une transaction compte une fois et une seule.
  * Seules les ventes payées font des ventes et du CA ; offertes et gratuites comptent à part (tirages non facturés).
+ * Les ventes des cartes de test (cartesTest.ts) n'y entrent pas.
  */
 export async function ajouterAuxAgregats(db: Client, lignes: LigneAgregee[]) {
   const jours = new Map<string, Groupe>();
   const heures = new Map<string, { l: LigneAgregee; nb: number; ca: number }>();
 
   for (const l of lignes) {
+    if (l.test) continue;
     const cj = [ymd(l.jour), l.lieuId, l.borneId, l.typeModuleId, l.moyenPaiement].join("|");
     const g = jours.get(cj) ?? { l, acc: 0, ref: 0, ann: 0, remb: 0, exp: 0, off: 0, grat: 0, caTtc: 0, caHt: 0, rembTtc: 0, rembHt: 0, tirages: 0, tiragesNonFactures: 0, incertaines: 0, caIncertain: 0 };
     if (estGratuite(l)) {
@@ -150,7 +154,7 @@ export async function recalculerAgregats(borneId: number, jourDebut: Date, jourF
         coalesce(sum(montant_ttc_cents) FILTER (WHERE ${VENDUE_SQL} AND encaissement = 'INCERTAIN'), 0),
         now()
       FROM transactions
-      WHERE borne_id = ${borneId} AND lieu_id IS NOT NULL
+      WHERE borne_id = ${borneId} AND lieu_id IS NOT NULL AND NOT test
         AND jour_local BETWEEN ${ymd(jourDebut)}::date AND ${ymd(jourFin)}::date
       GROUP BY jour_local, lieu_id, borne_id, type_module_id, moyen_paiement`;
 
@@ -160,7 +164,7 @@ export async function recalculerAgregats(borneId: number, jourDebut: Date, jourF
         extract(hour FROM horodatage AT TIME ZONE 'Europe/Paris')::int,
         lieu_id, borne_id, count(*), sum(montant_ttc_cents)
       FROM transactions
-      WHERE borne_id = ${borneId} AND lieu_id IS NOT NULL AND ${VENDUE_SQL}
+      WHERE borne_id = ${borneId} AND lieu_id IS NOT NULL AND NOT test AND ${VENDUE_SQL}
         AND jour_local BETWEEN ${ymd(jourDebut)}::date AND ${ymd(jourFin)}::date
       GROUP BY 1, 2, lieu_id, borne_id`;
   });

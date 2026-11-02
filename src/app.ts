@@ -16,6 +16,7 @@ import { rapprochementRouter } from "./routes/rapprochement.js";
 import { previsionsRouter } from "./routes/previsions.js";
 import { prospectsRouter } from "./routes/prospects.js";
 import { ventesRouter } from "./routes/ventes.js";
+import { cartesTestRouter } from "./routes/cartesTest.js";
 import { demoRouter } from "./routes/demo.js";
 import { contexteRouter, evenementsLieuRouter, evenementsRouter } from "./routes/contexte.js";
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
@@ -101,6 +102,7 @@ export function creerApp() {
   app.use("/api/previsions", ventes, previsionsRouter);
   app.use("/api/prospects", exiger("ADMIN", "COMMERCIAL"), prospectsRouter);
   app.use("/api/ventes", exiger("ADMIN"), ventesRouter);
+  app.use("/api/cartes-test", exiger("ADMIN"), cartesTestRouter);
   app.use("/api/demo", exiger("ADMIN"), demoRouter);
   app.use("/api/commissions", commissionsRouter);
   app.use("/api/reversements", reversementsRouter);

@@ -96,11 +96,16 @@ export function conditionsLieu(f: Filtres): Prisma.Sql[] {
   return c;
 }
 
-/** Conditions SQL sur les ventes (alias `a` = agg_jour ou transactions, `b` = bornes). */
-export function conditionsVentes(f: Filtres, colonneJour = "a.jour"): Prisma.Sql[] {
+/**
+ * Conditions SQL sur les ventes (alias `a` = agg_jour ou transactions, `b` = bornes).
+ * testsSeuls : sur transactions, les ventes des cartes de test au lieu des ventes réelles.
+ */
+export function conditionsVentes(f: Filtres, colonneJour = "a.jour", testsSeuls = false): Prisma.Sql[] {
   const c: Prisma.Sql[] = [
     Prisma.sql`${Prisma.raw(colonneJour)} BETWEEN ${ymd(f.du)}::date AND ${ymd(f.au)}::date`,
   ];
+  // Sur la table transactions (jour_local) : sans les ventes des cartes de test, qu'agg_jour ne contient pas
+  if (colonneJour.endsWith("jour_local")) c.push(testsSeuls ? Prisma.sql`a.test` : Prisma.sql`NOT a.test`);
   if (f.gammeId?.length) c.push(Prisma.sql`b.gamme_id IN (${Prisma.join(f.gammeId)})`);
   if (f.typeModuleId?.length) c.push(Prisma.sql`a.type_module_id IN (${Prisma.join(f.typeModuleId)})`);
   if (f.moyenPaiement?.length) c.push(Prisma.sql`a.moyen_paiement::text IN (${Prisma.join(f.moyenPaiement)})`);
