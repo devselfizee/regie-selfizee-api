@@ -108,8 +108,8 @@ const zone = (i: number, copie = false) =>
     : { type: "Rect", originX: "left", originY: "top", left: 20, top: 40 + i * 200, width: 270, height: 190, _isShootZone: true, _shootIndex: i + 1 };
 const qr = { type: "Group", originX: "center", originY: "center", left: 516, top: 810, width: 100, height: 100, _zoneBorne: "qr" };
 const code = { type: "Textbox", originX: "left", originY: "top", left: 328, top: 885, width: 77, height: 14, fill: "#f0c400", textAlign: "left", _zoneBorne: "code-seance" };
-const dateHeure = { type: "Textbox", originX: "left", originY: "top", left: 328, top: 860, width: 200, height: 20, fill: "#ffffff", textAlign: "center", fontFamily: "Figtree", fontWeight: "bold", _zoneBorne: "date-heure" };
-const heure = { type: "Textbox", originX: "left", originY: "top", left: 600, top: 100, width: 100, height: 20, angle: 90, fill: "#ffffff", textAlign: "left", fontFamily: "Inter", fontStyle: "italic", _zoneBorne: "heure" };
+const dateHeure = { type: "Textbox", originX: "left", originY: "top", left: 328, top: 860, width: 200, height: 20, fontSize: 16, fill: "#ffffff", textAlign: "center", fontFamily: "Figtree", fontWeight: "bold", _zoneBorne: "date-heure" };
+const heure = { type: "Textbox", originX: "left", originY: "top", left: 600, top: 100, width: 100, height: 20, fontSize: 12, angle: 90, fill: "#ffffff", textAlign: "left", fontFamily: "Inter", fontStyle: "italic", _zoneBorne: "heure" };
 const pageEntiere = (objets: object[]) => JSON.stringify({ width: 620, height: 922, objects: objets });
 const toutes = [0, 1, 2, 3].flatMap((i) => [zone(i), zone(i, true)]);
 
@@ -136,10 +136,20 @@ describe("bandelette dessinée sur la page entière (bande + carte souvenir)", (
     const c = compositionAvecCadre(kit.bandelette, pageEntiere([...toutes, qr, code, dateHeure, heure]), zoneBc);
     expect(c.qrHoles).toEqual([{ x: 932, y: 1520, width: 200, height: 200 }]);
     expect(c.sessionCode).toEqual({ x: 656, y: 1770, width: 154, height: 28, rotation: 0, color: "#f0c400", align: "AlignLeft", prefix: true });
+    // Format de la borne (exemple de config.json du 03/11) : police Qt, position, alignement, dateFormat Qt
     expect(c.dynamicTexts).toEqual([
-      { type: "datetime", format: "DD/MM/YYYY HH:mm", x: 656, y: 1720, width: 400, height: 40, rotation: 0, color: "#ffffff", align: "AlignHCenter", font: "Figtree", bold: true, italic: false },
-      // Tourné de 90° autour de son coin haut gauche dans l'éditeur : centre (590, 150) → (1180, 300)
-      { type: "time", format: "HH:mm", x: 1080, y: 280, width: 200, height: 40, rotation: 90, color: "#ffffff", align: "AlignLeft", font: "Inter", bold: false, italic: true },
+      {
+        image: "", font: "Figtree,-1,32,5,700,0,0,0,0,0,0,0,0,0,0,1", text: "",
+        position: { height: 40, width: 400, x: 656, y: 1720 },
+        color: "#ffffff", textKey: "", imageKey: "", backgroundColor: "#00000000",
+        alignment: ["AlignVCenter", "AlignHCenter"], borderColor: "#00000000", dateFormat: "dd/MM/yyyy HH:mm", used: true,
+      },
+      {
+        image: "", font: "Inter,-1,24,5,400,1,0,0,0,0,0,0,0,0,0,1", text: "",
+        position: { height: 40, width: 200, x: 1080, y: 280 },
+        color: "#ffffff", textKey: "", imageKey: "", backgroundColor: "#00000000",
+        alignment: ["AlignVCenter", "AlignLeft"], borderColor: "#00000000", dateFormat: "HH:mm", used: true,
+      },
     ]);
   });
 

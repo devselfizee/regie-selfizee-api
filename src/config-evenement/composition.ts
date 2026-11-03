@@ -4,9 +4,10 @@
 // 2inchCut, noms des fichiers…).
 // Zone dessinée : la zone visible du kit (previewROI), ou toute la page pour les formats du studio qui la
 // dessinent entière (bandelette + carte souvenir : la bande, ses miniatures, le QR et le code de séance).
-// Zones de la borne posées au studio (docs/WEB-NIGHTLIFE.md) : QR → `qrHoles`, code de séance →
-// `sessionCode`, date / heure de la prise de vue → `dynamicTexts` (clé proposée par la Régie, à valider
-// côté borne).
+// Zones de la borne posées au studio : QR → `qrHoles`, code de séance → `sessionCode`
+// (docs/WEB-NIGHTLIFE.md), date / heure de la prise de vue → `dynamicTexts`, au format que la borne lit
+// déjà pour les champs de formulaire (exemple « TEST SAVE SHARE QRCODE » du 03/11) : pas de `textKey`,
+// un `dateFormat` Qt — à confirmer côté borne.
 
 export interface Roi {
   x: number;
@@ -37,20 +38,23 @@ export interface CodeDeSeance {
   align: Alignement;
   prefix: boolean;
 }
+/** Texte écrit par la borne sur le tirage (format de la borne, `compositions[].dynamicTexts[]`). */
 export interface TexteDynamique {
-  /** Ce que la borne écrit : date, heure ou les deux, de la prise de vue (save_date) */
-  type: "date" | "time" | "datetime";
-  format: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  color: string;
-  align: Alignement;
+  image: string;
+  /** Police au format Qt (QFont::toString) : famille, -1, taille en px, 5, graisse, italique… */
   font: string;
-  bold: boolean;
-  italic: boolean;
+  text: string;
+  position: { height: number; width: number; x: number; y: number };
+  color: string;
+  /** Champ de formulaire à écrire ; vide pour une date */
+  textKey: string;
+  imageKey: string;
+  backgroundColor: string;
+  alignment: ["AlignVCenter", Alignement];
+  borderColor: string;
+  /** Format Qt de la date de prise de vue (dd/MM/yyyy, HH:mm…) */
+  dateFormat: string;
+  used: boolean;
 }
 export type CompositionKit = {
   previewROI: Roi;
@@ -77,8 +81,16 @@ export function zoneDessinee(kit: { previewROI: Roi }, formatId?: string | null)
 const borne = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const dans = (t: Roi, r: Roi) => t.x >= r.x && t.y >= r.y && t.x + t.width <= r.x + r.width && t.y + t.height <= r.y + r.height;
 
-const FORMATS_DATE: Record<TexteDynamique["type"], string> = { date: "DD/MM/YYYY", time: "HH:mm", datetime: "DD/MM/YYYY HH:mm" };
-const TYPES_DATE: Record<string, TexteDynamique["type"]> = { date: "date", heure: "time", "date-heure": "datetime" };
+// Format Qt (QDateTime::toString) selon la zone posée au studio
+const FORMATS_DATE: Record<string, string> = { date: "dd/MM/yyyy", heure: "HH:mm", "date-heure": "dd/MM/yyyy HH:mm" };
+// Transparent, au format Qt #AARRGGBB comme les palettes du config.json
+const TRANSPARENT = "#00000000";
+
+/** Graisse CSS / fabric → graisse Qt (400 normal, 700 gras). */
+const graisse = (w: unknown) => (w === "bold" ? 700 : w === "normal" || w === undefined ? 400 : Number(w) || 400);
+/** Police au format Qt, sur le modèle de l'exemple de la borne « Arial,-1,80,5,700,0,0,0,0,0,0,0,0,0,0,1 ». */
+const policeQt = (famille: string, px: number, poids: number, italique: boolean) =>
+  `${famille || "Arial"},-1,${Math.max(1, Math.round(px))},5,${poids},${italique ? 1 : 0},0,0,0,0,0,0,0,0,0,1`;
 const ALIGNEMENTS: Record<string, Alignement> = { left: "AlignLeft", center: "AlignHCenter", right: "AlignRight", justify: "AlignLeft" };
 const ORIGINES: Record<string, number> = { left: 0, top: 0, center: 0.5, right: 1, bottom: 1 };
 
@@ -181,17 +193,22 @@ export function zonesBorneDuCadre(canvas: string, zone: Roi) {
     const align = ALIGNEMENTS[o.textAlign] ?? "AlignLeft";
     if (o._zoneBorne === "qr") qrHoles.push({ x, y, width, height });
     else if (o._zoneBorne === "code-seance") sessionCode ??= { x, y, width, height, rotation, color: couleur, align, prefix: true };
-    else if (TYPES_DATE[o._zoneBorne]) {
-      const type = TYPES_DATE[o._zoneBorne];
+    else if (FORMATS_DATE[o._zoneBorne]) {
+      // Pas de rotation dans le format de la borne (le studio la bloque sur ces zones)
+      void rotation;
       dynamicTexts.push({
-        type,
-        format: FORMATS_DATE[type],
-        x, y, width, height, rotation,
+        image: "",
+        font: policeQt(String(o.fontFamily ?? ""), (o.fontSize ?? 0) * (o.scaleY ?? 1) * lu.sy, graisse(o.fontWeight), o.fontStyle === "italic"),
+        text: "",
+        position: { height, width, x, y },
         color: couleur,
-        align,
-        font: String(o.fontFamily ?? ""),
-        bold: o.fontWeight === "bold" || Number(o.fontWeight) >= 600,
-        italic: o.fontStyle === "italic",
+        textKey: "",
+        imageKey: "",
+        backgroundColor: TRANSPARENT,
+        alignment: ["AlignVCenter", align],
+        borderColor: TRANSPARENT,
+        dateFormat: FORMATS_DATE[o._zoneBorne],
+        used: true,
       });
     }
   }
