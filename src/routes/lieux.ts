@@ -27,7 +27,8 @@ const lieuSchema = z.object({
   statut: z.enum(LieuStatut).optional(),
   crmClientId: z.number().int().nullable().optional(),
 
-  raisonSociale: z.string().trim().min(1),
+  // Facultative (retour de Sébastien : formulaire prospect allégé) : l'enseigne la remplace si vide
+  raisonSociale: z.string().trim().optional(),
   enseigne: z.string().trim().min(1),
   siret: z.string().regex(/^\d{14}$/, "14 chiffres").nullable().optional().or(z.literal("").transform(() => null)),
   adresse: texteOpt,
@@ -53,6 +54,10 @@ const lieuSchema = z.object({
   tailleCommuneId: idOpt,
   concurrencePhoto: z.boolean().nullable().optional(),
   concurrencePhotoNotes: texteOpt,
+  // Concurrent déjà en place : un concurrent connu (concurrentId) ou un nom saisi
+  concurrentEnPlace: z.boolean().nullable().optional(),
+  concurrentId: idOpt,
+  concurrentNom: texteOpt,
 
   interieurExterieur: z.enum(InterieurExterieur).nullable().optional(),
   emplacementZoneId: idOpt,
@@ -94,7 +99,11 @@ const lieuSchema = z.object({
 type LieuInput = z.infer<typeof lieuSchema>;
 
 function donneesLieu(input: LieuInput) {
-  const { clienteleIds, contacts, horaires, saisons, fermetures, ...champs } = input;
+  const { clienteleIds, contacts, horaires, saisons, fermetures, ...reste } = input;
+  const champs = { ...reste, raisonSociale: reste.raisonSociale || reste.enseigne };
+  // Pas de concurrent en place : ni concurrent choisi ni nom ; un concurrent choisi remplace le nom saisi
+  if (champs.concurrentEnPlace === false || champs.concurrentEnPlace === null) Object.assign(champs, { concurrentId: null, concurrentNom: null });
+  else if (champs.concurrentId) champs.concurrentNom = null;
   return { champs, clienteleIds, contacts, horaires, saisons, fermetures };
 }
 
@@ -185,6 +194,7 @@ lieuxRouter.get(
       include: {
         typeLieu: true, sousType: true, standing: true, zoneGeo: true, tailleCommune: true, antenne: true,
         emplacementZone: true, eclairage: true, origineLead: true,
+        concurrent: { select: { id: true, nom: true, typeMateriel: true } },
         commercial: { select: { id: true, nom: true, prenom: true } },
         contacts: { orderBy: { id: "asc" } },
         clienteles: { include: { refValeur: true } },

@@ -18,6 +18,11 @@ const select = {
   horaires: true, saisons: true, fermetures: true,
   affectations: { select: { debut: true, fin: true } },
   typeLieu: { select: { libelle: true } },
+  // Carte et filtres de la page Prospects
+  codePostal: true,
+  concurrentEnPlace: true,
+  concurrentNom: true,
+  concurrent: { select: { id: true, nom: true, typeMateriel: true } },
 } as const;
 
 type LieuCharge = Awaited<ReturnType<typeof chargerLieux>>[number];
@@ -96,6 +101,11 @@ export async function scorerProspects(options: { ids?: number[]; commercialId?: 
         enseigne: p.enseigne,
         ville: p.ville,
         typeLieu: p.typeLieu.libelle,
+        codePostal: p.codePostal,
+        latitude: p.latitude === null ? null : Number(p.latitude),
+        longitude: p.longitude === null ? null : Number(p.longitude),
+        concurrentEnPlace: p.concurrentEnPlace,
+        concurrent: p.concurrent ?? (p.concurrentNom ? { id: null, nom: p.concurrentNom, typeMateriel: null } : null),
         completude: completude(pr),
         joursOuvertsAn: jours,
         caAnnuelCents: e && jours !== null ? Math.round(e.caJourOuvertCents * jours) : null,

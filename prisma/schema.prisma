@@ -140,10 +140,15 @@ model Lieu {
   frequentationSemaine Int? @map("frequentation_semaine")
 
   // Environnement
-  zoneGeoId             Int?     @map("zone_geo_id")
-  tailleCommuneId       Int?     @map("taille_commune_id")
-  concurrencePhoto      Boolean? @map("concurrence_photo")
-  concurrencePhotoNotes String?  @map("concurrence_photo_notes")
+  zoneGeoId             Int?        @map("zone_geo_id")
+  tailleCommuneId       Int?        @map("taille_commune_id")
+  concurrencePhoto      Boolean?    @map("concurrence_photo")
+  concurrencePhotoNotes String?     @map("concurrence_photo_notes")
+  // Prospect : concurrent déjà en place dans le lieu (connu, ou nom saisi à la main)
+  concurrentEnPlace     Boolean?    @map("concurrent_en_place")
+  concurrentId          Int?        @map("concurrent_id")
+  concurrentNom         String?     @map("concurrent_nom")
+  concurrent            Concurrent? @relation(fields: [concurrentId], references: [id], onDelete: SetNull)
 
   // Emplacement
   interieurExterieur InterieurExterieur? @map("interieur_exterieur")
@@ -1347,4 +1352,44 @@ model EvenementMarketing {
 
   @@index([debut])
   @@map("evenements_marketing")
+}
+
+// Concurrents (demande de Sébastien, 03/11/2026) et leurs emplacements connus (carte des prospects)
+enum TypeMateriel {
+  CABINE
+  BORNE
+}
+
+model Concurrent {
+  id           Int          @id @default(autoincrement())
+  nom          String       @unique
+  typeMateriel TypeMateriel @map("type_materiel")
+  siteWeb      String?      @map("site_web")
+  notes        String?
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  emplacements EmplacementConcurrent[]
+  lieux        Lieu[]
+
+  @@map("concurrents")
+}
+
+model EmplacementConcurrent {
+  id           Int      @id @default(autoincrement())
+  concurrentId Int      @map("concurrent_id")
+  nom          String
+  adresse      String?
+  codePostal   String?  @map("code_postal")
+  ville        String?
+  pays         String?
+  latitude     Decimal? @db.Decimal(9, 6)
+  longitude    Decimal? @db.Decimal(9, 6)
+  // D'où vient la ligne (import, saisie)
+  source       String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  concurrent Concurrent @relation(fields: [concurrentId], references: [id], onDelete: Cascade)
+
+  @@index([concurrentId])
+  @@map("emplacements_concurrents")
 }
