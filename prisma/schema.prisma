@@ -45,6 +45,7 @@ model User {
   mentions         MentionCommentaire[]
   grillesTarifs    GrilleTarifs[]
   cartesTest       CarteTest[]
+  lotsCodesRemise  LotCodesRemise[]
 
   @@map("users")
 }
@@ -194,9 +195,11 @@ model Lieu {
   aggJours         AggJour[]
   aggHeures        AggHeure[]
 
-  parcours     Parcours[]
-  commentaires CommentaireLieu[]
-  grilleTarifs GrilleTarifs?
+  parcours               Parcours[]
+  commentaires           CommentaireLieu[]
+  lotsCodesRemise        LotCodesRemise[]
+  utilisationsCodeRemise UtilisationCodeRemise[]
+  grilleTarifs           GrilleTarifs?
 
   @@index([typeLieuId])
   @@index([commercialId])
@@ -394,7 +397,8 @@ model Borne {
   aggHeures     AggHeure[]
   aggDispos     AggDisponibilite[]
 
-  parcours Parcours[]
+  parcours               Parcours[]
+  utilisationsCodeRemise UtilisationCodeRemise[]
 
   @@map("bornes")
 }
@@ -476,6 +480,7 @@ enum ImportType {
   HEARTBEAT
   RELEVE_MONETIQUE
   PARCOURS // parcours invité (avenant du 26/10/2026)
+  CODES // codes de remise saisis sur la borne (journal des refus)
 }
 
 enum ImportStatut {
@@ -1259,4 +1264,70 @@ model CarteTest {
   creePar User? @relation(fields: [creeParId], references: [id], onDelete: SetNull)
 
   @@map("cartes_test")
+}
+
+// Codes de remise (demande de Sébastien, 02/11/2026) : générés par lots ; un lot fixe le type, la quantité,
+// le lieu et la validité de tous ses codes. La borne les vérifie et les utilise par /ingest/v1/codes.
+enum TypeRemise {
+  OFFERT // impressions offertes
+  POURCENTAGE // remise en % sur des impressions
+}
+
+model LotCodesRemise {
+  id            Int        @id @default(autoincrement())
+  libelle       String?
+  type          TypeRemise
+  // Impressions couvertes par chaque code (offertes, ou remisées de pourcentage %)
+  quantite      Int
+  pourcentage   Int?
+  // Lieu à qui les codes sont donnés ; seulementLieu : valables seulement sur ses bornes (sinon sur toutes les bornes en régie)
+  lieuId        Int?       @map("lieu_id")
+  seulementLieu Boolean    @default(false) @map("seulement_lieu")
+  // Dernier jour de validité (inclus, heure de Paris)
+  expireLe      DateTime   @map("expire_le") @db.Date
+  nbCodes       Int        @map("nb_codes")
+  creeParId     Int?       @map("cree_par_id")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  lieu    Lieu?        @relation(fields: [lieuId], references: [id], onDelete: SetNull)
+  creePar User?        @relation(fields: [creeParId], references: [id], onDelete: SetNull)
+  codes   CodeRemise[]
+
+  @@map("lots_codes_remise")
+}
+
+model CodeRemise {
+  id          Int       @id @default(autoincrement())
+  // 5 caractères, chiffres et lettres sans les ambigus (0/O, 1/I/L)
+  code        String    @unique @db.Char(5)
+  lotId       Int       @map("lot_id")
+  // Impressions déjà accordées (≤ quantite du lot)
+  utilise     Int       @default(0)
+  desactiveLe DateTime? @map("desactive_le") @db.Timestamptz(3)
+
+  lot          LotCodesRemise          @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  utilisations UtilisationCodeRemise[]
+
+  @@index([lotId])
+  @@map("codes_remise")
+}
+
+model UtilisationCodeRemise {
+  id            BigInt   @id @default(autoincrement())
+  codeId        Int      @map("code_id")
+  borneId       Int      @map("borne_id")
+  lieuId        Int?     @map("lieu_id")
+  demandees     Int
+  accordees     Int
+  // Identifiant donné par la borne (séance) : un renvoi ne décompte pas deux fois
+  utilisationId String?  @map("utilisation_id")
+  horodatage    DateTime @default(now()) @db.Timestamptz(3)
+
+  code  CodeRemise @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  borne Borne      @relation(fields: [borneId], references: [id])
+  lieu  Lieu?      @relation(fields: [lieuId], references: [id], onDelete: SetNull)
+
+  @@unique([borneId, utilisationId])
+  @@index([codeId])
+  @@map("utilisations_code_remise")
 }

@@ -303,6 +303,49 @@ Tout champ non prévu est refusé. Comme pour les ventes, **un parcours mal form
 
 **Réponse** `200` : `{ "import_id", "recus", "crees", "doublons", "rejetees", "non_affectees", "erreurs": [{ "index", "parcours_id", "code", "message" }] }`. Un renvoi identique (même `borne_id`, même `parcours_id`, même contenu) compte en `doublons` ; un contenu différent est refusé en `CONFLIT_DOUBLON` et l'original est gardé ; un même `parcours_id` deux fois dans le lot donne `DOUBLON_DANS_LE_LOT` pour le second.
 
+## 4 ter. Codes de remise (impressions offertes ou remisées)
+
+Les codes sont générés dans la Régie (Codes de remise) par lots : **5 caractères**, chiffres et majuscules, sans `0`, `O`, `1`, `I` ni `L`. Un code donne soit des **impressions offertes**, soit une **remise en %** sur un nombre d'impressions ; il a une date de fin de validité et peut être réservé aux bornes d'un lieu. Contrairement aux ventes, ces appels se font **en direct**, pendant la séance (pas de file d'attente) : sans réseau, la borne refuse le code.
+
+Même authentification que les ventes (`Authorization: Bearer rgs_…`), `borne_id` dans le corps. La borne peut envoyer le code tel que tapé (minuscules, espaces et tirets acceptés).
+
+**Vérifier un code** (`checkCode`) — `POST /ingest/v1/codes/verifier`
+
+```json
+{ "borne_id": "S513", "code": "K7PX2" }
+```
+
+Réponse `200`, code utilisable :
+
+```json
+{ "valide": true, "code": "K7PX2", "type": "offert", "pourcentage": null, "quantite": 4, "restant": 3, "expire_le": "2027-11-03" }
+```
+
+`type` : `offert` (impressions gratuites) ou `pourcentage` (remise de `pourcentage` % sur chaque impression couverte). `restant` : impressions encore disponibles. `expire_le` : dernier jour de validité, inclus (heure de Paris).
+
+Réponse `200`, code refusé : `{ "valide": false, "raison": "EXPIRE", "message": "Code expiré" }`. Raisons : `INCONNU`, `DESACTIVE`, `EXPIRE`, `EPUISE` (déjà entièrement utilisé), `AUTRE_LIEU` (réservé à un autre lieu).
+
+**Utiliser un code** (`useCode`) — `POST /ingest/v1/codes/utiliser`, au moment d'imprimer
+
+```json
+{ "borne_id": "S513", "code": "K7PX2", "nb": 2, "utilisation_id": "S513-20261103-K9CTDU" }
+```
+
+| Champ | Obligatoire | Règle |
+|---|---|---|
+| `nb` | oui | Impressions demandées sur ce code (1 à 100). |
+| `utilisation_id` | conseillé | Identifiant unique de cette utilisation pour la borne, par exemple le code de séance. Un renvoi avec le même identifiant (réponse perdue, réseau coupé) **ne décompte pas une seconde fois** : il renvoie le premier résultat avec `"deja_enregistree": true`. |
+
+Réponse `200` :
+
+```json
+{ "ok": true, "accordees": 2, "demandees": 2, "restant": 1, "message": "2 impressions accordées" }
+```
+
+S'il reste **moins** d'impressions que demandé, la Régie accorde ce qu'il reste et le dit : `{ "ok": false, "accordees": 1, "demandees": 2, "restant": 0, "message": "Il ne restait que 1 impression sur ce code : 1 accordée sur 2 demandées" }`. La borne n'applique la remise qu'aux `accordees` impressions. Code refusé : `{ "ok": false, "accordees": 0, "raison": "…", "message": "…" }`, mêmes raisons que la vérification.
+
+Chaque utilisation est enregistrée (borne, lieu, date, impressions) et visible dans la Régie. La vente elle-même continue d'arriver par `/transactions` : une impression remisée est une vente au montant remisé, une impression offerte une séance à 0 €. **Point ouvert** : la façon de signaler dans la vente qu'un code a servi (motif de gratuité dédié, ou champ `code_remise`) reste à décider ensemble.
+
 ## 5. Codes de réponse HTTP et comportement attendu
 
 | Code | Signification | Que doit faire la borne |
