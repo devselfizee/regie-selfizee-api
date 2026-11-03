@@ -6,8 +6,9 @@
 // dessinent entière (bandelette + carte souvenir : la bande, ses miniatures, le QR et le code de séance).
 // Zones de la borne posées au studio : QR → `qrHoles`, code de séance → `sessionCode`
 // (docs/WEB-NIGHTLIFE.md), date / heure de la prise de vue → `dynamicTexts`, au format que la borne lit
-// déjà pour les champs de formulaire (exemple « TEST SAVE SHARE QRCODE » du 03/11) : pas de `textKey`,
-// un `dateFormat` Qt — à confirmer côté borne.
+// telle que la décrit le mémo de la borne « Date, heure et QR code sur un gabarit » (03/11) : un texte
+// avec `dateFormat` (jetons DD/MM/YYYY, HH:mm…), sans `textKey` ; QR toujours carré, coordonnées entières
+// dans la planche (sinon la borne refuse l'événement au chargement).
 
 export interface Roi {
   x: number;
@@ -38,23 +39,15 @@ export interface CodeDeSeance {
   align: Alignement;
   prefix: boolean;
 }
-/** Texte écrit par la borne sur le tirage (format de la borne, `compositions[].dynamicTexts[]`). */
+/** Date / heure écrite par la borne sur le tirage (`compositions[].dynamicTexts[]`, mémo de la borne). */
 export interface TexteDynamique {
-  image: string;
   /** Police au format Qt (QFont::toString) : famille, -1, taille en px, 5, graisse, italique… */
   font: string;
-  text: string;
-  position: { height: number; width: number; x: number; y: number };
+  position: { x: number; y: number; width: number; height: number };
   color: string;
-  /** Champ de formulaire à écrire ; vide pour une date */
-  textKey: string;
-  imageKey: string;
-  backgroundColor: string;
   alignment: ["AlignVCenter", Alignement];
-  borderColor: string;
-  /** Format Qt de la date de prise de vue (dd/MM/yyyy, HH:mm…) */
+  /** Date de la prise de vue : DD/MM/YYYY, HH:mm… (MM = mois, mm = minutes) */
   dateFormat: string;
-  used: boolean;
 }
 export type CompositionKit = {
   previewROI: Roi;
@@ -81,10 +74,8 @@ export function zoneDessinee(kit: { previewROI: Roi }, formatId?: string | null)
 const borne = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const dans = (t: Roi, r: Roi) => t.x >= r.x && t.y >= r.y && t.x + t.width <= r.x + r.width && t.y + t.height <= r.y + r.height;
 
-// Format Qt (QDateTime::toString) selon la zone posée au studio
-const FORMATS_DATE: Record<string, string> = { date: "dd/MM/yyyy", heure: "HH:mm", "date-heure": "dd/MM/yyyy HH:mm" };
-// Transparent, au format Qt #AARRGGBB comme les palettes du config.json
-const TRANSPARENT = "#00000000";
+// `dateFormat` de la borne selon la zone posée au studio (mémo : 03/11/2026, 21:07, 03/11/2026 21:07)
+const FORMATS_DATE: Record<string, string> = { date: "DD/MM/YYYY", heure: "HH:mm", "date-heure": "DD/MM/YYYY HH:mm" };
 
 /** Graisse CSS / fabric → graisse Qt (400 normal, 700 gras). */
 const graisse = (w: unknown) => (w === "bold" ? 700 : w === "normal" || w === undefined ? 400 : Number(w) || 400);
@@ -188,27 +179,28 @@ export function zonesBorneDuCadre(canvas: string, zone: Roi) {
   if (!lu) return { qrHoles, sessionCode, dynamicTexts };
   for (const o of lu.objets) {
     if (!o._zoneBorne) continue;
-    const { x, y, width, height, rotation } = lu.boite(o);
+    const b = lu.boite(o);
     const couleur = typeof o.fill === "string" ? o.fill : "#000000";
     const align = ALIGNEMENTS[o.textAlign] ?? "AlignLeft";
-    if (o._zoneBorne === "qr") qrHoles.push({ x, y, width, height });
-    else if (o._zoneBorne === "code-seance") sessionCode ??= { x, y, width, height, rotation, color: couleur, align, prefix: true };
+    if (o._zoneBorne === "qr") {
+      // Carré du plus petit côté, centré (la borne le ferait), et dans la planche : une zone qui dépasse
+      // n'est pas posée, des coordonnées négatives font refuser l'événement
+      const cote = Math.min(b.width, b.height);
+      const x = b.x + Math.round((b.width - cote) / 2);
+      const y = b.y + Math.round((b.height - cote) / 2);
+      if (cote >= 1 && dans({ x, y, width: cote, height: cote }, zone)) qrHoles.push({ x, y, width: cote, height: cote });
+    } else if (o._zoneBorne === "code-seance") sessionCode ??= { x: b.x, y: b.y, width: b.width, height: b.height, rotation: b.rotation, color: couleur, align, prefix: true };
     else if (FORMATS_DATE[o._zoneBorne]) {
-      // Pas de rotation dans le format de la borne (le studio la bloque sur ces zones)
-      void rotation;
+      // Pas de rotation dans le format de la borne (le studio la bloque sur ces zones) ; rectangle ramené
+      // dans la zone dessinée (x, y ≥ 0)
+      const x = borne(b.x, zone.x, zone.x + zone.width - 1);
+      const y = borne(b.y, zone.y, zone.y + zone.height - 1);
       dynamicTexts.push({
-        image: "",
         font: policeQt(String(o.fontFamily ?? ""), (o.fontSize ?? 0) * (o.scaleY ?? 1) * lu.sy, graisse(o.fontWeight), o.fontStyle === "italic"),
-        text: "",
-        position: { height, width, x, y },
+        position: { x, y, width: borne(b.width, 1, zone.x + zone.width - x), height: borne(b.height, 1, zone.y + zone.height - y) },
         color: couleur,
-        textKey: "",
-        imageKey: "",
-        backgroundColor: TRANSPARENT,
         alignment: ["AlignVCenter", align],
-        borderColor: TRANSPARENT,
         dateFormat: FORMATS_DATE[o._zoneBorne],
-        used: true,
       });
     }
   }

@@ -136,21 +136,30 @@ describe("bandelette dessinée sur la page entière (bande + carte souvenir)", (
     const c = compositionAvecCadre(kit.bandelette, pageEntiere([...toutes, qr, code, dateHeure, heure]), zoneBc);
     expect(c.qrHoles).toEqual([{ x: 932, y: 1520, width: 200, height: 200 }]);
     expect(c.sessionCode).toEqual({ x: 656, y: 1770, width: 154, height: 28, rotation: 0, color: "#f0c400", align: "AlignLeft", prefix: true });
-    // Format de la borne (exemple de config.json du 03/11) : police Qt, position, alignement, dateFormat Qt
+    // Mémo de la borne du 03/11 : police Qt, position, alignement, dateFormat DD/MM/YYYY ; pas de textKey
     expect(c.dynamicTexts).toEqual([
       {
-        image: "", font: "Figtree,-1,32,5,700,0,0,0,0,0,0,0,0,0,0,1", text: "",
-        position: { height: 40, width: 400, x: 656, y: 1720 },
-        color: "#ffffff", textKey: "", imageKey: "", backgroundColor: "#00000000",
-        alignment: ["AlignVCenter", "AlignHCenter"], borderColor: "#00000000", dateFormat: "dd/MM/yyyy HH:mm", used: true,
+        font: "Figtree,-1,32,5,700,0,0,0,0,0,0,0,0,0,0,1",
+        position: { x: 656, y: 1720, width: 400, height: 40 },
+        color: "#ffffff", alignment: ["AlignVCenter", "AlignHCenter"], dateFormat: "DD/MM/YYYY HH:mm",
       },
       {
-        image: "", font: "Inter,-1,24,5,400,1,0,0,0,0,0,0,0,0,0,1", text: "",
-        position: { height: 40, width: 200, x: 1080, y: 280 },
-        color: "#ffffff", textKey: "", imageKey: "", backgroundColor: "#00000000",
-        alignment: ["AlignVCenter", "AlignLeft"], borderColor: "#00000000", dateFormat: "HH:mm", used: true,
+        font: "Inter,-1,24,5,400,1,0,0,0,0,0,0,0,0,0,1",
+        // Dépassait la page de 40 px : ramené dans la planche
+        position: { x: 1080, y: 280, width: 160, height: 40 },
+        color: "#ffffff", alignment: ["AlignVCenter", "AlignLeft"], dateFormat: "HH:mm",
       },
     ]);
+  });
+
+  it("QR toujours carré et dans la planche (mémo de la borne)", () => {
+    // Étiré en largeur : carré du plus petit côté, centré
+    const etire = { ...qr, width: 150, scaleX: 1 };
+    const c = compositionAvecCadre(kit.bandelette, pageEntiere([...toutes, etire]), zoneBc);
+    expect(c.qrHoles).toEqual([{ x: 932, y: 1520, width: 200, height: 200 }]);
+    // Qui dépasse de la page : pas posé (sinon x négatif → événement refusé par la borne)
+    const dehors = { ...qr, left: 10 };
+    expect(compositionAvecCadre(kit.bandelette, pageEntiere([...toutes, dehors]), zoneBc).qrHoles).toEqual([]);
   });
 
   it("sans QR ni code posés au studio : ceux du kit, recouverts par le dessin, disparaissent", () => {
