@@ -140,15 +140,17 @@ model Lieu {
   frequentationSemaine Int? @map("frequentation_semaine")
 
   // Environnement
-  zoneGeoId             Int?        @map("zone_geo_id")
-  tailleCommuneId       Int?        @map("taille_commune_id")
-  concurrencePhoto      Boolean?    @map("concurrence_photo")
-  concurrencePhotoNotes String?     @map("concurrence_photo_notes")
+  zoneGeoId             Int?                   @map("zone_geo_id")
+  tailleCommuneId       Int?                   @map("taille_commune_id")
+  concurrencePhoto      Boolean?               @map("concurrence_photo")
+  concurrencePhotoNotes String?                @map("concurrence_photo_notes")
   // Prospect : concurrent déjà en place dans le lieu (connu, ou nom saisi à la main)
-  concurrentEnPlace     Boolean?    @map("concurrent_en_place")
-  concurrentId          Int?        @map("concurrent_id")
-  concurrentNom         String?     @map("concurrent_nom")
-  concurrent            Concurrent? @relation(fields: [concurrentId], references: [id], onDelete: SetNull)
+  concurrentEnPlace     Boolean?               @map("concurrent_en_place")
+  concurrentId          Int?                   @map("concurrent_id")
+  concurrentNom         String?                @map("concurrent_nom")
+  concurrent            Concurrent?            @relation(fields: [concurrentId], references: [id], onDelete: SetNull)
+  // Prospect créé depuis l'emplacement d'un concurrent
+  emplacementConcurrent EmplacementConcurrent?
 
   // Emplacement
   interieurExterieur InterieurExterieur? @map("interieur_exterieur")
@@ -1388,7 +1390,11 @@ model EmplacementConcurrent {
   source       String?
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
+  // Fiche prospect créée depuis cet emplacement
+  lieuId Int? @unique @map("lieu_id")
+
   concurrent Concurrent @relation(fields: [concurrentId], references: [id], onDelete: Cascade)
+  lieu       Lieu?      @relation(fields: [lieuId], references: [id], onDelete: SetNull)
 
   @@index([concurrentId])
   @@map("emplacements_concurrents")

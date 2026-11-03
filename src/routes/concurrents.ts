@@ -34,7 +34,7 @@ concurrentsRouter.get(
     const f = z.object({ concurrentId: z.coerce.number().int().optional(), typeMateriel: z.enum(["CABINE", "BORNE"]).optional() }).parse(req.query);
     const e = await prisma.emplacementConcurrent.findMany({
       where: { ...(f.concurrentId ? { concurrentId: f.concurrentId } : {}), ...(f.typeMateriel ? { concurrent: { typeMateriel: f.typeMateriel } } : {}) },
-      include: { concurrent: { select: { id: true, nom: true, typeMateriel: true } } },
+      include: { concurrent: { select: { id: true, nom: true, typeMateriel: true } }, lieu: { select: { id: true, statut: true } } },
       orderBy: [{ concurrentId: "asc" }, { ville: "asc" }],
     });
     res.json(e.map((x) => ({ ...x, latitude: x.latitude === null ? null : Number(x.latitude), longitude: x.longitude === null ? null : Number(x.longitude) })));
@@ -124,5 +124,50 @@ concurrentsRouter.delete(
   asynchrone(async (req, res) => {
     await prisma.emplacementConcurrent.delete({ where: { id: Number(req.params.id) } });
     res.status(204).end();
+  })
+);
+
+// Pays écrit dans l'adresse importée → code de la fiche lieu
+const CODES_PAYS: Record<string, string> = {
+  france: "FR", belgique: "BE", suisse: "CH", luxembourg: "LU", allemagne: "DE", italie: "IT", espagne: "ES", monaco: "MC", "pays-bas": "NL", "royaume-uni": "GB",
+};
+
+// POST /api/concurrents/emplacements/prospects { ids, typeLieuId } — une fiche prospect par emplacement (demande de
+// Sébastien) : nom, adresse et position repris, concurrent en place renseigné. Un emplacement déjà transformé est ignoré.
+concurrentsRouter.post(
+  "/emplacements/prospects",
+  exiger("ADMIN", "COMMERCIAL"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const d = z.object({ ids: z.array(z.number().int()).min(1).max(500), typeLieuId: z.number().int() }).parse(req.body);
+    if (!(await prisma.refValeur.findFirst({ where: { id: d.typeLieuId, categorie: "TYPE_LIEU" } }))) throw new HttpError(400, "TYPE_LIEU_INCONNU", "Type de lieu inconnu");
+    const emplacements = await prisma.emplacementConcurrent.findMany({ where: { id: { in: d.ids }, lieuId: null } });
+    const crees: { emplacementId: number; lieuId: number }[] = [];
+    for (const e of emplacements) {
+      const lieu = await prisma.$transaction(async (db) => {
+        const l = await db.lieu.create({
+          data: {
+            statut: "PROSPECT",
+            enseigne: e.nom,
+            raisonSociale: e.nom,
+            adresse: e.adresse,
+            codePostal: e.codePostal,
+            ville: e.ville,
+            pays: CODES_PAYS[(e.pays ?? "France").toLowerCase()] ?? "FR",
+            latitude: e.latitude,
+            longitude: e.longitude,
+            typeLieuId: d.typeLieuId,
+            concurrentEnPlace: true,
+            concurrentId: e.concurrentId,
+            // Un commercial reste responsable des prospects qu'il crée
+            commercialId: req.utilisateur?.role === "COMMERCIAL" ? req.utilisateur.id : null,
+          },
+        });
+        await db.emplacementConcurrent.update({ where: { id: e.id }, data: { lieuId: l.id } });
+        await db.auditLog.create({ data: { userId: req.utilisateur?.id ?? null, entite: "lieu", entiteId: String(l.id), action: "CREATION", apres: { depuisEmplacementConcurrent: e.id } } });
+        return l;
+      });
+      crees.push({ emplacementId: e.id, lieuId: lieu.id });
+    }
+    res.status(201).json({ crees: crees.length, dejaProspects: d.ids.length - emplacements.length, lieux: crees });
   })
 );
