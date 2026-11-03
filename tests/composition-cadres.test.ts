@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import JSZip from "jszip";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { compositionAvecCadre, zonesDuCadre } from "../src/config-evenement/composition.js";
+import { compositionAvecCadre, zoneDessinee, zonesDuCadre } from "../src/config-evenement/composition.js";
 import { genererConfig, lireModele } from "../src/config-evenement/generation.js";
 import { reglagesParDefaut } from "../src/config-evenement/reglages.js";
 import { genererZip } from "../src/config-evenement/zip.js";
@@ -96,5 +96,93 @@ describe("composition d'un gabarit habillé au studio", () => {
     const kitStrip = readFileSync(new URL("../modeles/evenement-nightlife/Frames/strip_frame.png", import.meta.url));
     expect(Buffer.compare(await zip.file("Frames/strip_frame.png")!.async("nodebuffer"), kitStrip)).toBe(0);
     expect(Buffer.compare(await zip.file("Frames/strip_frame_1.png")!.async("nodebuffer"), kitStrip)).not.toBe(0);
+  }, 60_000);
+});
+
+// Bandelette dessinée sur la page entière (format « bandelette-carte ») : éditeur en 620×922, soit ×2
+// vers la page du kit (1240×1844). 4 zones sur la bande, leurs 4 copies (miniatures de la carte), le QR
+// (groupe d'origine centrale), le code de séance et deux textes dynamiques, dont un tourné de 90°.
+const zone = (i: number, copie = false) =>
+  copie
+    ? { type: "Rect", originX: "left", originY: "top", left: 395, top: 225 + i * 107, width: 141, height: 100, _isShootZone: true, _shootIndex: i + 1, _shootCopie: true }
+    : { type: "Rect", originX: "left", originY: "top", left: 20, top: 40 + i * 200, width: 270, height: 190, _isShootZone: true, _shootIndex: i + 1 };
+const qr = { type: "Group", originX: "center", originY: "center", left: 516, top: 810, width: 100, height: 100, _zoneBorne: "qr" };
+const code = { type: "Textbox", originX: "left", originY: "top", left: 328, top: 885, width: 77, height: 14, fill: "#f0c400", textAlign: "left", _zoneBorne: "code-seance" };
+const dateHeure = { type: "Textbox", originX: "left", originY: "top", left: 328, top: 860, width: 200, height: 20, fill: "#ffffff", textAlign: "center", fontFamily: "Figtree", fontWeight: "bold", _zoneBorne: "date-heure" };
+const heure = { type: "Textbox", originX: "left", originY: "top", left: 600, top: 100, width: 100, height: 20, angle: 90, fill: "#ffffff", textAlign: "left", fontFamily: "Inter", fontStyle: "italic", _zoneBorne: "heure" };
+const pageEntiere = (objets: object[]) => JSON.stringify({ width: 620, height: 922, objects: objets });
+const toutes = [0, 1, 2, 3].flatMap((i) => [zone(i), zone(i, true)]);
+
+describe("bandelette dessinée sur la page entière (bande + carte souvenir)", () => {
+  const zoneBc = zoneDessinee(kit.bandelette, "bandelette-carte");
+
+  it("la zone dessinée est la page entière ; « marque-page » garde la zone visible", () => {
+    expect(zoneBc).toEqual({ x: 0, y: 0, width: 1240, height: 1844 });
+    expect(zoneDessinee(kit.bandelette, "marque-page")).toEqual(kit.bandelette.previewROI);
+    expect(zoneDessinee(kit.bandelette, null)).toEqual(kit.bandelette.previewROI);
+  });
+
+  it("zones de la bande puis miniatures, chacune avec la photo de son numéro", () => {
+    const c = compositionAvecCadre(kit.bandelette, pageEntiere([...toutes, qr, code]), zoneBc);
+    expect(c.holes.map((h) => h.shootId)).toEqual([0, 1, 2, 3, 0, 1, 2, 3]);
+    expect(c.holes[0]).toEqual({ shootId: 0, x: 40, y: 80, width: 540, height: 380 });
+    expect(c.holes[4]).toEqual({ shootId: 0, x: 790, y: 450, width: 282, height: 200 });
+    expect(c.shoots).toHaveLength(8);
+    expect(c.previewROI).toEqual(kit.bandelette.previewROI);
+    expect(c["2inchCut"]).toBe(true);
+  });
+
+  it("QR, code de séance et textes dynamiques du studio, à la place de ceux du kit", () => {
+    const c = compositionAvecCadre(kit.bandelette, pageEntiere([...toutes, qr, code, dateHeure, heure]), zoneBc);
+    expect(c.qrHoles).toEqual([{ x: 932, y: 1520, width: 200, height: 200 }]);
+    expect(c.sessionCode).toEqual({ x: 656, y: 1770, width: 154, height: 28, rotation: 0, color: "#f0c400", align: "AlignLeft", prefix: true });
+    expect(c.dynamicTexts).toEqual([
+      { type: "datetime", format: "DD/MM/YYYY HH:mm", x: 656, y: 1720, width: 400, height: 40, rotation: 0, color: "#ffffff", align: "AlignHCenter", font: "Figtree", bold: true, italic: false },
+      // Tourné de 90° autour de son coin haut gauche dans l'éditeur : centre (590, 150) → (1180, 300)
+      { type: "time", format: "HH:mm", x: 1080, y: 280, width: 200, height: 40, rotation: 90, color: "#ffffff", align: "AlignLeft", font: "Inter", bold: false, italic: true },
+    ]);
+  });
+
+  it("sans QR ni code posés au studio : ceux du kit, recouverts par le dessin, disparaissent", () => {
+    const c = compositionAvecCadre(kit.bandelette, pageEntiere(toutes), zoneBc);
+    expect(c.qrHoles).toEqual([]);
+    expect(c.sessionCode).toBe(false);
+    expect(c.dynamicTexts).toBeUndefined();
+  });
+
+  it("modèle du catalogue posé sur la bande : son fond (moitié de page) ne sert pas de repère", () => {
+    const fondDuModele = { type: "Rect", originX: "left", originY: "top", left: 0, top: 0, width: 310, height: 922, _isSolidBg: true, _fromCatalogue: true };
+    const c = compositionAvecCadre(kit.bandelette, pageEntiere([fondDuModele, ...toutes, qr]), zoneBc);
+    expect(c.holes[0]).toEqual({ shootId: 0, x: 40, y: 80, width: 540, height: 380 });
+    expect(c.holes[4]).toEqual({ shootId: 0, x: 790, y: 450, width: 282, height: 200 });
+    expect(c.qrHoles).toEqual([{ x: 932, y: 1520, width: 200, height: 200 }]);
+  });
+
+  it("une miniature dont la zone a été supprimée (numéro 0) est ignorée", () => {
+    const orpheline = { ...zone(3, true), _shootIndex: 0 };
+    const c = compositionAvecCadre(kit.bandelette, pageEntiere([zone(0), zone(1), zone(2), zone(0, true), orpheline, qr]), zoneBc);
+    expect(c.holes.map((h) => h.shootId)).toEqual([0, 1, 2, 0]);
+  });
+
+  it("bande seule (marque-page) : QR et code de la carte du kit gardés, même avec un QR posé sur la bande", () => {
+    const c = compositionAvecCadre(kit.bandelette, canvas);
+    expect(c.qrHoles).toEqual(kit.bandelette.qrHoles);
+    expect(c.sessionCode).toEqual(kit.bandelette.sessionCode);
+  });
+
+  it("zip : le rendu couvre tout le cadre du kit", async () => {
+    const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
+    r.gabarits.choisis = [{ id: "bandelette", gabarit: "bandelette" }];
+    const maintenant = new Date("2026-11-03T10:00:00Z");
+    const rouge = await sharp({ create: { width: 1240, height: 1844, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();
+    const cadres = [{ compositionId: "bandelette", canvas: pageEntiere([...toutes, qr, code]), formatId: "bandelette-carte", image: `data:image/png;base64,${rouge.toString("base64")}` }];
+    const config = genererConfig({ code: "RA7K", motDePasseTableau: "MDP23456", reglages: r, horaires: [], maintenant, cadres });
+    expect(config.compositions[0].qrHoles).toEqual([{ x: 932, y: 1520, width: 200, height: 200 }]);
+    const zip = await JSZip.loadAsync(await genererZip({ config, modele: lireModele(), reglages: r, cadres, maintenant }));
+    const cadre = await zip.file("Frames/strip_frame.png")!.async("nodebuffer");
+    const pixel = async (x: number, y: number) => [...(await sharp(cadre).ensureAlpha().extract({ left: x, top: y, width: 1, height: 1 }).raw().toBuffer())];
+    // La carte souvenir aussi vient du studio
+    expect(await pixel(900, 1700)).toEqual([255, 0, 0, 255]);
+    expect(await pixel(10, 10)).toEqual([255, 0, 0, 255]);
   }, 60_000);
 });

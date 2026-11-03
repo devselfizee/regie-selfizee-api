@@ -3,13 +3,14 @@ import JSZip from "jszip";
 import sharp from "sharp";
 import type { Reglages } from "./reglages.js";
 import { compositionsDeLEvenement, type Modele } from "./generation.js";
-import type { Roi, Trou } from "./composition.js";
+import { zoneDessinee, type Roi, type Trou } from "./composition.js";
 
 // Zip de l'événement chargé par la borne (CDC page souvenir § 13.4), sur le modèle du studio Kalifun
 // (lib/booth-zip.ts) : config.json + cadres et aperçus des gabarits + éléments du kit (Tr, Backgrounds,
 // Button), copiés de l'export étalon FJT5 dans modeles/evenement-nightlife/.
-// Un gabarit habillé au studio : son cadre remplace le dessin du kit dans la zone dessinée (previewROI),
-// le reste du cadre du kit (carte souvenir, cartes à QR) est gardé ; l'aperçu de l'accueil est refait.
+// Un gabarit habillé au studio : son cadre remplace le dessin du kit dans la zone dessinée (previewROI, ou
+// la page entière pour la bandelette + carte souvenir), le reste du cadre du kit (cartes à QR) est gardé ;
+// l'aperçu de l'accueil est refait.
 // Les zones photo du config.json viennent de composition.ts.
 
 const KIT = new URL("../../modeles/evenement-nightlife/", import.meta.url);
@@ -21,6 +22,8 @@ export interface CadreZip {
   compositionId: string;
   /** Rendu du studio, data URL PNG, aux dimensions de la zone dessinée */
   image: string;
+  /** Format du studio : il dit si le rendu couvre la zone visible ou la page entière */
+  formatId?: string | null;
 }
 
 interface Config {
@@ -107,9 +110,10 @@ export async function genererZip({ config, modele, reglages, cadres, maintenant 
       zip.file(fichiers.preview, apercuKit);
       continue;
     }
-    const assemble = await assemblerCadre(cadreKit, depuisDataUrl(cadre.image), kit.previewROI);
+    const zone = zoneDessinee(kit, cadre.formatId);
+    const assemble = await assemblerCadre(cadreKit, depuisDataUrl(cadre.image), zone);
     zip.file(fichiers.overlay, assemble);
-    zip.file(fichiers.preview, await assemblerApercu(apercuKit, assemble, kit.previewROI));
+    zip.file(fichiers.preview, await assemblerApercu(apercuKit, assemble, zone));
   }
   // Le live view du pola pointe sur son cadre : déjà dans le zip
   for (const dossier of DOSSIERS_KIT) {

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { Composition, Gabarit, Reglages } from "./reglages.js";
-import { compositionAvecCadre, type CompositionKit } from "./composition.js";
+import { compositionAvecCadre, zoneDessinee, type CompositionKit } from "./composition.js";
 
 // Génère le config.json chargé par la borne pour un lieu en régie (CDC page souvenir § 13.4).
 // La partie commune (filtre, pages, langues, gabarits du kit) vient de l'export étalon FJT5 ;
@@ -35,7 +35,7 @@ export interface EntreeGeneration {
   horaires: HoraireOuverture[];
   maintenant: Date;
   /** Cadres dessinés au studio (JSON Fabric), un au plus par composition. */
-  cadres?: { compositionId: string; canvas: string }[];
+  cadres?: { compositionId: string; canvas: string; formatId?: string | null }[];
   /** Nom d'un événement ponctuel (« Halloween ») : ajouté au nom affiché par la borne */
   nomEvenement?: string | null;
 }
@@ -164,7 +164,7 @@ export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, 
     },
     compositions: compositions.map(({ composition, fichiers }) => {
       const cadre = cadres.find((c) => c.compositionId === composition.id);
-      return cadre ? compositionAvecCadre(fichiers, cadre.canvas) : fichiers;
+      return cadre ? compositionAvecCadre(fichiers, cadre.canvas, zoneDessinee(fichiers, cadre.formatId)) : fichiers;
     }),
     pages: m.pages,
     languages: m.languages,

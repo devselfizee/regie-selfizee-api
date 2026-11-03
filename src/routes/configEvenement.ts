@@ -21,7 +21,7 @@ const hhmm = (d: Date) => d.toISOString().slice(11, 16);
 
 /** Cadres dessinés au studio pour cet événement (JSON Fabric, et rendu PNG pour le zip). */
 const cadresDe = (evenementId: number, avecImage = false) =>
-  prisma.cadreEvenement.findMany({ where: { configEvenementId: evenementId }, select: { compositionId: true, canvas: true, image: avecImage } });
+  prisma.cadreEvenement.findMany({ where: { configEvenementId: evenementId }, select: { compositionId: true, canvas: true, formatId: true, image: avecImage } });
 
 async function charger(lieuId: number, eid: number | null) {
   const lieu = await prisma.lieu.findUnique({

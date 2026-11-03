@@ -2,10 +2,12 @@ import { z } from "zod";
 import { GABARITS, type Gabarit } from "./reglages.js";
 
 // Formats du studio autorisés pour chaque gabarit du kit (le front filtre le studio avec la même table,
-// regie-selfizee-web src/studio/regie/formatsKit.ts). Tous portrait 1240×1844 (10x15), sauf la bandelette
-// dessinée sur sa moitié visible (620×1844) ; la carte souvenir et les deux cartes à QR viennent du kit.
+// regie-selfizee-web src/studio/regie/formatsKit.ts). Tous portrait 1240×1844 (10x15). La bandelette se
+// dessine sur la page entière (bande + carte souvenir, format « bandelette-carte ») ; « marque-page » (la
+// bande seule, la carte du kit gardée) reste accepté pour les cadres enregistrés avant. Les deux cartes à
+// QR de la « photo + deux cartes » viennent du kit.
 export const FORMATS_PAR_GABARIT: Record<Gabarit, { formats: string[]; gabaritsStudio?: string[]; poses: number }> = {
-  bandelette: { formats: ["marque-page"], gabaritsStudio: ["mp-4"], poses: 4 },
+  bandelette: { formats: ["bandelette-carte", "marque-page"], gabaritsStudio: ["bc-4", "mp-4"], poses: 4 },
   pola: { formats: ["polaroid", "carte-postale-portrait"], poses: 1 },
   planche: { formats: ["polaroid-multishoot"], gabaritsStudio: ["polm-4"], poses: 4 },
   carte: { formats: ["polaroid", "carte-postale-portrait"], poses: 1 },
