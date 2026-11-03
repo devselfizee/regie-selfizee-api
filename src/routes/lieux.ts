@@ -7,6 +7,7 @@ import { asynchrone } from "../lib/http.js";
 import { exiger, perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { geocoder } from "../lib/geocodage.js";
+import { zoneScolaire } from "../calendrier/calendrier.js";
 
 export const lieuxRouter = Router();
 
@@ -197,6 +198,8 @@ lieuxRouter.get(
       ...lieu,
       horaires: lieu.horaires.map((h) => ({ ...h, ouverture: hhmm(h.ouverture), fermeture: hhmm(h.fermeture) })),
       clienteles: lieu.clienteles.map((c) => c.refValeur),
+      // Zone de vacances scolaires (A, B, C, Corse) d'après le code postal : celle des vacances sur les courbes
+      zoneScolaire: zoneScolaire(lieu.codePostal),
       affectations: lieu.affectations.map(({ borne, ...a }) => ({
         ...a,
         borne: { ...borne, apiKeyHash: undefined },

@@ -62,7 +62,8 @@ export function compositionsDeLEvenement(r: Reglages, m: Modele = lireModele()):
 }
 
 const euros = (cents: number) => Math.round(cents) / 100;
-const nomPreview = (preview: string) => preview.replace(/^Frames\//, "").replace(/\.jpg$/, "");
+/** Nom du gabarit tel que la borne le renvoie dans ses parcours (cadre) : Frames/polaroid_preview_2.jpg → polaroid_preview_2 */
+export const nomPreview = (preview: string) => preview.replace(/^Frames\//, "").replace(/\.jpg$/, "");
 
 /** « 2026-10-23 14:05:09 », heure de Paris, comme updateDate des exports booth. */
 export function horodatageParis(d: Date): string {

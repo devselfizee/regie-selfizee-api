@@ -17,6 +17,12 @@ previsionsRouter.get(
     await verifierAccesLieu(req.utilisateur, lieuId);
     // Commission : mêmes droits que la fiche commissions (le commercial ne la voit pas)
     const voitCommission = ["ADMIN", "PARTENAIRE"].includes(req.utilisateur!.role);
+    // Pas de projection avant une semaine d'activité (retour de Sébastien) : trop peu de jours pour prévoir
+    const premiere = (await prisma.aggJour.aggregate({ where: { lieuId, nbAcceptees: { gt: 0 } }, _min: { jour: true } }))._min.jour;
+    if (!premiere || aujourdhui().getTime() - premiere.getTime() < 7 * 86_400_000) {
+      res.json({ mois: null, commission: null, premiereVente: premiere ? ymd(premiere) : null });
+      return;
+    }
     const [mois, commission] = await Promise.all([previsionMois(lieuId), voitCommission ? previsionCommission(lieuId) : null]);
     res.json({ mois, commission });
   })

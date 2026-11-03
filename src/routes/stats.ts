@@ -7,7 +7,7 @@ import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../m
 import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison, ymd, type Filtres } from "../stats/filtres.js";
 import { joursOuverts } from "../alertes/ouverture.js";
 import { disponibilite } from "../stats/disponibilite.js";
-import { entonnoir, photosPrisesParcours } from "../stats/parcours.js";
+import { apercusCadres, entonnoir, photosPrisesParcours } from "../stats/parcours.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
 export function filtresAutorises(req: UtilisateurRequest): Filtres {
@@ -439,7 +439,10 @@ statsRouter.get(
           caTtcCents: n(r?.ca),
           nbVentes: n(r?.nb),
           joursAvecVente: n(r?.jours),
-          caMoyenCents: occurrences[dow] ? Math.round(n(r?.ca) / occurrences[dow]) : 0,
+          // Moyenne sur les jours où la borne a vendu (retour de Sébastien) : sur tous les jours de la période,
+          // un an avec 2 mois d'activité donnait 4 € le dimanche contre 84 € sur un mois
+          caMoyenCents: n(r?.jours) ? Math.round(n(r?.ca) / n(r?.jours)) : 0,
+          joursPeriode: occurrences[dow],
         };
       }),
       meilleuresDates: meilleuresDates.map((d) => ({ jour: ymd(d.jour as Date), caTtcCents: n(d.ca), nbVentes: n(d.nb) })),
@@ -488,6 +491,7 @@ statsRouter.get(
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
     const f: Filtres = { ...lireFiltres(req.query), lieuId: [lieuId] };
-    res.json({ periode: periode(f), ...(await entonnoir(f)) });
+    const [e, apercus] = await Promise.all([entonnoir(f), apercusCadres(lieuId, f)]);
+    res.json({ periode: periode(f), ...e, apercus });
   })
 );
