@@ -62,3 +62,22 @@ export function joursOuverts(l: OuvertureLieu, du: Date, au: Date): number {
   for (let t = du.getTime(); t <= au.getTime(); t += jourMs) if (jourOuvert(l, new Date(t))) n++;
   return n;
 }
+
+/**
+ * Prochaine ouverture du lieu (maintenant s'il est ouvert), sur les 60 prochains jours ; null s'il ne rouvre pas.
+ * Sans horaires renseignés : 10 h les jours ouverts.
+ */
+export function prochaineOuverture(l: OuvertureLieu, maintenant = new Date()): Date | null {
+  if (ouvertA(l, maintenant)) return maintenant;
+  const { jour } = localParis(maintenant);
+  for (let i = 0; i < 60; i++) {
+    const j = new Date(jour.getTime() + i * jourMs);
+    if (!jourOuvert(l, j)) continue;
+    const debuts = l.horaires.length ? l.horaires.filter((h) => h.jourSemaine === isoDow(j)).map((h) => minutes(h.ouverture)) : [DEFAUT.ouverture];
+    for (const m of debuts.sort((a, b) => a - b)) {
+      const instant = new Date(new TZDate(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate(), Math.floor(m / 60), m % 60, FUSEAU_METIER).getTime());
+      if (instant > maintenant) return instant;
+    }
+  }
+  return null;
+}

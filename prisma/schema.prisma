@@ -1331,3 +1331,17 @@ model UtilisationCodeRemise {
   @@index([codeId])
   @@map("utilisations_code_remise")
 }
+
+// Calendrier marketing (demande de Sébastien, 02/11/2026) : temps forts affichés sur les courbes de CA.
+// Un jour (fin = debut) ou une période ; annuel : répété chaque année au même jour (dates de debut / fin).
+model EvenementMarketing {
+  id        Int      @id @default(autoincrement())
+  nom       String
+  debut     DateTime @db.Date
+  fin       DateTime @db.Date
+  annuel    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([debut])
+  @@map("evenements_marketing")
+}

@@ -84,7 +84,13 @@ alertesRouter.patch(
     if (patch.statut === "PRISE_EN_CHARGE" && patch.assigneeId === undefined && !alerte.assigneeId) data.assigneeId = req.utilisateur!.id;
     if (patch.statut === "RESOLUE" || patch.statut === "IGNOREE") data.resolueLe = new Date();
     if (patch.statut === "NOUVELLE" || patch.statut === "PRISE_EN_CHARGE") data.resolueLe = null;
-    res.json(await prisma.alerte.update({ where: { id }, data }));
+    const maj = await prisma.alerte.update({ where: { id }, data });
+    // Qui a résolu ou commenté : affiché dans le suivi du lieu (réponse à l'alerte)
+    if (patch.statut !== undefined || patch.commentaire !== undefined)
+      await prisma.auditLog.create({
+        data: { userId: req.utilisateur!.id, entite: "alerte", entiteId: String(id), action: patch.statut ?? "COMMENTAIRE", avant: { statut: alerte.statut, commentaire: alerte.commentaire }, apres: patch },
+      });
+    res.json(maj);
   })
 );
 

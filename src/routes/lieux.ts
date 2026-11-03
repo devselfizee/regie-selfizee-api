@@ -133,6 +133,7 @@ lieuxRouter.get(
       take: 1000,
       select: {
         id: true, enseigne: true, raisonSociale: true, ville: true, codePostal: true, statut: true, saisonnalite: true, parc: true,
+        latitude: true, longitude: true,
         typeLieu: { select: { libelle: true } },
         antenne: { select: { id: true, libelle: true } },
         commercial: { select: { nom: true, prenom: true } },
@@ -161,6 +162,9 @@ lieuxRouter.get(
         .filter((l) => !dept || l.departement === dept)
         .map(({ affectations, ...l }) => ({
         ...l,
+        // Vue carte de la liste (retour de Sébastien)
+        latitude: l.latitude === null ? null : Number(l.latitude),
+        longitude: l.longitude === null ? null : Number(l.longitude),
         bornes: affectations.map((a) => a.borne),
         ca30jCents: voitCa ? (caParLieu.get(l.id)?.caTtcCents ?? 0) : null,
         ventes30j: voitCa ? (caParLieu.get(l.id)?.nbAcceptees ?? 0) : null,

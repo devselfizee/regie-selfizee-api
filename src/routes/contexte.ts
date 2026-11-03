@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { occurrencesEntre } from "../calendrier/marketing.js";
 import { z } from "zod";
 import { TZDate } from "@date-fns/tz";
 import { Prisma } from "@prisma/client";
@@ -56,6 +57,8 @@ contexteRouter.get(
       du: ymd(du),
       au: ymd(au),
       zoneScolaire: ctx.zone,
+      // Temps forts du calendrier marketing (Saint-Valentin, Coupe du monde…) sur la même plage
+      marketing: await occurrencesEntre(du, finCalendrier),
       geolocalise: lieu.latitude !== null,
       effets: effets(indices),
       jours,

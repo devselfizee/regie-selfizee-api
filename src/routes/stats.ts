@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
+import { departement } from "../lib/departement.js";
 import { asynchrone } from "../lib/http.js";
 import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison, ymd, type Filtres } from "../stats/filtres.js";
@@ -253,7 +254,7 @@ statsRouter.get(
     // Jours d'ouverture sur la période : CA par jour ouvert, comparable entre lieux saisonniers et annuels
     const lieux = await prisma.lieu.findMany({
       where: { id: { in: courant.map((l) => l.lieuId) } },
-      select: { id: true, latitude: true, longitude: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true },
+      select: { id: true, codePostal: true, latitude: true, longitude: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true },
     });
     const parId = new Map(lieux.map((l) => [l.id, l]));
 
@@ -267,6 +268,8 @@ statsRouter.get(
           ...l,
           latitude: lieu.latitude === null ? null : Number(lieu.latitude),
           longitude: lieu.longitude === null ? null : Number(lieu.longitude),
+          // Moyennes par département sous la carte (retour de Sébastien)
+          departement: departement(lieu.codePostal),
           joursOuverts: jo,
           caParJourOuvertCents: jo ? Math.round(l.caTtcCents / jo) : null,
           caPrecedentCents: precedent,

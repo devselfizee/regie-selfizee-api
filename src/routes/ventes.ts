@@ -19,9 +19,11 @@ const jourIso = z.iso.date();
 // Vraie vente : acceptée et débitée (ni gratuite, ni offerte, ni expirée…)
 const VENDUE: Prisma.TransactionWhereInput = { statut: "ACCEPTEE", montantTtcCents: { gt: 0 }, moyenPaiement: { not: "AUCUN" } };
 // Ce que montre la liste selon « type »
+// Séance sans action : photo validée sans paiement (mode gratuit, code staff, sans tirage…), pas une vente
+const SANS_ACTION: Prisma.TransactionWhereInput = { statut: "ACCEPTEE", OR: [{ moyenPaiement: "AUCUN" }, { montantTtcCents: 0 }] };
 const TYPES: Record<string, Prisma.TransactionWhereInput> = {
   // Tous les paiements : chaque passage par un moyen de paiement (encaissé ou non) et les remboursements
-  paiements: { moyenPaiement: { not: "AUCUN" } },
+  paiements: { moyenPaiement: { not: "AUCUN" }, NOT: SANS_ACTION },
   ventes: { OR: [VENDUE, { statut: "REMBOURSEE" }] },
   non_abouties: { statut: { in: ["REFUSEE", "ANNULEE", "EXPIREE", "OFFERTE"] } },
   remboursements: { statut: "REMBOURSEE" },
@@ -34,6 +36,83 @@ const listeCodes = z
   .transform((s) => s.split(","))
   .optional();
 
+const filtresListe = z.object({
+  q: z.string().trim().optional(),
+  lieuId: z.coerce.number().int().optional(),
+  borneId: z.coerce.number().int().optional(),
+  du: jourIso.optional(),
+  au: jourIso.optional(),
+  type: z.enum(Object.keys(TYPES) as [string, ...string[]]).default("paiements"),
+  moyenPaiement: listeCodes,
+  parc: z.enum(["SELFIZEE", "CLIENT"]).optional(),
+  cartes: z.enum(["reelles", "test", "toutes"]).default("reelles"),
+  // 1 : ajoute les photos validées sans paiement (retour de Sébastien : elles n'ont rien à faire dans les ventes)
+  sansAction: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  // Compatibilité : tout=1 de l'ancienne page Ventes
+  tout: z.string().optional(),
+});
+
+/** Conditions de la liste ; sansType : sans le filtre « Afficher » (synthèse par jour, qui compte chaque catégorie) */
+function whereListe(f: z.infer<typeof filtresListe>, sansType = false): Prisma.TransactionWhereInput {
+  const type = f.tout ? "tout" : f.type;
+  return {
+    AND: [
+      sansType
+        ? {}
+        : f.q
+          ? {
+              OR: [
+                { transactionIdModule: { contains: f.q, mode: "insensitive" } },
+                { referenceMonetique: { contains: f.q, mode: "insensitive" } },
+                // « j'ai été débité deux fois » : retrouver par les 4 derniers chiffres de la carte
+                ...(/^d{4}$/.test(f.q) ? [{ carteFin: f.q }] : []),
+              ],
+            }
+          : f.sansAction === "1" && type !== "tout"
+            ? { OR: [TYPES[type], SANS_ACTION] }
+            : TYPES[type],
+      f.moyenPaiement?.length ? { moyenPaiement: { in: f.moyenPaiement as Prisma.EnumMoyenPaiementFilter["in"] } } : {},
+      f.lieuId ? { lieuId: f.lieuId } : {},
+      f.borneId ? { borneId: f.borneId } : {},
+      // Une vente suit le parc du lieu (compte client) où elle a été faite
+      f.parc ? { lieu: { parc: f.parc } } : {},
+      // Une recherche trouve aussi les ventes de test
+      (f.q && !sansType) || f.cartes === "toutes" ? {} : { test: f.cartes === "test" },
+      f.du || f.au ? { jourLocal: { ...(f.du ? { gte: new Date(`${f.du}T00:00:00Z`) } : {}), ...(f.au ? { lte: new Date(`${f.au}T00:00:00Z`) } : {}) } } : {},
+    ],
+  };
+}
+
+// GET /api/ventes/par-jour?du=&au=&<filtres> — vue calendrier (retour de Sébastien) : la synthèse de chaque jour
+// (ventes encaissées, remboursements, paiements non aboutis, séances sans action), quel que soit « Afficher »
+ventesRouter.get(
+  "/par-jour",
+  asynchrone(async (req, res) => {
+    const f = filtresListe.parse(req.query);
+    if (!f.du || !f.au) throw new HttpError(400, "PERIODE_REQUISE", "du et au sont requis");
+    const where = whereListe(f, true);
+    const [ventes, remboursements, nonAbouties, sansAction] = await Promise.all([
+      prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, VENDUE] }, _count: true, _sum: { montantTtcCents: true } }),
+      prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, { statut: "REMBOURSEE" }] }, _sum: { montantTtcCents: true } }),
+      prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, TYPES.non_abouties] }, _count: true }),
+      prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, SANS_ACTION] }, _count: true }),
+    ]);
+    const jours = new Map<string, { jour: string; nbVentes: number; encaisseTtcCents: number; rembourseTtcCents: number; nbNonAbouties: number; nbSansAction: number }>();
+    const ligne = (d: Date) => {
+      const jour = d.toISOString().slice(0, 10);
+      const l = jours.get(jour) ?? { jour, nbVentes: 0, encaisseTtcCents: 0, rembourseTtcCents: 0, nbNonAbouties: 0, nbSansAction: 0 };
+      jours.set(jour, l);
+      return l;
+    };
+    for (const v of ventes) Object.assign(ligne(v.jourLocal), { nbVentes: v._count, encaisseTtcCents: v._sum.montantTtcCents ?? 0 });
+    for (const r of remboursements) ligne(r.jourLocal).rembourseTtcCents = r._sum.montantTtcCents ?? 0;
+    for (const x of nonAbouties) ligne(x.jourLocal).nbNonAbouties = x._count;
+    for (const x of sansAction) ligne(x.jourLocal).nbSansAction = x._count;
+    res.json([...jours.values()].sort((a, b) => a.jour.localeCompare(b.jour)));
+  })
+);
+
 // GET /api/ventes?q=&du=&au=&lieuId=&borneId=&type=&moyenPaiement=&parc=&cartes=&page= — liste paginée des paiements
 // (50 par page, les plus récents d'abord), avec le nombre total et l'encaissé de la sélection.
 // Une recherche (q : identifiant de transaction, n° d'autorisation, identifiant Stripe) porte sur tout.
@@ -41,45 +120,8 @@ const listeCodes = z
 ventesRouter.get(
   "/",
   asynchrone(async (req, res) => {
-    const f = z
-      .object({
-        q: z.string().trim().optional(),
-        lieuId: z.coerce.number().int().optional(),
-        borneId: z.coerce.number().int().optional(),
-        du: jourIso.optional(),
-        au: jourIso.optional(),
-        type: z.enum(Object.keys(TYPES) as [string, ...string[]]).default("paiements"),
-        moyenPaiement: listeCodes,
-        parc: z.enum(["SELFIZEE", "CLIENT"]).optional(),
-        cartes: z.enum(["reelles", "test", "toutes"]).default("reelles"),
-        page: z.coerce.number().int().min(1).default(1),
-        // Compatibilité : tout=1 de l'ancienne page Ventes
-        tout: z.string().optional(),
-      })
-      .parse(req.query);
-    const type = f.tout ? "tout" : f.type;
-    const where: Prisma.TransactionWhereInput = {
-      AND: [
-        f.q
-          ? {
-              OR: [
-                { transactionIdModule: { contains: f.q, mode: "insensitive" } },
-                { referenceMonetique: { contains: f.q, mode: "insensitive" } },
-                // « j'ai été débité deux fois » : retrouver par les 4 derniers chiffres de la carte
-                ...(/^\d{4}$/.test(f.q) ? [{ carteFin: f.q }] : []),
-              ],
-            }
-          : TYPES[type],
-        f.moyenPaiement?.length ? { moyenPaiement: { in: f.moyenPaiement as Prisma.EnumMoyenPaiementFilter["in"] } } : {},
-        f.lieuId ? { lieuId: f.lieuId } : {},
-        f.borneId ? { borneId: f.borneId } : {},
-        // Une vente suit le parc du lieu (compte client) où elle a été faite
-        f.parc ? { lieu: { parc: f.parc } } : {},
-        // Une recherche trouve aussi les ventes de test
-        f.q || f.cartes === "toutes" ? {} : { test: f.cartes === "test" },
-        f.du || f.au ? { jourLocal: { ...(f.du ? { gte: new Date(`${f.du}T00:00:00Z`) } : {}), ...(f.au ? { lte: new Date(`${f.au}T00:00:00Z`) } : {}) } } : {},
-      ],
-    };
+    const f = filtresListe.parse(req.query);
+    const where = whereListe(f);
     const parPage = 50;
     const [total, ventes, encaisse, rembourse, cartesTest] = await Promise.all([
       prisma.transaction.count({ where }),

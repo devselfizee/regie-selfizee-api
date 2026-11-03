@@ -107,7 +107,10 @@ suiviLieuRouter.get(
       prisma.lieu.findUnique({ where: { id: lieuId }, select: { createdAt: true, dateSignature: true, dateInstallation: true } }),
       prisma.commentaireLieu.findMany({ where: { lieuId }, select: selectCommentaire }),
       prisma.affectationBorne.findMany({ where: { lieuId }, select: { id: true, borneId: true, debut: true, fin: true, emplacementNotes: true, borne: { select: { identifiant: true } } } }),
-      prisma.alerte.findMany({ where: { lieuId }, select: { id: true, type: true, niveau: true, statut: true, message: true, detecteeLe: true, resolueLe: true, commentaire: true } }),
+      prisma.alerte.findMany({
+        where: { lieuId },
+        select: { id: true, type: true, niveau: true, statut: true, message: true, detecteeLe: true, resolueLe: true, commentaire: true, assignee: { select: { prenom: true, nom: true } } },
+      }),
       prisma.evenementLieu.findMany({ where: { lieuId }, select: { id: true, libelle: true, debut: true, fin: true, type: { select: { libelle: true } } } }),
       prisma.auditLog.findMany({
         where: { entite: { in: ["lieu", "config_evenement"] }, entiteId: String(lieuId) },
@@ -126,7 +129,27 @@ suiviLieuRouter.get(
         })
       : [];
 
-    type Element = { cle: string; type: string; date: Date; titre: string; detail?: string | null; auteur?: string | null; ton?: string; commentaire?: (typeof commentaires)[number] };
+    // Qui a résolu chaque alerte (journal d'audit, depuis le 03/11/2026 ; avant : la personne qui l'avait prise en charge)
+    const resolutions = alertes.some((a) => a.resolueLe)
+      ? await prisma.auditLog.findMany({
+          where: { entite: "alerte", entiteId: { in: alertes.filter((a) => a.resolueLe).map((a) => String(a.id)) }, action: { in: ["RESOLUE", "IGNOREE"] } },
+          orderBy: { createdAt: "desc" },
+          select: { entiteId: true, user: { select: { prenom: true, nom: true } } },
+        })
+      : [];
+
+    type Element = {
+      cle: string;
+      type: string;
+      date: Date;
+      titre: string;
+      detail?: string | null;
+      auteur?: string | null;
+      ton?: string;
+      commentaire?: (typeof commentaires)[number];
+      /** Résolution d'une alerte : l'alerte à laquelle elle répond */
+      reponseA?: { titre: string; date: Date; detail: string };
+    };
     const el: Element[] = [];
     const auteur = (u: { prenom: string; nom: string } | null) => (u ? nomComplet(u) : null);
 
@@ -142,7 +165,19 @@ suiviLieuRouter.get(
       el.push({ cle: `i${i.id}`, type: "INTERVENTION", date: i.date, titre: `Intervention sur ${i.borne.identifiant} : ${i.motif}`, detail: i.compteRendu, auteur: auteur(i.technicien) });
     for (const a of alertes) {
       el.push({ cle: `al${a.id}`, type: "ALERTE", date: a.detecteeLe, titre: `Alerte : ${LIBELLES[a.type]}`, detail: a.message, ton: a.niveau === "CRITIQUE" ? "mauvais" : "attention" });
-      if (a.resolueLe) el.push({ cle: `al${a.id}r`, type: "ALERTE", date: a.resolueLe, titre: `Alerte résolue : ${LIBELLES[a.type]}`, detail: a.commentaire, ton: "bon" });
+      if (a.resolueLe) {
+        const par = resolutions.find((r) => r.entiteId === String(a.id))?.user ?? a.assignee;
+        el.push({
+          cle: `al${a.id}r`,
+          type: "ALERTE",
+          date: a.resolueLe,
+          titre: `Alerte ${a.statut === "IGNOREE" ? "ignorée" : "résolue"} : ${LIBELLES[a.type]}`,
+          detail: a.commentaire,
+          auteur: auteur(par),
+          ton: "bon",
+          reponseA: { titre: `Alerte : ${LIBELLES[a.type]}`, date: a.detecteeLe, detail: a.message },
+        });
+      }
     }
     for (const e of evenements) el.push({ cle: `e${e.id}`, type: "EVENEMENT", date: e.debut, titre: `${e.type.libelle} : ${e.libelle}` });
     for (const j of journaux)
