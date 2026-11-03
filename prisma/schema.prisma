@@ -161,6 +161,9 @@ model Lieu {
 
   // Le lieu change lui-même le papier de la borne (sinon : Selfizee ou le technicien)
   papierSurPlace Boolean  @default(false) @map("papier_sur_place")
+  // Infos du lieu pour la borne, reprises par tous ses événements (nom affiché, ville, avis et réseaux,
+  // assistance) ; null tant qu'elles n'ont pas été enregistrées (src/config-evenement/reglages.ts)
+  infosBorne     Json?    @map("infos_borne")
   notes          String?
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)

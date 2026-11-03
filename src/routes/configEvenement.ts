@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
-import { avecGrilleDuLieu, controler, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
+import { avecGrilleDuLieu, avecInfosDuLieu, controler, infosDuLieu, infosLieuSchema, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
 import { grilleEffective } from "../tarifs/grille.js";
 import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
 import { genererZip } from "../config-evenement/zip.js";
@@ -27,7 +27,7 @@ async function charger(lieuId: number, eid: number | null) {
   const lieu = await prisma.lieu.findUnique({
     where: { id: lieuId },
     select: {
-      id: true, enseigne: true, ville: true, dateInstallation: true,
+      id: true, enseigne: true, ville: true, dateInstallation: true, infosBorne: true,
       // Horaires de toute l'année (les horaires de saison ne sont pas transmis à la borne)
       horaires: { where: { saisonId: null }, select: { jourSemaine: true, ouverture: true, fermeture: true } },
     },
@@ -37,24 +37,34 @@ async function charger(lieuId: number, eid: number | null) {
   const horaires: HoraireOuverture[] = lieu.horaires.map((h) => ({ jourSemaine: h.jourSemaine, ouverture: hhmm(h.ouverture), fermeture: hhmm(h.fermeture) }));
   // Tarifs par défaut du lieu (les siens, sinon ceux de base du parc) : repris par l'événement qui en hérite
   const tarifsLieu = await grilleEffective(lieuId);
-  return { lieu, evenement, horaires, tarifsLieu };
+  const infosLieu = await infosLieuDe(lieu);
+  return { lieu, evenement, horaires, tarifsLieu, infosLieu };
 }
 type Charge = Awaited<ReturnType<typeof charger>>;
 
-/** Réglages enregistrés, avec la grille du lieu si l'événement en hérite (ce que la borne recevra). */
-const reglagesEffectifs = (brut: unknown, tarifsLieu: Charge["tarifsLieu"]) => avecGrilleDuLieu(reglagesSchema.parse(brut), tarifsLieu.grille);
+/** Infos du lieu pour la borne ; tant qu'elles ne sont pas enregistrées, celles de l'événement par défaut. */
+async function infosLieuDe(lieu: { id: number; enseigne: string; ville: string | null; infosBorne: unknown }) {
+  if (lieu.infosBorne) return infosDuLieu(lieu.infosBorne, lieu);
+  const habituel = await prisma.configEvenement.findFirst({ where: { lieuId: lieu.id, habituel: true }, select: { reglages: true } });
+  return infosDuLieu(null, lieu, habituel?.reglages);
+}
+
+/** Réglages enregistrés, avec la grille et les infos du lieu (ce que la borne recevra). */
+const reglagesEffectifs = (brut: unknown, { tarifsLieu, infosLieu }: Pick<Charge, "tarifsLieu" | "infosLieu">) =>
+  avecInfosDuLieu(avecGrilleDuLieu(reglagesSchema.parse(brut), tarifsLieu.grille), infosLieu);
 
 /** Le config.json d'un événement enregistré, d'après ses réglages et ses cadres. */
-async function configDe({ evenement: e, horaires, tarifsLieu }: Charge, maintenant: Date, reglages?: Reglages) {
+async function configDe(charge: Charge, maintenant: Date, reglages?: Reglages) {
+  const { evenement: e, horaires } = charge;
   if (!e) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
-  const r = reglages ?? reglagesEffectifs(e.reglages, tarifsLieu);
+  const r = reglages ?? reglagesEffectifs(e.reglages, charge);
   const cadres = await cadresDe(e.id);
   return genererConfig({ code: e.code, motDePasseTableau: e.motDePasseTableau, reglages: r, horaires, maintenant, cadres, nomEvenement: e.habituel ? null : e.nom });
 }
 
-function reponse({ lieu, evenement: e, horaires, tarifsLieu }: Charge) {
+function reponse({ lieu, evenement: e, horaires, tarifsLieu, infosLieu }: Charge) {
   // Réglages enregistrés relus avec le schéma : les champs ajoutés depuis prennent leur défaut
-  const reglages: Reglages = avecGrilleDuLieu(e ? reglagesSchema.parse(e.reglages) : reglagesParDefaut(lieu), tarifsLieu.grille);
+  const reglages: Reglages = avecInfosDuLieu(avecGrilleDuLieu(e ? reglagesSchema.parse(e.reglages) : reglagesParDefaut(lieu), tarifsLieu.grille), infosLieu);
   return {
     id: e?.id ?? null,
     habituel: e ? e.habituel : true,
@@ -75,6 +85,42 @@ function reponse({ lieu, evenement: e, horaires, tarifsLieu }: Charge) {
 }
 
 const nomSchema = z.string().trim().min(1).max(80);
+
+// ─── Infos du lieu pour la borne ────────────────────────────
+
+/** Les infos du lieu et ses horaires (lus de la fiche du lieu, la borne se met en veille en dehors). */
+async function infosEtHoraires(lieuId: number) {
+  const { lieu, horaires, infosLieu } = await charger(lieuId, null);
+  return { infos: infosLieu, enregistrees: lieu.infosBorne != null, horaires };
+}
+
+// GET /api/lieux/:id/infos-borne — nom affiché, ville, avis et réseaux, assistance (repris par chaque événement)
+configEvenementRouter.get(
+  "/:id/infos-borne",
+  admin,
+  asynchrone(async (req, res) => {
+    res.json(await infosEtHoraires(Number(req.params.id)));
+  })
+);
+
+// PUT /api/lieux/:id/infos-borne { infos } — les enregistre ; les événements du lieu les reprennent
+configEvenementRouter.put(
+  "/:id/infos-borne",
+  admin,
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const lieuId = Number(req.params.id);
+    const infos = infosLieuSchema.parse(z.object({ infos: z.unknown() }).parse(req.body).infos);
+    const avant = await prisma.lieu.findUnique({ where: { id: lieuId }, select: { infosBorne: true } });
+    if (!avant) throw new HttpError(404, "INTROUVABLE");
+    await prisma.$transaction([
+      prisma.lieu.update({ where: { id: lieuId }, data: { infosBorne: infos } }),
+      prisma.auditLog.create({
+        data: { userId: req.utilisateur?.id ?? null, entite: "lieu", entiteId: String(lieuId), action: "MODIFICATION", avant: avant.infosBorne ?? Prisma.DbNull, apres: { infosBorne: infos } },
+      }),
+    ]);
+    res.json(await infosEtHoraires(lieuId));
+  })
+);
 
 // ─── Événements ponctuels du lieu ───────────────────────────
 
@@ -205,7 +251,7 @@ configEvenementRouter.post(
     const charge = await charger(lieuId, eid);
     const e = charge.evenement;
     if (!e) throw new HttpError(400, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
-    const reglages = reglagesEffectifs(e.reglages, charge.tarifsLieu);
+    const reglages = reglagesEffectifs(e.reglages, charge);
     const erreurs = controler(reglages, charge.horaires.length > 0).filter((x) => x.niveau === "erreur");
     if (erreurs.length) {
       res.status(400).json({ error: "CONTROLES", message: erreurs.map((x) => x.message).join(" "), controles: erreurs });
@@ -237,7 +283,7 @@ configEvenementRouter.get(
     const charge = await charger(lieuId, eid);
     const e = charge.evenement;
     if (!e) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
-    const reglages = reglagesEffectifs(e.reglages, charge.tarifsLieu);
+    const reglages = reglagesEffectifs(e.reglages, charge);
     const config = await configDe(charge, e.updatedAt, reglages);
     const zip = await genererZip({ config, modele: lireModele(), reglages, cadres: await cadresDe(e.id, true), maintenant: e.updatedAt });
     res.setHeader("Content-Disposition", `attachment; filename="evenement-${e.code}.zip"`);

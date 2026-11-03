@@ -14,12 +14,21 @@ reglages.gabarits.choisis = [{ id: "bandelette", gabarit: "bandelette" }, { id: 
 const base = vi.hoisted(() => {
   // Sans Keycloak : l'application prend l'utilisateur de développement (admin)
   delete process.env.KEYCLOAK_URL;
-  return { lieu: null as unknown, cadres: [] as unknown[], grilleLieu: null as unknown, ponctuel: null as null | Record<string, unknown> };
+  return { lieu: null as unknown, cadres: [] as unknown[], grilleLieu: null as unknown, ponctuel: null as null | Record<string, unknown>, infosEnregistrees: [] as unknown[] };
 });
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
     user: { upsert: async () => ({ id: 1, email: "dev@local", nom: "Dev", prenom: "", role: "ADMIN", lieuId: null, isActive: true, keycloakSub: null }) },
-    lieu: { findUnique: async () => base.lieu },
+    lieu: {
+      findUnique: async () => base.lieu,
+      update: async ({ data }: { data: { infosBorne: unknown } }) => {
+        base.infosEnregistrees.push(data.infosBorne);
+        (base.lieu as Record<string, unknown>).infosBorne = data.infosBorne;
+        return base.lieu;
+      },
+    },
+    auditLog: { create: async () => ({}) },
+    $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
     // Événement habituel = configEvenement de la fiche simulée ; un événement ponctuel au plus (id 71)
     configEvenement: {
       findFirst: async ({ where }: { where: { habituel: boolean; id?: number } }) => {
@@ -48,6 +57,40 @@ beforeEach(() => {
   base.cadres = [{ compositionId: "bandelette", canvas }];
   base.grilleLieu = null;
   base.ponctuel = null;
+  base.infosEnregistrees = [];
+});
+
+describe("infos du lieu pour la borne", () => {
+  const infos = {
+    nom: "La Ruche Club", ville: "Saint-Brieuc", avisGoogleUrl: "https://g.page/r/ruche/review", instagram: "@laruche", tiktok: null, hashtag: null,
+    assistance: { proprietaire: "client", telephone: "0601020304", email: null },
+  };
+
+  it("pas encore enregistrées : celles de l'événement par défaut, avec les horaires de la fiche", async () => {
+    const r = (await api.get("/api/lieux/7/infos-borne").expect(200)).body;
+    expect(r.enregistrees).toBe(false);
+    expect(r.infos).toMatchObject({ nom: "La Ruche", ville: "Trégueux" });
+    expect(r.horaires).toEqual([{ jourSemaine: 6, ouverture: "22:00", fermeture: "05:00" }]);
+  });
+
+  it("enregistrées : reprises par chaque événement, jusque dans le config.json", async () => {
+    const r = (await api.put("/api/lieux/7/infos-borne").send({ infos }).expect(200)).body;
+    expect(r).toMatchObject({ enregistrees: true, infos });
+    expect(base.infosEnregistrees).toEqual([infos]);
+    const f = (await api.get("/api/lieux/7/evenement").expect(200)).body;
+    expect(f.reglages.lieu).toMatchObject({ nom: "La Ruche Club", ville: "Saint-Brieuc", avisGoogleUrl: infos.avisGoogleUrl });
+    // Dates, ton et illustrations restent ceux de l'événement
+    expect(f.reglages.lieu.dateDebut).toBe(reglages.lieu.dateDebut);
+    expect(f.controles.map((c: { message: string }) => c.message).join()).not.toContain("avis Google");
+    const config = JSON.parse((await api.get("/api/lieux/7/evenement/config.json").expect(200)).text);
+    expect(config.event.name).toBe("LA RUCHE CLUB");
+    expect(config.web).toMatchObject({ venueName: "La Ruche Club", city: "Saint-Brieuc", googleReviewUrl: infos.avisGoogleUrl });
+  });
+
+  it("refuse des infos invalides", async () => {
+    await api.put("/api/lieux/7/infos-borne").send({ infos: { ...infos, nom: "" } }).expect(400);
+    await api.put("/api/lieux/7/infos-borne").send({ infos: { ...infos, avisGoogleUrl: "pas une url" } }).expect(400);
+  });
 });
 
 describe("événement ponctuel", () => {

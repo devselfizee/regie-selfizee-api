@@ -76,6 +76,39 @@ export const reglagesSchema = z
 
 export type Reglages = z.infer<typeof reglagesSchema>;
 
+// Infos du lieu pour la borne : renseignées une fois sur le lieu (Configuration → Infos du lieu) et
+// reprises par chacun de ses événements, qui ne gardent que leurs dates, leur ton et leurs illustrations.
+export const infosLieuSchema = reglagesSchema.shape.lieu.pick({
+  nom: true,
+  ville: true,
+  avisGoogleUrl: true,
+  instagram: true,
+  tiktok: true,
+  hashtag: true,
+  assistance: true,
+});
+export type InfosLieu = z.infer<typeof infosLieuSchema>;
+
+/**
+ * Les infos du lieu : celles enregistrées sur le lieu ; à défaut, celles de son événement par défaut
+ * (configuré avant qu'elles passent sur le lieu) ; à défaut, la fiche du lieu.
+ */
+export function infosDuLieu(
+  enregistrees: unknown,
+  lieu: { enseigne: string; ville: string | null },
+  reglagesHabituel?: unknown,
+): InfosLieu {
+  const lues = infosLieuSchema.safeParse(enregistrees);
+  if (lues.success) return lues.data;
+  const habituel = reglagesSchema.safeParse(reglagesHabituel);
+  if (habituel.success) return infosLieuSchema.parse(habituel.data.lieu);
+  const d = reglagesParDefaut({ ...lieu, dateInstallation: null }).lieu;
+  return infosLieuSchema.parse(d);
+}
+
+/** Réglages d'un événement avec les infos de son lieu (ce que la borne recevra). */
+export const avecInfosDuLieu = (r: Reglages, infos: InfosLieu): Reglages => ({ ...r, lieu: { ...r.lieu, ...infos } });
+
 /** Réglages par défaut du mode régie (CDC § 13.3), habillés avec la fiche du lieu. */
 export function reglagesParDefaut(lieu: { enseigne: string; ville: string | null; dateInstallation: Date | null }, aujourdhui = new Date()): Reglages {
   const debut = lieu.dateInstallation ?? aujourdhui;
