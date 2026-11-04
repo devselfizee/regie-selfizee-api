@@ -88,6 +88,43 @@ cadresEvenementRouter.put(
   })
 );
 
+// POST …/cadres/:composition/dupliquer { vers } — copie le cadre (canvas, rendu, vignette) vers une autre
+// composition du même gabarit, déjà enregistrée dans l'événement : « Dupliquer » de la fiche, pour un cadre
+// voisin qui ne change que par quelques détails. Remplace le cadre de la cible s'il y en a un.
+cadresEvenementRouter.post(
+  chemins("/cadres/:composition/dupliquer"),
+  admin,
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const { lieuId, eid } = cible(req);
+    const source = compositionParam.parse(req.params.composition);
+    const { vers } = z.object({ vers: compositionParam }).parse(req.body);
+    if (vers === source) throw new HttpError(400, "CADRE_INVALIDE", "La copie doit aller vers une autre composition");
+    const e = await evenementEnregistre(lieuId, eid);
+    const composition = reglagesSchema.parse(e.reglages).gabarits.choisis.find((c) => c.id === vers);
+    if (!composition) throw new HttpError(404, "INTROUVABLE", "La composition de destination n'est pas dans l'événement : enregistrez la fiche.");
+    const original = await prisma.cadreEvenement.findUnique({ where: { configEvenementId_compositionId: { configEvenementId: e.id, compositionId: source } } });
+    if (!original) throw new HttpError(404, "INTROUVABLE", "Pas de cadre à dupliquer pour cette composition");
+    if (original.gabarit !== composition.gabarit) throw new HttpError(400, "CADRE_INVALIDE", "Un cadre ne se duplique que vers le même gabarit du kit");
+
+    const { nom, formatId, gabaritStudioId, nbPoses, canvas, image, vignette, gabarit } = original;
+    const donnees = { nom, formatId, gabaritStudioId, nbPoses, canvas, image, vignette, gabarit };
+    const cadre = await prisma.cadreEvenement.upsert({
+      where: { configEvenementId_compositionId: { configEvenementId: e.id, compositionId: vers } },
+      create: { lieuId, configEvenementId: e.id, compositionId: vers, ...donnees },
+      update: donnees,
+      select: resume,
+    });
+    await toucher(e.id);
+    await prisma.auditLog.create({
+      data: {
+        userId: req.utilisateur?.id ?? null, entite: "cadre_evenement", entiteId: `${e.id}:${vers}`, action: "CREATION",
+        apres: { copieDe: source, nom, gabarit, formatId, gabaritStudioId, nbPoses },
+      },
+    });
+    res.status(201).json(cadre);
+  })
+);
+
 // DELETE …/cadres/:composition — retire le cadre (la composition retombe sur celui du kit)
 cadresEvenementRouter.delete(
   chemins("/cadres/:composition"),
