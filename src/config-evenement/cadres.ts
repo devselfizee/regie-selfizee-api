@@ -13,6 +13,8 @@ export const FORMATS_PAR_GABARIT: Record<Gabarit, { formats: string[]; gabaritsS
   planche: { formats: ["polaroid-multishoot"], gabaritsStudio: ["polm-4"], poses: 4 },
   carte: { formats: ["polaroid", "carte-postale-portrait"], poses: 1 },
   paysage: { formats: ["carte-postale-paysage"], poses: 1 },
+  // Même page que la bandelette, la bande se lit couchée (photos tournées d'un quart de tour, `rotation`)
+  "bandelette-couchee": { formats: ["bandelette-carte"], gabaritsStudio: ["bcc-4"], poses: 4 },
 };
 
 /** Plafond d'un cadre (rendu PNG + JSON Fabric avec ses illustrations), comme le studio Kalifun. */

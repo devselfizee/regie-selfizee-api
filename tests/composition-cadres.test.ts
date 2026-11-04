@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { compositionAvecCadre, zoneDessinee, zonesDuCadre } from "../src/config-evenement/composition.js";
 import { verifierCadre } from "../src/config-evenement/cadres.js";
 import { genererConfig, lireModele } from "../src/config-evenement/generation.js";
-import { reglagesParDefaut } from "../src/config-evenement/reglages.js";
+import { controler, reglagesParDefaut } from "../src/config-evenement/reglages.js";
 import { genererZip } from "../src/config-evenement/zip.js";
 
 // Cadre réel enregistré par le studio de la Régie : bandelette (marque-page 620×1844), 4 zones photo,
@@ -252,4 +252,49 @@ describe("photo 10x15 paysage", () => {
     expect([...(await sharp(cadre).extract({ left: 900, top: 600, width: 1, height: 1 }).raw().toBuffer())]).toEqual([200, 0, 0, 255]);
     expect(await sharp(await zip.file("Frames/paysage_preview.jpg")!.async("nodebuffer")).metadata()).toMatchObject({ width: 1844, height: 1240, format: "jpeg" });
   }, 60_000);
+});
+
+// Bandelette couchée (façon Tabobine, demande du boss du 04/11/2026) : même page que la bandelette, la
+// bande se lit couchée ; ses 4 photos sont tournées d'un quart de tour (`rotation`, à faire lire par la borne).
+describe("bandelette couchée", () => {
+  const k = kit["bandelette-couchee"];
+
+  it("kit : 4 zones tournées sur la bande, carte souvenir de la bandelette", () => {
+    const bande = k.holes.slice(0, 4);
+    expect(bande.every((h) => h.rotation === 270 && h.x + h.width <= 620 && h.y >= 0)).toBe(true);
+    // Lue de gauche à droite après un quart de tour horaire : la 1re photo est en bas de la page
+    expect(bande.map((h) => h.shootId)).toEqual([0, 1, 2, 3]);
+    expect(bande[0].y).toBeGreaterThan(bande[3].y);
+    expect(k.shoots.slice(0, 4).every((s) => s.width === 436 && s.height === 460)).toBe(true);
+    expect(k.holes.slice(4)).toEqual(kit.bandelette.holes.filter((h) => h.x >= 620));
+    expect(k).toMatchObject({ qrHoles: kit.bandelette.qrHoles, sessionCode: kit.bandelette.sessionCode, "2inchCut": true, overlay: "Frames/stripCouchee_frame.png" });
+  });
+
+  it("studio : gabarit bcc-4 de la page bandelette + carte, 4 poses", () => {
+    const cadre = { nom: "x", formatId: "bandelette-carte", gabaritStudioId: "bcc-4", nbPoses: 4, canvas: "{}", image: "data:image/png;base64,AA" };
+    expect(verifierCadre("bandelette-couchee", cadre)).toBeNull();
+    expect(verifierCadre("bandelette-couchee", { ...cadre, gabaritStudioId: "bc-4" })).toMatch(/ne convient pas/);
+  });
+
+  it("une zone photo tournée au studio garde sa rotation ; sa prise de vue a les côtés inversés", () => {
+    const canvasCouche = JSON.stringify({
+      width: 620,
+      height: 922,
+      objects: [
+        { type: "Rect", originX: "left", originY: "top", left: 15, top: 689, width: 230, height: 218, _isShootZone: true, _shootIndex: 1, _rotationPhoto: 270 },
+        { type: "Rect", originX: "left", originY: "top", left: 395, top: 225, width: 141, height: 100, _isShootZone: true, _shootIndex: 1, _shootCopie: true },
+      ],
+    });
+    const { holes, shoots } = zonesDuCadre(canvasCouche, { x: 0, y: 0, width: 1240, height: 1844 });
+    expect(holes[0]).toEqual({ shootId: 0, x: 30, y: 1378, width: 460, height: 436, rotation: 270 });
+    expect(shoots[0]).toEqual({ id: 0, width: 436, height: 460 });
+    expect(holes[1].rotation).toBeUndefined();
+    expect(shoots[1]).toEqual({ id: 0, width: 282, height: 200 });
+  });
+
+  it("publication refusée tant que la borne ne tourne pas les photos", () => {
+    const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
+    r.gabarits = { choisis: [{ id: "bandelette-couchee", gabarit: "bandelette-couchee" }], accueil: [] };
+    expect(controler(r, true).filter((c) => c.niveau === "erreur").map((c) => c.message)).toEqual([expect.stringMatching(/rotation des photos par la borne/)]);
+  });
 });

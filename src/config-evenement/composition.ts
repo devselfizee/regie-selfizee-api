@@ -17,6 +17,11 @@ export interface Roi {
   height: number;
 }
 export interface Trou {
+  /**
+   * Quart de tour appliqué à la photo dans sa zone, en degrés dans le sens horaire (90, 180, 270) : bande
+   * couchée. PROPOSITION à l'équipe borne (pas encore lue par la borne) ; absent = photo droite.
+   */
+  rotation?: number;
   shootId: number;
   x: number;
   y: number;
@@ -71,6 +76,7 @@ export function zoneDessinee(kit: { previewROI: Roi }, formatId?: string | null)
   return page ? { x: 0, y: 0, ...page } : kit.previewROI;
 }
 
+const ROTATIONS = [90, 180, 270];
 const borne = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const dans = (t: Roi, r: Roi) => t.x >= r.x && t.y >= r.y && t.x + t.width <= r.x + r.width && t.y + t.height <= r.y + r.height;
 
@@ -164,8 +170,11 @@ export function zonesDuCadre(canvas: string, zone: Roi): { holes: Trou[]; shoots
     const y = borne(b.y, zone.y, zone.y + zone.height);
     const width = borne(b.width, 0, zone.x + zone.width - x);
     const height = borne(b.height, 0, zone.y + zone.height - y);
-    holes.push({ shootId, x, y, width, height });
-    shoots.push({ id: shootId, width, height });
+    // Photo tournée (studio : `_rotationPhoto`) : la prise de vue a les côtés de la zone inversés
+    const rotation = ROTATIONS.includes(Number(o._rotationPhoto)) ? Number(o._rotationPhoto) : 0;
+    const couchee = rotation === 90 || rotation === 270;
+    holes.push({ shootId, x, y, width, height, ...(rotation ? { rotation } : {}) });
+    shoots.push({ id: shootId, width: couchee ? height : width, height: couchee ? width : height });
   }
   return { holes, shoots };
 }
