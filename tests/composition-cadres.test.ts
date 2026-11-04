@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { compositionAvecCadre, zoneDessinee, zonesDuCadre } from "../src/config-evenement/composition.js";
+import { verifierCadre } from "../src/config-evenement/cadres.js";
 import { genererConfig, lireModele } from "../src/config-evenement/generation.js";
 import { reglagesParDefaut } from "../src/config-evenement/reglages.js";
 import { genererZip } from "../src/config-evenement/zip.js";
@@ -203,5 +204,52 @@ describe("bandelette dessinée sur la page entière (bande + carte souvenir)", (
     // La carte souvenir aussi vient du studio
     expect(await pixel(900, 1700)).toEqual([255, 0, 0, 255]);
     expect(await pixel(10, 10)).toEqual([255, 0, 0, 255]);
+  }, 60_000);
+});
+
+// Photo 10x15 paysage (demande du boss, 04/11/2026) : page 1844×1240, photo pleine page, cadre du kit
+// transparent. Éditeur en 922×620, soit ×2 vers la page.
+describe("photo 10x15 paysage", () => {
+  const paysage = JSON.stringify({
+    width: 922,
+    height: 620,
+    objects: [
+      { type: "Rect", originX: "left", originY: "top", left: 40, top: 30, width: 600, height: 560, _isShootZone: true, _shootIndex: 1 },
+      { type: "Textbox", originX: "left", originY: "top", left: 680, top: 560, width: 200, height: 20, fontSize: 16, fill: "#ffffff", textAlign: "center", fontFamily: "Inter", _zoneBorne: "date" },
+    ],
+  });
+
+  it("gabarit du kit : page paysage, une photo pleine page, cadre et aperçu dans le zip du kit", () => {
+    expect(kit.paysage.previewROI).toEqual({ x: 0, y: 0, width: 1844, height: 1240 });
+    expect(kit.paysage.holes).toEqual([{ shootId: 0, x: 0, y: 0, width: 1844, height: 1240 }]);
+    expect(kit.paysage).toMatchObject({ overlay: "Frames/paysage_frame.png", preview: "Frames/paysage_preview.jpg", sessionCode: false });
+  });
+
+  it("le studio n'y dessine qu'en carte postale paysage, une pose", () => {
+    const cadre = { nom: "x", formatId: "carte-postale-paysage", nbPoses: 1, canvas: "{}", image: "data:image/png;base64,AA" };
+    expect(verifierCadre("paysage", cadre)).toBeNull();
+    expect(verifierCadre("paysage", { ...cadre, formatId: "carte-postale-portrait" })).toMatch(/ne convient pas/);
+    expect(verifierCadre("paysage", { ...cadre, nbPoses: 2 })).toMatch(/1 pose/);
+  });
+
+  it("zones du cadre projetées sur la page paysage (×2), date dynamique comprise", () => {
+    const c = compositionAvecCadre(kit.paysage, paysage);
+    expect(c.holes).toEqual([{ shootId: 0, x: 80, y: 60, width: 1200, height: 1120 }]);
+    expect(c.dynamicTexts).toEqual([expect.objectContaining({ position: { x: 1360, y: 1120, width: 400, height: 40 }, dateFormat: "DD/MM/YYYY" })]);
+  });
+
+  it("zip : cadre du studio en 1844×1240, aperçu refait", async () => {
+    const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
+    r.gabarits = { choisis: [{ id: "paysage", gabarit: "paysage" }], accueil: ["paysage"] };
+    const maintenant = new Date("2026-11-04T10:00:00Z");
+    const png = await sharp({ create: { width: 1844, height: 1240, channels: 4, background: { r: 200, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();
+    const cadres = [{ compositionId: "paysage", canvas: paysage, image: `data:image/png;base64,${png.toString("base64")}` }];
+    const config = genererConfig({ code: "RA7K", motDePasseTableau: "MDP23456", reglages: r, horaires: [], maintenant, cadres });
+    expect(config.userSettings.welcomeFormats).toEqual(["paysage_preview"]);
+    const zip = await JSZip.loadAsync(await genererZip({ config, modele: lireModele(), reglages: r, cadres, maintenant }));
+    const cadre = await zip.file("Frames/paysage_frame.png")!.async("nodebuffer");
+    expect(await sharp(cadre).metadata()).toMatchObject({ width: 1844, height: 1240 });
+    expect([...(await sharp(cadre).extract({ left: 900, top: 600, width: 1, height: 1 }).raw().toBuffer())]).toEqual([200, 0, 0, 255]);
+    expect(await sharp(await zip.file("Frames/paysage_preview.jpg")!.async("nodebuffer")).metadata()).toMatchObject({ width: 1844, height: 1240, format: "jpeg" });
   }, 60_000);
 });

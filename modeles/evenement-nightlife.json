@@ -1468,6 +1468,38 @@
         "align": "AlignHCenter",
         "prefix": true
       }
+    },
+    "paysage": {
+      "2inchCut": false,
+      "gsBackgrounds": [],
+      "previewROI": {
+        "height": 1240,
+        "width": 1844,
+        "x": 0,
+        "y": 0
+      },
+      "shoots": [
+        {
+          "id": 0,
+          "height": 1240,
+          "width": 1844
+        }
+      ],
+      "holes": [
+        {
+          "shootId": 0,
+          "x": 0,
+          "y": 0,
+          "height": 1240,
+          "width": 1844
+        }
+      ],
+      "blendOverlay": false,
+      "preview": "Frames/paysage_preview.jpg",
+      "lvOverlay": "",
+      "overlay": "Frames/paysage_frame.png",
+      "watermark": "",
+      "sessionCode": false
     }
   }
 }

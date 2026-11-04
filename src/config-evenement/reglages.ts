@@ -5,7 +5,7 @@ import { erreursGrille, GRILLE_DEFAUT, grilleSchema, type Grille } from "../tari
 // Réglages de l'événement d'un lieu (CDC page souvenir § 13) : ce que l'exploitant saisit
 // dans la fiche événement. Montants en centimes ; le config.json de la borne les veut en euros.
 
-export const GABARITS = ["bandelette", "pola", "planche", "carte"] as const;
+export const GABARITS = ["bandelette", "pola", "planche", "carte", "paysage"] as const;
 export type Gabarit = (typeof GABARITS)[number];
 
 // Thème de l'interface de la borne (userSettings.uiKit) : « halloween » et les thèmes personnalisés
