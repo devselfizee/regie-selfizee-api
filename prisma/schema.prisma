@@ -84,6 +84,7 @@ model RefValeur {
   lieuxAntenne       Lieu[]          @relation("LieuAntenne")
   lieuxClientele     LieuClientele[]
   evenements         EvenementLieu[]
+  emplacementsConcurrents EmplacementConcurrent[]
 
   @@unique([categorie, code])
   @@map("ref_valeurs")
@@ -1392,10 +1393,14 @@ model EmplacementConcurrent {
 
   // Fiche prospect créée depuis cet emplacement
   lieuId Int? @unique @map("lieu_id")
+  // Catégorie du lieu (référentiel TYPE_LIEU : bar, boîte de nuit…)
+  typeLieuId Int? @map("type_lieu_id")
 
   concurrent Concurrent @relation(fields: [concurrentId], references: [id], onDelete: Cascade)
   lieu       Lieu?      @relation(fields: [lieuId], references: [id], onDelete: SetNull)
+  typeLieu   RefValeur? @relation(fields: [typeLieuId], references: [id], onDelete: SetNull)
 
   @@index([concurrentId])
+  @@index([typeLieuId])
   @@map("emplacements_concurrents")
 }

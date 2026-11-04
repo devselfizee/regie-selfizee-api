@@ -11,6 +11,8 @@ const LISTES: Record<RefCategorie, [code: string, libelle: string][]> = {
     ["RESTAURANT", "Restaurant"], ["LIEU_TOURISTIQUE", "Lieu touristique"],
     ["CENTRE_COMMERCIAL", "Centre commercial"], ["CINEMA", "Cinéma"],
     ["BOWLING", "Bowling"], ["PARC_LOISIRS", "Parc de loisirs"],
+    // Fréquents chez les concurrents (catégorie des emplacements)
+    ["FOOD_COURT", "Halle gourmande / food court"], ["SALLE_SPECTACLE", "Salle de concert / spectacle"], ["HOTEL", "Hôtel"],
   ],
   SOUS_TYPE_LIEU: [],
   STANDING: [["ECO", "Économique"], ["STANDARD", "Standard"], ["PREMIUM", "Premium"], ["LUXE", "Luxe"]],
