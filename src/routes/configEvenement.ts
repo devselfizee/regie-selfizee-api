@@ -172,6 +172,37 @@ configEvenementRouter.post(
   })
 );
 
+// POST …/dupliquer { nom, dateDebut, dateFin } — crée un événement ponctuel copié de celui-ci (l'habituel ou
+// un ponctuel) : mêmes réglages (formats, tarifs, options, thème) et mêmes cadres, aux dates saisies, avec
+// son propre code et mot de passe ; à publier comme un nouveau. L'événement copié ne change pas.
+configEvenementRouter.post(
+  chemins("/dupliquer"),
+  admin,
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const { lieuId, eid } = cible(req);
+    const saisie = z.object({ nom: nomSchema, dateDebut: z.iso.date(), dateFin: z.iso.date() }).parse(req.body);
+    if (saisie.dateFin < saisie.dateDebut) throw new HttpError(400, "DATES", "La date de fin est avant la date de début.");
+    const source = await evenementDe(lieuId, eid);
+    if (!source) throw new HttpError(400, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
+    const base = reglagesSchema.parse(source.reglages);
+    const reglages: Reglages = { ...base, lieu: { ...base.lieu, dateDebut: saisie.dateDebut, dateFin: saisie.dateFin } };
+    const e = await creerEvenement({ lieuId, habituel: false, nom: saisie.nom, reglages });
+    // Les cadres gardent leur composition : les réglages copiés pointent sur les mêmes identifiants
+    const cadres = await prisma.cadreEvenement.findMany({
+      where: { configEvenementId: source.id },
+      select: { compositionId: true, gabarit: true, nom: true, formatId: true, gabaritStudioId: true, nbPoses: true, canvas: true, image: true, vignette: true },
+    });
+    if (cadres.length) await prisma.cadreEvenement.createMany({ data: cadres.map((c) => ({ ...c, lieuId, configEvenementId: e.id })) });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.utilisateur?.id ?? null, entite: "config_evenement", entiteId: String(e.id), action: "CREATION",
+        apres: { lieuId, ...saisie, copieDe: { id: source.id, code: source.code, nom: source.nom }, cadres: cadres.length },
+      },
+    });
+    res.status(201).json({ id: e.id, nom: e.nom, code: e.code, cadres: cadres.length });
+  })
+);
+
 // DELETE /api/lieux/:id/evenements-ponctuels/:eid — supprime un événement ponctuel et ses cadres
 configEvenementRouter.delete(
   "/:id/evenements-ponctuels/:eid",
