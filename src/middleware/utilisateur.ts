@@ -19,7 +19,15 @@ export const adminsInitiaux = (brut = process.env.ADMIN_EMAILS ?? "") =>
     .map((e) => e.trim().replace(/^["']|["']$/g, "").toLowerCase())
     .filter((e) => e.includes("@"));
 
-const champs = { id: true, email: true, nom: true, prenom: true, role: true, lieuId: true, isActive: true, keycloakSub: true } as const;
+const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true } as const;
+
+/** Identité tenue dans Keycloak (nom, prénom, téléphone) : Régie la recopie, ne la modifie jamais. Seuls les champs présents dans le jeton. */
+export function identiteKeycloak(jeton: AuthRequest["user"]): { nom?: string; prenom?: string; telephone?: string } {
+  const t = (v?: string) => v?.trim() || undefined;
+  return Object.fromEntries(
+    Object.entries({ nom: t(jeton?.family_name), prenom: t(jeton?.given_name), telephone: t(jeton?.phone_number) }).filter(([, v]) => v !== undefined)
+  );
+}
 
 // Noms de rôles Keycloak (realm ou client) qui donnent le rôle ADMIN ici, sans tenir compte de la casse
 export const rolesAdminKeycloak = (brut = process.env.KEYCLOAK_ROLES_ADMIN || "admin,administrateur,administrator,super-admin,super_admin,superadmin") =>
@@ -91,6 +99,12 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     // Admin dans Keycloak = admin ici, même si le compte existait avec un autre rôle
     if (u?.isActive && admin && u.role !== "ADMIN") {
       u = await prisma.user.update({ where: { id: u.id }, data: { role: "ADMIN" }, select: champs });
+    }
+
+    // Nom, prénom et téléphone suivent Keycloak à chaque connexion
+    const identite = identiteKeycloak(req.user);
+    if (u && (Object.keys(identite) as (keyof typeof identite)[]).some((k) => u![k] !== identite[k])) {
+      u = await prisma.user.update({ where: { id: u.id }, data: identite, select: champs });
     }
 
     if (!u || !u.isActive) {

@@ -31,6 +31,7 @@ export interface AuthRequest extends Request {
     preferred_username?: string;
     given_name?: string;
     family_name?: string;
+    phone_number?: string;
     realm_access?: { roles: string[] };
     resource_access?: Record<string, { roles?: string[] }>;
   };

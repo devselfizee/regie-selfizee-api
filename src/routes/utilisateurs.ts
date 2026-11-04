@@ -34,10 +34,8 @@ utilisateursRouter.get(
   })
 );
 
+// Régie ne gère que l'accès (rôle, lieu du partenaire, actif) : nom, prénom et téléphone viennent de Keycloak à la connexion
 const base = {
-  nom: z.string().trim().min(1),
-  prenom: z.string().trim(),
-  telephone: z.string().trim().nullable().optional(),
   role: z.enum(UserRole),
   lieuId: z.number().int().positive().nullable().optional(),
 };
@@ -54,21 +52,22 @@ utilisateursRouter.post(
       .refine(partenaireAvecLieu, MSG_PARTENAIRE)
       .parse(req.body);
     const u = await prisma.user.create({
-      data: { ...data, lieuId: data.role === "PARTENAIRE" ? data.lieuId : null },
+      // L'e-mail tient lieu de nom jusqu'à la première connexion, qui reprend celui de Keycloak
+      data: { ...data, nom: data.email, prenom: "", lieuId: data.role === "PARTENAIRE" ? data.lieuId : null },
       select,
     });
     res.status(201).json(u);
   })
 );
 
-// PATCH /api/utilisateurs/:id — changer le rôle, désactiver…
+// PATCH /api/utilisateurs/:id — changer le rôle, le lieu du partenaire, désactiver (jamais l'identité)
 utilisateursRouter.patch(
   "/:id",
   exiger("ADMIN"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const id = Number(req.params.id);
     const patch = z
-      .object({ ...base, nom: base.nom.optional(), prenom: base.prenom.optional(), role: base.role.optional(), isActive: z.boolean().optional() })
+      .object({ ...base, role: base.role.optional(), isActive: z.boolean().optional() })
       .parse(req.body);
 
     const avant = await prisma.user.findUniqueOrThrow({ where: { id } });
