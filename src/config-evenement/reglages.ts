@@ -155,10 +155,6 @@ export interface Controle {
 }
 
 const AVEC_QR: Gabarit[] = ["bandelette", "carte", "bandelette-couchee"];
-/** Gabarits que la borne ne sait pas encore imprimer : publication refusée (le format reste masqué dans la fiche). */
-export const EN_ATTENTE_BORNE: Partial<Record<Gabarit, string>> = {
-  "bandelette-couchee": "La bandelette couchée attend la rotation des photos par la borne (zones photo tournées d'un quart de tour) : pas encore publiable.",
-};
 
 /** Contrôles avant publication (CDC § 13.4) : une erreur bloque, un avertissement non. */
 export function controler(r: Reglages, aDesHoraires: boolean): Controle[] {
@@ -177,7 +173,6 @@ export function controler(r: Reglages, aDesHoraires: boolean): Controle[] {
   if (choisis.length && !choisis.some((c) => AVEC_QR.includes(c.gabarit)))
     avertir("Aucun gabarit avec carte et QR : pas de carte, pas de collecte d'e-mails sur la page souvenir.");
   if (choisis.some((c) => c.gabarit === "carte")) avertir("La photo + deux cartes demande un ruban 15x20 dans l'imprimante (DS620).");
-  for (const c of choisis) if (EN_ATTENTE_BORNE[c.gabarit]) erreur(EN_ATTENTE_BORNE[c.gabarit]!);
 
   for (const m of erreursGrille(r.tarifs)) erreur(m);
 

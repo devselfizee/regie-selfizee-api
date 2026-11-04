@@ -255,7 +255,7 @@ describe("photo 10x15 paysage", () => {
 });
 
 // Bandelette couchée (façon Tabobine, demande du boss du 04/11/2026) : même page que la bandelette, la
-// bande se lit couchée ; ses 4 photos sont tournées d'un quart de tour (`rotation`, à faire lire par la borne).
+// bande se lit couchée ; ses 4 photos sont tournées d'un quart de tour par la borne (`rotation`).
 describe("bandelette couchée", () => {
   const k = kit["bandelette-couchee"];
 
@@ -292,9 +292,11 @@ describe("bandelette couchée", () => {
     expect(shoots[1]).toEqual({ id: 0, width: 282, height: 200 });
   });
 
-  it("publication refusée tant que la borne ne tourne pas les photos", () => {
+  it("publiable comme les autres gabarits, et compte comme un gabarit à carte et QR", () => {
     const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
     r.gabarits = { choisis: [{ id: "bandelette-couchee", gabarit: "bandelette-couchee" }], accueil: [] };
-    expect(controler(r, true).filter((c) => c.niveau === "erreur").map((c) => c.message)).toEqual([expect.stringMatching(/rotation des photos par la borne/)]);
+    const controles = controler(r, true);
+    expect(controles.filter((c) => c.niveau === "erreur")).toEqual([]);
+    expect(controles.some((c) => /Aucun gabarit avec carte et QR/.test(c.message))).toBe(false);
   });
 });

@@ -19,7 +19,7 @@ export interface Roi {
 export interface Trou {
   /**
    * Quart de tour appliqué à la photo dans sa zone, en degrés dans le sens horaire (90, 180, 270) : bande
-   * couchée. PROPOSITION à l'équipe borne (pas encore lue par la borne) ; absent = photo droite.
+   * couchée (champ demandé à l'équipe borne le 04/11/2026) ; absent = photo droite.
    */
   rotation?: number;
   shootId: number;
