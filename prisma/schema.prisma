@@ -1395,6 +1395,17 @@ model EmplacementConcurrent {
   lieuId Int? @unique @map("lieu_id")
   // Catégorie du lieu (référentiel TYPE_LIEU : bar, boîte de nuit…)
   typeLieuId Int? @map("type_lieu_id")
+  // Corrigée à la main : ni le nom ni Google ne la remplacent
+  categorieManuelle Boolean @default(false) @map("categorie_manuelle")
+
+  // Lieu retrouvé sur Google Places (null = pas encore cherché ; googleVerifieLe sans placeId = introuvable)
+  googlePlaceId   String?   @map("google_place_id")
+  googleNom       String?   @map("google_nom")
+  googleType      String?   @map("google_type")
+  googleNote      Decimal?  @map("google_note") @db.Decimal(2, 1)
+  googleNbAvis    Int?      @map("google_nb_avis")
+  googleUrl       String?   @map("google_url")
+  googleVerifieLe DateTime? @map("google_verifie_le") @db.Timestamptz(3)
 
   concurrent Concurrent @relation(fields: [concurrentId], references: [id], onDelete: Cascade)
   lieu       Lieu?      @relation(fields: [lieuId], references: [id], onDelete: SetNull)

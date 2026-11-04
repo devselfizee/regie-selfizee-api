@@ -5,7 +5,8 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { geocoder } from "../lib/geocodage.js";
-import { devinerCategorie } from "../concurrents/categorie.js";
+import { categorieGoogle, devinerCategorie } from "../concurrents/categorie.js";
+import { chercherLieuGoogle, googlePlacesConfigure } from "../lib/googlePlaces.js";
 
 // Concurrents (demande de Sébastien, 03/11/2026) : la liste des concurrents (cabine ou borne), leurs emplacements
 // connus (carte des prospects) et un import en masse de ces emplacements.
@@ -54,7 +55,8 @@ concurrentsRouter.get(
       },
       orderBy: [{ concurrentId: "asc" }, { ville: "asc" }],
     });
-    res.json(e.map((x) => ({ ...x, latitude: x.latitude === null ? null : Number(x.latitude), longitude: x.longitude === null ? null : Number(x.longitude) })));
+    const nombre = (d: Prisma.Decimal | null) => (d === null ? null : Number(d));
+    res.json(e.map((x) => ({ ...x, latitude: nombre(x.latitude), longitude: nombre(x.longitude), googleNote: nombre(x.googleNote) })));
   })
 );
 
@@ -156,6 +158,61 @@ concurrentsRouter.post(
   })
 );
 
+// GET /api/concurrents/emplacements/google — la clé Google Places est-elle en place, combien d'emplacements restent à vérifier
+concurrentsRouter.get(
+  "/emplacements/google",
+  asynchrone(async (_req, res) => {
+    res.json({ configure: googlePlacesConfigure(), restants: await prisma.emplacementConcurrent.count({ where: { googleVerifieLe: null } }) });
+  })
+);
+
+// POST /api/concurrents/emplacements/google { lot? } — retrouve sur Google Places les emplacements pas encore vérifiés, par lots
+// (l'écran rappelle tant qu'il en reste) : type, note, avis, lien ; la catégorie Google remplace celle devinée d'après le nom,
+// jamais une catégorie corrigée à la main.
+concurrentsRouter.post(
+  "/emplacements/google",
+  exiger("ADMIN", "COMMERCIAL"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    if (!googlePlacesConfigure()) throw new HttpError(400, "GOOGLE_NON_CONFIGURE", "Clé Google Places absente (GOOGLE_PLACES_API_KEY)");
+    const d = z.object({ lot: z.number().int().min(1).max(50).default(20) }).parse(req.body ?? {});
+    const types = await typesLieuParCode();
+    const aVerifier = await prisma.emplacementConcurrent.findMany({ where: { googleVerifieLe: null }, orderBy: { id: "asc" }, take: d.lot });
+    let trouves = 0;
+    let categorises = 0;
+    for (const e of aVerifier) {
+      let g;
+      try {
+        g = await chercherLieuGoogle({ ...e, latitude: e.latitude === null ? null : Number(e.latitude), longitude: e.longitude === null ? null : Number(e.longitude) });
+      } catch (err) {
+        // Clé refusée, quota dépassé… : on s'arrête, ce qui est fait reste fait
+        throw new HttpError(502, "GOOGLE_ERREUR", err instanceof Error ? err.message : String(err));
+      }
+      const code = g ? categorieGoogle(g.typePrincipal, g.types) : null;
+      const typeLieuId = code ? types.get(code) : undefined;
+      if (g) trouves++;
+      if (typeLieuId && !e.categorieManuelle) categorises++;
+      await prisma.emplacementConcurrent.update({
+        where: { id: e.id },
+        data: {
+          googleVerifieLe: new Date(),
+          googlePlaceId: g?.placeId ?? null,
+          googleNom: g?.nom ?? null,
+          googleType: g?.typePrincipal ?? g?.types[0] ?? null,
+          googleNote: g?.note ?? null,
+          googleNbAvis: g?.nbAvis ?? null,
+          googleUrl: g?.url ?? null,
+          ...(typeLieuId && !e.categorieManuelle ? { typeLieuId } : {}),
+        },
+      });
+    }
+    const restants = await prisma.emplacementConcurrent.count({ where: { googleVerifieLe: null } });
+    await prisma.auditLog.create({
+      data: { userId: req.utilisateur?.id ?? null, entite: "concurrent", entiteId: "*", action: "GOOGLE_EMPLACEMENTS", apres: { traites: aVerifier.length, trouves, categorises } },
+    });
+    res.json({ traites: aVerifier.length, trouves, categorises, restants });
+  })
+);
+
 // PATCH /api/concurrents/emplacements/:id { typeLieuId } — catégorie corrigée à la main (null = à catégoriser)
 concurrentsRouter.patch(
   "/emplacements/:id",
@@ -164,7 +221,7 @@ concurrentsRouter.patch(
     const d = z.object({ typeLieuId: z.number().int().nullable() }).parse(req.body);
     if (d.typeLieuId !== null && !(await prisma.refValeur.findFirst({ where: { id: d.typeLieuId, categorie: "TYPE_LIEU" } })))
       throw new HttpError(400, "TYPE_LIEU_INCONNU", "Type de lieu inconnu");
-    const e = await prisma.emplacementConcurrent.update({ where: { id: Number(req.params.id) }, data: { typeLieuId: d.typeLieuId } });
+    const e = await prisma.emplacementConcurrent.update({ where: { id: Number(req.params.id) }, data: { typeLieuId: d.typeLieuId, categorieManuelle: d.typeLieuId !== null } });
     res.json(e);
   })
 );

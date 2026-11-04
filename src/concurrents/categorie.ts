@@ -32,6 +32,35 @@ const REGLES: [code: string, motifs: RegExp][] = [
 /** Minuscules sans accents, apostrophes droites, « _ » comme espace (« Westfield_Parly 2 ») */
 const normaliser = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[’`]/g, "'").replace(/_/g, " ").toLowerCase();
 
+// Types Google Places → code TYPE_LIEU. Le type principal est essayé d'abord, puis les autres types du lieu.
+const TYPES_GOOGLE: Record<string, string> = {
+  bar: "BAR", pub: "BAR", wine_bar: "BAR", cocktail_bar: "BAR", sports_bar: "BAR", irish_pub: "BAR", beer_garden: "BAR", brewpub: "BAR",
+  lounge_bar: "BAR", brewery: "BAR", bar_and_grill: "BAR", cafe: "BAR", coffee_shop: "BAR",
+  night_club: "BOITE_DE_NUIT", dance_hall: "BOITE_DE_NUIT", karaoke: "BOITE_DE_NUIT",
+  shopping_mall: "CENTRE_COMMERCIAL", department_store: "CENTRE_COMMERCIAL", outlet_mall: "CENTRE_COMMERCIAL", hypermarket: "CENTRE_COMMERCIAL",
+  food_court: "FOOD_COURT", market: "FOOD_COURT", farmers_market: "FOOD_COURT",
+  movie_theater: "CINEMA",
+  bowling_alley: "BOWLING",
+  campground: "CAMPING", rv_park: "CAMPING",
+  hotel: "HOTEL", lodging: "HOTEL", resort_hotel: "HOTEL", motel: "HOTEL", hostel: "HOTEL",
+  concert_hall: "SALLE_SPECTACLE", performing_arts_theater: "SALLE_SPECTACLE", event_venue: "SALLE_SPECTACLE", amphitheatre: "SALLE_SPECTACLE",
+  comedy_club: "SALLE_SPECTACLE", live_music_venue: "SALLE_SPECTACLE", auditorium: "SALLE_SPECTACLE", convention_center: "SALLE_SPECTACLE",
+  amusement_park: "PARC_LOISIRS", amusement_center: "PARC_LOISIRS", water_park: "PARC_LOISIRS", escape_room: "PARC_LOISIRS",
+  go_karting_venue: "PARC_LOISIRS", video_arcade: "PARC_LOISIRS", adventure_sports_center: "PARC_LOISIRS", sports_complex: "PARC_LOISIRS",
+  museum: "LIEU_TOURISTIQUE", tourist_attraction: "LIEU_TOURISTIQUE", historical_landmark: "LIEU_TOURISTIQUE", art_gallery: "LIEU_TOURISTIQUE",
+  zoo: "LIEU_TOURISTIQUE", aquarium: "LIEU_TOURISTIQUE",
+};
+
+/** Catégorie d'après les types Google Places (« bar », « night_club », « *_restaurant »…), null si aucun ne parle */
+export function categorieGoogle(typePrincipal: string | null, types: string[]): string | null {
+  for (const t of [typePrincipal, ...types]) {
+    if (!t) continue;
+    if (TYPES_GOOGLE[t]) return TYPES_GOOGLE[t];
+    if (t === "restaurant" || t.endsWith("_restaurant") || t === "brasserie" || t === "bistro") return "RESTAURANT";
+  }
+  return null;
+}
+
 export function devinerCategorie(nom: string): string | null {
   const n = normaliser(nom);
   return REGLES.find(([, motif]) => motif.test(n))?.[0] ?? null;
