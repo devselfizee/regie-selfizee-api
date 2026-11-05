@@ -129,13 +129,8 @@ export function reglagesParDefaut(lieu: { enseigne: string; ville: string | null
       hashtag: null,
       assistance: { proprietaire: "selfizee", telephone: null, email: null },
     },
-    gabarits: {
-      choisis: [
-        { id: "bandelette", gabarit: "bandelette" },
-        { id: "pola", gabarit: "pola" },
-      ],
-      accueil: ["bandelette", "pola"],
-    },
+    // Aucun format au départ (demande de Paul, 05/11/2026) : on n'ajoute que ceux qu'on personnalise
+    gabarits: { choisis: [], accueil: [] },
     tarifs: {
       herite: true,
       ...GRILLE_DEFAUT,

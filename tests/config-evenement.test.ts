@@ -16,6 +16,7 @@ const ETALON_FJT5 = {
 const laRuche = (): Reglages => {
   const r = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
   r.gabarits.choisis = [{ id: "bandelette", gabarit: "bandelette" }, { id: "pola", gabarit: "pola" }, { id: "planche", gabarit: "planche" }, { id: "carte", gabarit: "carte" }];
+  r.gabarits.accueil = ["bandelette", "pola"];
   r.lieu.avisGoogleUrl = "https://g.page/r/exemple/review";
   return r;
 };
@@ -65,8 +66,11 @@ describe("config.json d'un événement régie", () => {
 describe("contrôles avant publication", () => {
   const erreurs = (r: Reglages) => controler(r, true).filter((c) => c.niveau === "erreur").map((c) => c.message);
 
-  it("les réglages par défaut passent, avec l'avertissement sur le lien d'avis", () => {
+  it("un nouvel événement n'a aucun format ; un format ajouté, les réglages par défaut passent", () => {
     const r = reglagesParDefaut({ enseigne: "Le Bar", ville: null, dateInstallation: null });
+    expect(r.gabarits).toEqual({ choisis: [], accueil: [] });
+    expect(erreurs(r)).toEqual(["Choisissez au moins un gabarit."]);
+    r.gabarits.choisis = [{ id: "bandelette", gabarit: "bandelette" }];
     expect(erreurs(r)).toEqual([]);
     expect(controler(r, false).map((c) => c.message).join(" ")).toMatch(/avis Google.*horaires/);
   });

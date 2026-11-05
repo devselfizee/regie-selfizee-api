@@ -149,7 +149,8 @@ configEvenementRouter.get(
 );
 
 // POST /api/lieux/:id/evenements-ponctuels { nom, dateDebut, dateFin } — crée un événement ponctuel : il
-// reprend les réglages de l'événement habituel (ou ceux par défaut) et les tarifs du lieu, sans les cadres
+// reprend les réglages de l'événement habituel (ou ceux par défaut) et les tarifs du lieu, sans aucun format
+// (on ajoute ceux qu'on personnalise ; « Dupliquer » sert à repartir d'un événement avec ses formats)
 configEvenementRouter.post(
   "/:id/evenements-ponctuels",
   admin,
@@ -163,6 +164,7 @@ configEvenementRouter.post(
       ...base,
       lieu: { ...base.lieu, dateDebut: saisie.dateDebut, dateFin: saisie.dateFin },
       tarifs: { ...base.tarifs, herite: true },
+      gabarits: { choisis: [], accueil: [] },
     };
     const e = await creerEvenement({ lieuId, habituel: false, nom: saisie.nom, reglages });
     await prisma.auditLog.create({
