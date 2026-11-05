@@ -45,7 +45,7 @@ supervisionRouter.get(
           select: {
             lieu: {
               select: {
-                id: true, enseigne: true, ville: true, saisonnalite: true,
+                id: true, enseigne: true, ville: true, papierSurPlace: true, saisonnalite: true,
                 horaires: { select: { jourSemaine: true, ouverture: true, fermeture: true } },
                 saisons: { select: { debut: true, fin: true } },
                 fermetures: { select: { debut: true, fin: true } },
@@ -106,7 +106,8 @@ supervisionRouter.get(
           borneId: b.id,
           identifiant: b.identifiant,
           gamme: b.gamme.libelle,
-          lieu: lieu && { id: lieu.id, enseigne: lieu.enseigne, ville: lieu.ville },
+          // papierSurPlace : le lieu change lui-même le papier (sinon Selfizee)
+          lieu: lieu && { id: lieu.id, enseigne: lieu.enseigne, ville: lieu.ville, papierSurPlace: lieu.papierSurPlace },
           enLigne,
           lieuOuvert: ouvert,
           prochaineOuverture: lieu ? prochaineOuverture(lieu, maintenant) : null,

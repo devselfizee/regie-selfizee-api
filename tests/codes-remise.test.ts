@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { CodeRemise, LotCodesRemise } from "@prisma/client";
-import { ALPHABET, etatCode, genererCode, normaliserCode } from "../src/codes/codes.js";
+import { ALPHABET, etatCode, genererCode, libelleRemise, normaliserCode, titreLotCodes } from "../src/codes/codes.js";
+
+describe("libellés des lots de codes", () => {
+  it("décrit la remise", () => {
+    expect(libelleRemise({ type: "OFFERT", quantite: 1, pourcentage: null })).toBe("1 impression offerte");
+    expect(libelleRemise({ type: "OFFERT", quantite: 3, pourcentage: null })).toBe("3 impressions offertes");
+    expect(libelleRemise({ type: "POURCENTAGE", quantite: 2, pourcentage: 30 })).toBe("−30 % sur 2 impressions");
+  });
+
+  it("résume la création d'un lot pour la timeline du lieu", () => {
+    const lot = { type: "OFFERT" as const, quantite: 1, pourcentage: null, libelle: "Offre lancement", nbCodes: 10, expireLe: new Date("2027-11-03T00:00:00Z"), seulementLieu: false };
+    expect(titreLotCodes(lot)).toBe("10 codes de remise créés (1 impression offerte, lot « Offre lancement », valables jusqu'au 03/11/2027, sur toutes les bornes)");
+    expect(titreLotCodes({ ...lot, libelle: null, nbCodes: 1, seulementLieu: true })).toBe(
+      "1 code de remise créé (1 impression offerte, valable jusqu'au 03/11/2027, dans ce lieu seulement)"
+    );
+  });
+});
 
 // Codes de remise (demande de Sébastien, 02/11/2026)
 const lot = (l: Partial<LotCodesRemise> = {}): LotCodesRemise => ({

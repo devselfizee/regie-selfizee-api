@@ -57,6 +57,19 @@ export const descriptionCode = (c: CodeAvecLot, restant: number) => ({
 });
 
 /** Lieu où la borne est installée maintenant */
+/** « 1 impression offerte », « −30 % sur 2 impressions » */
+export function libelleRemise(l: Pick<LotCodesRemise, "type" | "quantite" | "pourcentage">): string {
+  const imp = `${l.quantite} impression${l.quantite > 1 ? "s" : ""}`;
+  return l.type === "OFFERT" ? `${imp} offerte${l.quantite > 1 ? "s" : ""}` : `−${l.pourcentage ?? 0} % sur ${imp}`;
+}
+
+/** Ligne de timeline d'un lot : « 10 codes de remise créés (1 impression offerte, lot « Offre lancement », valables jusqu'au 03/11/2027, ce lieu seulement) » */
+export function titreLotCodes(l: Pick<LotCodesRemise, "type" | "quantite" | "pourcentage" | "libelle" | "nbCodes" | "expireLe" | "seulementLieu">): string {
+  const jour = l.expireLe.toISOString().slice(0, 10).split("-").reverse().join("/");
+  const details = [libelleRemise(l), l.libelle ? `lot « ${l.libelle} »` : null, `valable${l.nbCodes > 1 ? "s" : ""} jusqu'au ${jour}`, l.seulementLieu ? "dans ce lieu seulement" : "sur toutes les bornes"];
+  return `${l.nbCodes} code${l.nbCodes > 1 ? "s" : ""} de remise créé${l.nbCodes > 1 ? "s" : ""} (${details.filter(Boolean).join(", ")})`;
+}
+
 export async function lieuActuel(borneId: number, maintenant = new Date()): Promise<number | null> {
   const a = await prisma.affectationBorne.findFirst({
     where: { borneId, debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }] },

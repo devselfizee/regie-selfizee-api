@@ -6,7 +6,7 @@ import { asynchrone, HttpError } from "../lib/http.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { envoyerClasseur, type Colonne } from "../lib/excel.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
-import { creerCodes } from "../codes/codes.js";
+import { creerCodes, libelleRemise } from "../codes/codes.js";
 
 // Codes de remise (demande de Sébastien, 02/11/2026) : génération par lots, liste, détail des utilisations, export.
 export const codesRemiseRouter = Router();
@@ -77,7 +77,12 @@ const ligne = (c: CodeListe) => ({
 async function chercher(f: z.infer<typeof filtres>, pagination?: { skip: number; take: number }) {
   const codes = await prisma.codeRemise.findMany({ where: where(f), include: inclure, orderBy: [{ lotId: "desc" }, { code: "asc" }] });
   const tous = codes.map(ligne).filter((l) => !f.statut || f.statut === "expire" || f.statut === "desactive" || l.etat === f.statut);
-  return { total: tous.length, lignes: pagination ? tous.slice(pagination.skip, pagination.skip + pagination.take) : tous };
+  return {
+    total: tous.length,
+    lignes: pagination ? tous.slice(pagination.skip, pagination.skip + pagination.take) : tous,
+    // Tous les codes du filtre, pour « tout sélectionner » au-delà de la page affichée
+    ids: tous.map((l) => l.id),
+  };
 }
 
 // GET /api/codes-remise?q=&lieuId=&lotId=&statut=&page= — 100 par page, les derniers lots d'abord
@@ -117,6 +122,36 @@ codesRemiseRouter.get(
       { entete: "Lot", valeur: (l) => `#${l.lotId}${l.libelle ? ` ${l.libelle}` : ""}`, largeur: 24 },
     ];
     await envoyerClasseur(res, `codes-remise_${ymd(aujourdhui())}.xlsx`, "Codes", colonnes, lignes);
+  })
+);
+
+// GET /api/codes-remise/lots?lieuId= — lots donnés à un lieu, résumés (fiche du lieu, onglet Informations)
+codesRemiseRouter.get(
+  "/lots",
+  asynchrone(async (req, res) => {
+    const { lieuId } = z.object({ lieuId: z.coerce.number().int().positive() }).parse(req.query);
+    const lots = await prisma.lotCodesRemise.findMany({
+      where: { lieuId },
+      orderBy: { id: "desc" },
+      include: { creePar: { select: { prenom: true, nom: true } }, codes: { select: { utilise: true, desactiveLe: true } } },
+    });
+    res.json(
+      lots.map(({ codes, ...l }) => ({
+        id: l.id,
+        libelle: l.libelle,
+        remise: libelleRemise(l),
+        seulementLieu: l.seulementLieu,
+        expireLe: ymd(l.expireLe),
+        expire: l.expireLe < aujourdhui(),
+        creeLe: l.createdAt,
+        creePar: l.creePar,
+        nbCodes: codes.length,
+        // Codes déjà saisis au moins une fois, et impressions encore disponibles sur les codes actifs
+        codesUtilises: codes.filter((c) => c.utilise > 0).length,
+        codesDesactives: codes.filter((c) => c.desactiveLe).length,
+        impressionsRestantes: codes.filter((c) => !c.desactiveLe).reduce((s, c) => s + Math.max(0, l.quantite - c.utilise), 0),
+      }))
+    );
   })
 );
 
@@ -171,6 +206,50 @@ codesRemiseRouter.post(
     const crees = await creerCodes(lot.id, d.nbCodes);
     await prisma.auditLog.create({ data: { userId: req.utilisateur?.id ?? null, entite: "lot_codes_remise", entiteId: String(lot.id), action: "CREATION", apres: d } });
     res.status(201).json({ lotId: lot.id, codesCrees: crees });
+  })
+);
+
+// POST /api/codes-remise/supprimer { ids } — supprime des codes jamais utilisés (lot créé par erreur…).
+// Un code déjà utilisé reste (son historique compte) : on le désactive à la place. Les lots vidés disparaissent.
+codesRemiseRouter.post(
+  "/supprimer",
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.number().int().positive()).min(1).max(5000) }).parse(req.body);
+    const codes = await prisma.codeRemise.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, code: true, lotId: true, utilise: true, lot: { select: { lieuId: true } }, _count: { select: { utilisations: true } } },
+    });
+    const utilises = codes.filter((c) => c.utilise > 0 || c._count.utilisations > 0);
+    if (utilises.length) {
+      const liste = utilises.slice(0, 5).map((c) => c.code).join(", ") + (utilises.length > 5 ? "…" : "");
+      throw new HttpError(
+        409,
+        "CODES_UTILISES",
+        `${utilises.length} code${utilises.length > 1 ? "s ont" : " a"} déjà servi (${liste}) : ${utilises.length > 1 ? "ils restent" : "il reste"} pour l'historique. Désactivez-${utilises.length > 1 ? "les" : "le"} plutôt, et retirez-${utilises.length > 1 ? "les" : "le"} de la sélection.`
+      );
+    }
+    const lotIds = [...new Set(codes.map((c) => c.lotId))];
+    const lotsSupprimes = await prisma.$transaction(async (tx) => {
+      await tx.codeRemise.deleteMany({ where: { id: { in: codes.map((c) => c.id) } } });
+      const vides = await tx.lotCodesRemise.findMany({ where: { id: { in: lotIds }, codes: { none: {} } }, select: { id: true } });
+      await tx.lotCodesRemise.deleteMany({ where: { id: { in: vides.map((l) => l.id) } } });
+      await tx.auditLog.createMany({
+        data: lotIds.map((lotId) => ({
+          userId: req.utilisateur?.id ?? null,
+          entite: "lot_codes_remise",
+          entiteId: String(lotId),
+          action: "SUPPRESSION_CODES",
+          // lieuId : la suppression apparaît dans la timeline du lieu, même quand le lot n'existe plus
+          avant: {
+            lieuId: codes.find((c) => c.lotId === lotId)?.lot.lieuId ?? null,
+            codes: codes.filter((c) => c.lotId === lotId).map((c) => c.code),
+            lotSupprime: vides.some((l) => l.id === lotId),
+          },
+        })),
+      });
+      return vides.length;
+    });
+    res.json({ supprimes: codes.length, lotsSupprimes });
   })
 );
 

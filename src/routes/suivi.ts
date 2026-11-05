@@ -6,6 +6,7 @@ import { asynchrone, HttpError } from "../lib/http.js";
 import { envoyerEmail } from "../lib/envoi.js";
 import { verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { LIBELLES } from "../alertes/notifications.js";
+import { titreLotCodes } from "../codes/codes.js";
 
 // Suivi de la fiche lieu (demande de Sébastien) : commentaires de l'équipe avec mentions,
 // et une timeline qui les mêle à l'histoire du lieu. Interne : jamais visible du partenaire.
@@ -44,7 +45,7 @@ const selectCommentaire = {
   texte: true,
   createdAt: true,
   modifieLe: true,
-  auteur: { select: { id: true, prenom: true, nom: true } },
+  auteur: { select: { id: true, prenom: true, nom: true, photoUrl: true } },
   mentions: { select: { luLe: true, user: { select: { id: true, prenom: true, nom: true } } } },
 } as const;
 
@@ -103,21 +104,34 @@ suiviLieuRouter.get(
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = await lieuDuSuivi(req);
     const admin = req.utilisateur!.role === "ADMIN";
-    const [lieu, commentaires, affectations, alertes, evenements, journaux, contrats, reversements] = await Promise.all([
+    const [lieu, commentaires, affectations, alertes, evenements, journaux, contrats, reversements, lotsCodes, codesSupprimes] = await Promise.all([
       prisma.lieu.findUnique({ where: { id: lieuId }, select: { createdAt: true, dateSignature: true, dateInstallation: true } }),
       prisma.commentaireLieu.findMany({ where: { lieuId }, select: selectCommentaire }),
       prisma.affectationBorne.findMany({ where: { lieuId }, select: { id: true, borneId: true, debut: true, fin: true, emplacementNotes: true, borne: { select: { identifiant: true } } } }),
       prisma.alerte.findMany({
         where: { lieuId },
-        select: { id: true, type: true, niveau: true, statut: true, message: true, detecteeLe: true, resolueLe: true, commentaire: true, assignee: { select: { prenom: true, nom: true } } },
+        select: { id: true, type: true, niveau: true, statut: true, message: true, detecteeLe: true, resolueLe: true, commentaire: true, assignee: { select: { prenom: true, nom: true, photoUrl: true } } },
       }),
       prisma.evenementLieu.findMany({ where: { lieuId }, select: { id: true, libelle: true, debut: true, fin: true, type: { select: { libelle: true } } } }),
       prisma.auditLog.findMany({
         where: { entite: { in: ["lieu", "config_evenement"] }, entiteId: String(lieuId) },
-        select: { id: true, action: true, entite: true, createdAt: true, user: { select: { prenom: true, nom: true } } },
+        select: { id: true, action: true, entite: true, createdAt: true, user: { select: { prenom: true, nom: true, photoUrl: true } } },
       }),
       admin ? prisma.contratCommission.findMany({ where: { lieuId }, select: { id: true, version: true, dateEffet: true, dateFin: true, modele: true, motifAvenant: true } }) : [],
       admin ? prisma.reversement.findMany({ where: { lieuId, payeLe: { not: null } }, select: { id: true, periodeDebut: true, periodeFin: true, payeLe: true, montantAReverserCents: true } }) : [],
+      // Codes de remise donnés au lieu (page réservée aux admins), et ceux supprimés depuis
+      admin
+        ? prisma.lotCodesRemise.findMany({
+            where: { lieuId },
+            select: { id: true, type: true, quantite: true, pourcentage: true, libelle: true, nbCodes: true, expireLe: true, seulementLieu: true, createdAt: true, creePar: { select: { prenom: true, nom: true, photoUrl: true } } },
+          })
+        : [],
+      admin
+        ? prisma.auditLog.findMany({
+            where: { entite: "lot_codes_remise", action: "SUPPRESSION_CODES", avant: { path: ["lieuId"], equals: lieuId } },
+            select: { id: true, entiteId: true, avant: true, createdAt: true, user: { select: { prenom: true, nom: true, photoUrl: true } } },
+          })
+        : [],
     ]);
     if (!lieu) throw new HttpError(404, "INTROUVABLE");
 
@@ -125,7 +139,7 @@ suiviLieuRouter.get(
     const interventions = affectations.length
       ? await prisma.intervention.findMany({
           where: { OR: affectations.map((a) => ({ borneId: a.borneId, date: { gte: a.debut, ...(a.fin ? { lte: a.fin } : {}) } })) },
-          select: { id: true, date: true, motif: true, compteRendu: true, borne: { select: { identifiant: true } }, technicien: { select: { prenom: true, nom: true } } },
+          select: { id: true, date: true, motif: true, compteRendu: true, borne: { select: { identifiant: true } }, technicien: { select: { prenom: true, nom: true, photoUrl: true } } },
         })
       : [];
 
@@ -134,7 +148,7 @@ suiviLieuRouter.get(
       ? await prisma.auditLog.findMany({
           where: { entite: "alerte", entiteId: { in: alertes.filter((a) => a.resolueLe).map((a) => String(a.id)) }, action: { in: ["RESOLUE", "IGNOREE"] } },
           orderBy: { createdAt: "desc" },
-          select: { entiteId: true, user: { select: { prenom: true, nom: true } } },
+          select: { entiteId: true, user: { select: { prenom: true, nom: true, photoUrl: true } } },
         })
       : [];
 
@@ -145,6 +159,8 @@ suiviLieuRouter.get(
       titre: string;
       detail?: string | null;
       auteur?: string | null;
+      /** Photo du compte Konitys de l'auteur */
+      auteurPhoto?: string | null;
       ton?: string;
       commentaire?: (typeof commentaires)[number];
       /** Résolution d'une alerte : l'alerte à laquelle elle répond */
@@ -152,8 +168,9 @@ suiviLieuRouter.get(
     };
     const el: Element[] = [];
     const auteur = (u: { prenom: string; nom: string } | null) => (u ? nomComplet(u) : null);
+    const photo = (u: { photoUrl?: string | null } | null) => u?.photoUrl ?? null;
 
-    for (const c of commentaires) el.push({ cle: `c${c.id}`, type: "COMMENTAIRE", date: c.createdAt, titre: "Commentaire", auteur: auteur(c.auteur), commentaire: c });
+    for (const c of commentaires) el.push({ cle: `c${c.id}`, type: "COMMENTAIRE", date: c.createdAt, titre: "Commentaire", auteur: auteur(c.auteur), auteurPhoto: photo(c.auteur), commentaire: c });
     el.push({ cle: "creation", type: "LIEU", date: lieu.createdAt, titre: "Fiche créée" });
     if (lieu.dateSignature) el.push({ cle: "signature", type: "CONTRAT", date: lieu.dateSignature, titre: "Contrat signé", ton: "bon" });
     if (lieu.dateInstallation) el.push({ cle: "installation", type: "CONTRAT", date: lieu.dateInstallation, titre: "Installation", ton: "bon" });
@@ -162,18 +179,20 @@ suiviLieuRouter.get(
       if (a.fin) el.push({ cle: `a${a.id}f`, type: "BORNE", date: a.fin, titre: `Borne ${a.borne.identifiant} retirée` });
     }
     for (const i of interventions)
-      el.push({ cle: `i${i.id}`, type: "INTERVENTION", date: i.date, titre: `Intervention sur ${i.borne.identifiant} : ${i.motif}`, detail: i.compteRendu, auteur: auteur(i.technicien) });
+      el.push({ cle: `i${i.id}`, type: "INTERVENTION", date: i.date, titre: `Intervention sur ${i.borne.identifiant} : ${i.motif}`, detail: i.compteRendu, auteur: auteur(i.technicien), auteurPhoto: photo(i.technicien) });
     for (const a of alertes) {
       el.push({ cle: `al${a.id}`, type: "ALERTE", date: a.detecteeLe, titre: `Alerte : ${LIBELLES[a.type]}`, detail: a.message, ton: a.niveau === "CRITIQUE" ? "mauvais" : "attention" });
       if (a.resolueLe) {
         const par = resolutions.find((r) => r.entiteId === String(a.id))?.user ?? a.assignee;
+        const automatique = !par && (a.commentaire ?? "").startsWith("Résolue automatiquement");
         el.push({
           cle: `al${a.id}r`,
           type: "ALERTE",
           date: a.resolueLe,
           titre: `Alerte ${a.statut === "IGNOREE" ? "ignorée" : "résolue"} : ${LIBELLES[a.type]}`,
           detail: a.commentaire,
-          auteur: auteur(par),
+          auteur: automatique ? "Régie (automatique)" : (auteur(par) ?? "Auteur inconnu (avant le suivi des résolutions)"),
+          auteurPhoto: photo(par),
           ton: "bon",
           reponseA: { titre: `Alerte : ${LIBELLES[a.type]}`, date: a.detecteeLe, detail: a.message },
         });
@@ -189,10 +208,16 @@ suiviLieuRouter.get(
           j.entite === "config_evenement"
             ? j.action === "PUBLICATION" ? "Fiche événement publiée sur la borne" : "Fiche événement (borne) modifiée"
             : j.action === "CREATION" ? "Fiche créée" : j.action === "TARIFS" ? "Tarifs du lieu modifiés" : "Fiche modifiée",
-        auteur: auteur(j.user),
+        auteur: auteur(j.user), auteurPhoto: photo(j.user),
       });
     for (const c of contrats)
       el.push({ cle: `k${c.id}`, type: "CONTRAT", date: c.dateEffet, titre: c.version > 1 ? `Avenant n° ${c.version - 1} au contrat de commission` : "Contrat de commission", detail: c.motifAvenant });
+    for (const l of lotsCodes)
+      el.push({ cle: `lc${l.id}`, type: "CODES", date: l.createdAt, titre: titreLotCodes(l), auteur: auteur(l.creePar), auteurPhoto: photo(l.creePar) });
+    for (const s of codesSupprimes) {
+      const n = ((s.avant as { codes?: string[] } | null)?.codes ?? []).length;
+      el.push({ cle: `ls${s.id}`, type: "CODES", date: s.createdAt, titre: `${n} code${n > 1 ? "s" : ""} de remise supprimé${n > 1 ? "s" : ""} (lot #${s.entiteId})`, auteur: auteur(s.user), auteurPhoto: photo(s.user) });
+    }
     for (const r of reversements)
       el.push({ cle: `r${r.id}`, type: "COMMISSION", date: r.payeLe!, titre: `Commission payée : ${(r.montantAReverserCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}` });
 

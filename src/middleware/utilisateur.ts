@@ -19,7 +19,35 @@ export const adminsInitiaux = (brut = process.env.ADMIN_EMAILS ?? "") =>
     .map((e) => e.trim().replace(/^["']|["']$/g, "").toLowerCase())
     .filter((e) => e.includes("@"));
 
-const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true } as const;
+const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true } as const;
+
+// Photo du compte sur la plateforme Konitys (celle de l'en-tête), relevée au plus toutes les 12 h
+const GATEWAY_KONITYS = (process.env.KONITYS_GATEWAY_URL || "https://plateform-gateway.orkessi.com").replace(/\/+$/, "");
+const PLATEFORME_KONITYS = (process.env.KONITYS_PLATEFORME_URL || "https://plateform.orkessi.com").replace(/\/+$/, "");
+const PHOTO_VALIDE_MS = 12 * 3_600_000;
+
+/** URL de la photo d'après la réponse de /api/users/me de la plateforme (photo_nom), ou null */
+export function urlPhotoKonitys(reponse: unknown, base = PLATEFORME_KONITYS): string | null {
+  const r = reponse as { data?: { data?: { photo_nom?: unknown }; photo_nom?: unknown }; photo_nom?: unknown } | null;
+  const d = r?.data?.data ?? r?.data ?? r;
+  const nom = (d as { photo_nom?: unknown } | undefined)?.photo_nom;
+  return typeof nom === "string" && nom.trim() ? `${base}/uploads/contacts/${encodeURIComponent(nom.trim())}` : null;
+}
+
+/** Relève la photo du compte avec le jeton de la personne, sans retarder la requête ; une panne de la plateforme ne bloque rien */
+function releverPhoto(userId: number, autorisation: string) {
+  fetch(`${GATEWAY_KONITYS}/api/users/me`, { headers: { Authorization: autorisation }, signal: AbortSignal.timeout(5000) })
+    .then(async (r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const photoUrl = urlPhotoKonitys(await r.json());
+      await prisma.user.update({ where: { id: userId }, data: { photoUrl, photoVerifieeLe: new Date() } });
+    })
+    .catch(async (err) => {
+      console.warn("Photo du compte Konitys non relevée :", (err as Error).message);
+      // On réessaiera dans 12 h, pas à chaque requête
+      await prisma.user.update({ where: { id: userId }, data: { photoVerifieeLe: new Date() } }).catch(() => undefined);
+    });
+}
 
 /** Identité tenue dans Keycloak (nom, prénom, téléphone) : Régie la recopie, ne la modifie jamais. Seuls les champs présents dans le jeton. */
 export function identiteKeycloak(jeton: AuthRequest["user"]): { nom?: string; prenom?: string; telephone?: string } {
@@ -116,6 +144,11 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
         message: "Votre compte n'a pas accès à cette application. Demandez à un administrateur de vous ajouter.",
         email,
       });
+    }
+    const autorisation = req.header("authorization");
+    if (autorisation?.startsWith("Bearer ") && (!u.photoVerifieeLe || Date.now() - u.photoVerifieeLe.getTime() > PHOTO_VALIDE_MS)) {
+      u = { ...u, photoVerifieeLe: new Date() };
+      releverPhoto(u.id, autorisation);
     }
     req.utilisateur = u;
     next();

@@ -7,6 +7,33 @@ import { ingererLotParcours } from "../ingestion/parcours.js";
 
 export const importsRouter = Router();
 
+/** Lieu actuel de chaque borne, par identifiant (retour de Sébastien : le n° de borne seul ne parle pas) */
+async function lieuxActuels(identifiants: (string | null | undefined)[]): Promise<Map<string, { id: number; enseigne: string }>> {
+  const ids = [...new Set(identifiants.filter((i): i is string => !!i))];
+  if (!ids.length) return new Map();
+  const maintenant = new Date();
+  const bornes = await prisma.borne.findMany({
+    where: { identifiant: { in: ids } },
+    select: {
+      identifiant: true,
+      affectations: {
+        where: { debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }] },
+        take: 1,
+        select: { lieu: { select: { id: true, enseigne: true } } },
+      },
+    },
+  });
+  return new Map(bornes.filter((b) => b.affectations[0]).map((b) => [b.identifiant, b.affectations[0].lieu]));
+}
+
+/** Recherche d'une borne par son n° ou par le nom de son lieu actuel */
+const borneOuLieu = (q: string): Prisma.BorneWhereInput => ({
+  OR: [
+    { identifiant: { contains: q, mode: "insensitive" } },
+    { affectations: { some: { fin: null, lieu: { enseigne: { contains: q, mode: "insensitive" } } } } },
+  ],
+});
+
 // GET /api/imports/erreurs?statut=NOUVELLE&page=1 — file d'erreurs consultable (CDC §4.5)
 importsRouter.get("/erreurs", async (req, res, next) => {
   try {
@@ -28,7 +55,8 @@ importsRouter.get("/erreurs", async (req, res, next) => {
       }),
     ]);
 
-    res.json({ total, page, parPage, erreurs });
+    const lieux = await lieuxActuels(erreurs.map((e) => e.import.borneIdentifiant));
+    res.json({ total, page, parPage, erreurs: erreurs.map((e) => ({ ...e, lieu: (e.import.borneIdentifiant && lieux.get(e.import.borneIdentifiant)) || null })) });
   } catch (err) {
     next(err);
   }
@@ -82,7 +110,7 @@ importsRouter.get("/journal", async (req, res, next) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const where: Prisma.ImportLotWhereInput = {
       // Identifiant envoyé par la borne : présent même si la borne est inconnue ou la clé refusée
-      ...(borne ? { OR: [{ borneIdentifiant: { contains: borne, mode: "insensitive" } }, { borne: { identifiant: { contains: borne, mode: "insensitive" } } }] } : {}),
+      ...(borne ? { OR: [{ borneIdentifiant: { contains: borne, mode: "insensitive" } }, { borne: borneOuLieu(borne) }] } : {}),
       ...(type ? { type } : {}),
       ...(statut ? { statut } : {}),
     };
@@ -105,12 +133,14 @@ importsRouter.get("/journal", async (req, res, next) => {
     const parCode = lots.length
       ? await prisma.importErreur.groupBy({ by: ["importId", "code"], where: { importId: { in: lots.map((l) => l.id) } }, _count: { _all: true } })
       : [];
+    const lieux = await lieuxActuels(lots.map((l) => l.borne?.identifiant ?? l.borneIdentifiant));
     res.json({
       total,
       page,
       parPage: parPageJournal,
       lots: lots.map((l) => ({
         ...l,
+        lieu: lieux.get(l.borne?.identifiant ?? l.borneIdentifiant ?? "") ?? null,
         refusParCode: parCode.filter((c) => c.importId === l.id).map((c) => ({ code: c.code, nb: c._count._all })).sort((a, b) => b.nb - a.nb),
       })),
     });
@@ -140,12 +170,13 @@ importsRouter.get("/signes-de-vie", async (req, res, next) => {
   try {
     const borne = filtreBorne(req.query.borne);
     const signes = await prisma.heartbeat.findMany({
-      where: borne ? { borne: { identifiant: { contains: borne, mode: "insensitive" } } } : {},
+      where: borne ? { borne: borneOuLieu(borne) } : {},
       orderBy: { recuLe: "desc" },
       take: 200,
       include: { borne: { select: { id: true, identifiant: true } } },
     });
-    res.json(signes);
+    const lieux = await lieuxActuels(signes.map((s) => s.borne.identifiant));
+    res.json(signes.map((s) => ({ ...s, lieu: lieux.get(s.borne.identifiant) ?? null })));
   } catch (err) {
     next(err);
   }

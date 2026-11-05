@@ -21,18 +21,20 @@ datasource db {
 // ─── Utilisateurs ───────────────────────────────────────────
 
 model User {
-  id          Int      @id @default(autoincrement())
-  keycloakSub String?  @unique @map("keycloak_sub")
-  crmId       Int?     @unique @map("crm_id")
-  email       String   @unique
-  nom         String
-  prenom      String
-  telephone   String? // SMS des alertes critiques
-  role        UserRole @default(COMMERCIAL)
-  lieuId      Int?     @map("lieu_id") // rôle PARTENAIRE uniquement (V2)
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              Int       @id @default(autoincrement())
+  keycloakSub     String?   @unique @map("keycloak_sub")
+  crmId           Int?      @unique @map("crm_id")
+  email           String    @unique
+  nom             String
+  prenom          String
+  telephone       String? // SMS des alertes critiques
+  photoUrl        String?   @map("photo_url") // photo du compte Konitys, relevée à la connexion
+  photoVerifieeLe DateTime? @map("photo_verifiee_le") @db.Timestamptz(3)
+  role            UserRole  @default(COMMERCIAL)
+  lieuId          Int?      @map("lieu_id") // rôle PARTENAIRE uniquement (V2)
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   lieu             Lieu?                   @relation("PartenaireLieu", fields: [lieuId], references: [id])
   lieuxCommercial  Lieu[]                  @relation("LieuCommercial")
@@ -73,17 +75,17 @@ model RefValeur {
   parent  RefValeur?  @relation("RefParent", fields: [parentId], references: [id])
   enfants RefValeur[] @relation("RefParent")
 
-  lieuxType          Lieu[]          @relation("LieuType")
-  lieuxSousType      Lieu[]          @relation("LieuSousType")
-  lieuxStanding      Lieu[]          @relation("LieuStanding")
-  lieuxZone          Lieu[]          @relation("LieuZone")
-  lieuxTailleCommune Lieu[]          @relation("LieuTailleCommune")
-  lieuxEmplacement   Lieu[]          @relation("LieuEmplacement")
-  lieuxEclairage     Lieu[]          @relation("LieuEclairage")
-  lieuxOrigineLead   Lieu[]          @relation("LieuOrigineLead")
-  lieuxAntenne       Lieu[]          @relation("LieuAntenne")
-  lieuxClientele     LieuClientele[]
-  evenements         EvenementLieu[]
+  lieuxType               Lieu[]                  @relation("LieuType")
+  lieuxSousType           Lieu[]                  @relation("LieuSousType")
+  lieuxStanding           Lieu[]                  @relation("LieuStanding")
+  lieuxZone               Lieu[]                  @relation("LieuZone")
+  lieuxTailleCommune      Lieu[]                  @relation("LieuTailleCommune")
+  lieuxEmplacement        Lieu[]                  @relation("LieuEmplacement")
+  lieuxEclairage          Lieu[]                  @relation("LieuEclairage")
+  lieuxOrigineLead        Lieu[]                  @relation("LieuOrigineLead")
+  lieuxAntenne            Lieu[]                  @relation("LieuAntenne")
+  lieuxClientele          LieuClientele[]
+  evenements              EvenementLieu[]
   emplacementsConcurrents EmplacementConcurrent[]
 
   @@unique([categorie, code])
@@ -1393,9 +1395,9 @@ model EmplacementConcurrent {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   // Fiche prospect créée depuis cet emplacement
-  lieuId Int? @unique @map("lieu_id")
+  lieuId            Int?    @unique @map("lieu_id")
   // Catégorie du lieu (référentiel TYPE_LIEU : bar, boîte de nuit…)
-  typeLieuId Int? @map("type_lieu_id")
+  typeLieuId        Int?    @map("type_lieu_id")
   // Corrigée à la main : ni le nom ni Google ne la remplacent
   categorieManuelle Boolean @default(false) @map("categorie_manuelle")
 
