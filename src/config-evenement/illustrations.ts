@@ -1,4 +1,6 @@
 import sharp from "sharp";
+import { prisma } from "../lib/prisma.js";
+import type { Reglages } from "./reglages.js";
 
 // Illustrations des bornes (mémo « ILLUSTRATIONS-ADMIN-WEB », 05/11/2026) : sur le kit nightlife, les
 // cases photo des cadres (page de choix du format, cadres de l'accueil) montrent des photos d'exemple,
@@ -45,4 +47,28 @@ export function cheminsDansLeZip(images: { cible: CibleIllustration; forme: stri
     compte.set(dossier, n);
     return `${dossier}/${String(n).padStart(2, "0")}.jpg`;
   });
+}
+
+/**
+ * Les images à copier dans le zip pour chaque série : photos de l'événement (« photos ») ou d'une série de
+ * la bibliothèque (« serie ») ; rien pour les séries du logiciel, la caméra ou les cases unies. Les photos
+ * de l'événement passent avant une série (mémo) : un seul choix par série, donc pas de mélange.
+ */
+export async function illustrationsAExporter(reglages: Reglages, evenementId: number) {
+  const l = reglages.lieu;
+  const sources: [CibleIllustration, string, number | null][] = [
+    ["cadres", l.illustrations, l.illustrationsSerieId],
+    ["accueil", l.illustrationsAccueil, l.illustrationsAccueilSerieId],
+  ];
+  const images: { cible: CibleIllustration; forme: string; image: Uint8Array }[] = [];
+  for (const [cible, choix, serieId] of sources) {
+    if (choix === "photos") {
+      const p = await prisma.illustrationEvenement.findMany({ where: { configEvenementId: evenementId, cible }, select: { forme: true, image: true }, orderBy: { id: "asc" } });
+      images.push(...p.map((i) => ({ cible, ...i })));
+    } else if (choix === "serie" && serieId) {
+      const p = await prisma.illustrationSerieImage.findMany({ where: { serieId }, select: { forme: true, image: true }, orderBy: { id: "asc" } });
+      images.push(...p.map((i) => ({ cible, ...i })));
+    }
+  }
+  return images;
 }

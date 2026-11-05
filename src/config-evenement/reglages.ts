@@ -19,8 +19,9 @@ export const TONS = ["club", "bar", "famille", "pro"] as const;
 // Photos d'exemple dans les cases des cadres (page de choix, cadres de l'accueil) : séries du logiciel
 // (festif, chic), photos de l'événement (zip), caméra en direct, ou cases unies. L'accueil peut avoir sa
 // propre série (« memes » : celle des cadres). Mémo ILLUSTRATIONS-ADMIN-WEB du 05/11/2026.
-export const ILLUSTRATIONS = ["festif", "chic", "photos", "camera", "aucune"] as const;
-export const ILLUSTRATIONS_ACCUEIL = ["memes", "festif", "chic", "photos"] as const;
+// « serie » : une série de la bibliothèque (illustrationsSerieId), copiée dans le zip comme les photos.
+export const ILLUSTRATIONS = ["festif", "chic", "serie", "photos", "camera", "aucune"] as const;
+export const ILLUSTRATIONS_ACCUEIL = ["memes", "festif", "chic", "serie", "photos"] as const;
 export const LOTS = ["free", "pct50", "pct30", "none"] as const;
 
 const texte = z.string().trim().max(200);
@@ -45,6 +46,8 @@ export const reglagesSchema = z
       ton: z.enum(TONS).default("club"),
       illustrations: z.enum(ILLUSTRATIONS).default("festif"),
       illustrationsAccueil: z.enum(ILLUSTRATIONS_ACCUEIL).default("memes"),
+      illustrationsSerieId: z.number().int().positive().nullable().default(null),
+      illustrationsAccueilSerieId: z.number().int().positive().nullable().default(null),
       avisGoogleUrl: facultatif(z.url({ protocol: /^https?$/ }).max(500)),
       instagram: facultatif(texte),
       tiktok: facultatif(texte),
@@ -129,6 +132,8 @@ export function reglagesParDefaut(lieu: { enseigne: string; ville: string | null
       ton: "club",
       illustrations: "festif",
       illustrationsAccueil: "memes",
+      illustrationsSerieId: null,
+      illustrationsAccueilSerieId: null,
       avisGoogleUrl: null,
       instagram: null,
       tiktok: null,
@@ -174,6 +179,9 @@ export function controler(r: Reglages, aDesHoraires: boolean): Controle[] {
   if (choisis.length && !choisis.some((c) => AVEC_QR.includes(c.gabarit)))
     avertir("Aucun gabarit avec carte et QR : pas de carte, pas de collecte d'e-mails sur la page souvenir.");
   if (choisis.some((c) => c.gabarit === "carte")) avertir("La photo + deux cartes demande un ruban 15x20 dans l'imprimante (DS620).");
+
+  if (r.lieu.illustrations === "serie" && !r.lieu.illustrationsSerieId) erreur("Photos d'exemple des cadres : choisissez une série de la bibliothèque.");
+  if (r.lieu.illustrationsAccueil === "serie" && !r.lieu.illustrationsAccueilSerieId) erreur("Photos d'exemple de l'accueil : choisissez une série de la bibliothèque.");
 
   for (const m of erreursGrille(r.tarifs)) erreur(m);
 

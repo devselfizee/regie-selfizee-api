@@ -1438,3 +1438,34 @@ model IllustrationEvenement {
   @@index([configEvenementId])
   @@map("illustrations_evenement")
 }
+
+// Bibliothèque des séries d'illustrations « type » gérées par Selfizee (mariage, corporate…), choisies dans
+// les fiches événement et copiées dans le zip (mémo ILLUSTRATIONS-ADMIN-WEB § 3a)
+model IllustrationSerie {
+  id        Int                      @id @default(autoincrement())
+  nom       String                   @db.VarChar(80)
+  // Retirée des choix des fiches événement sans être supprimée
+  actif     Boolean                  @default(true)
+  createdAt DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  images    IllustrationSerieImage[]
+
+  @@map("illustrations_series")
+}
+
+model IllustrationSerieImage {
+  id        Int      @id @default(autoincrement())
+  serieId   Int      @map("serie_id")
+  // carre | portrait | paysage, d'après le ratio
+  forme     String   @db.VarChar(10)
+  largeur   Int
+  hauteur   Int
+  image     Bytes
+  vignette  Bytes
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  serie IllustrationSerie @relation(fields: [serieId], references: [id], onDelete: Cascade)
+
+  @@index([serieId])
+  @@map("illustrations_series_images")
+}

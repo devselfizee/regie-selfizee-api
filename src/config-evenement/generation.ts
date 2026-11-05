@@ -153,7 +153,7 @@ export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, 
       // la série du logiciel sert de repli ; « none » = la caméra en direct ; cases unies sans illustration
       illustrationSet: l.illustrations === "chic" ? "chic" : l.illustrations === "camera" ? "none" : "festif",
       ...(l.illustrations === "aucune" ? { previewFillHoles: false } : {}),
-      ...(l.illustrationsAccueil === "photos"
+      ...(l.illustrationsAccueil === "photos" || l.illustrationsAccueil === "serie"
         ? { welcomeIllustrationSet: DOSSIER_ILLUSTRATIONS.accueil }
         : l.illustrationsAccueil === "festif" || l.illustrationsAccueil === "chic"
           ? { welcomeIllustrationSet: l.illustrationsAccueil }

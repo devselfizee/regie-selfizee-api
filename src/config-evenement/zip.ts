@@ -95,7 +95,7 @@ export async function genererZip({ config, modele, reglages, cadres, illustratio
   modele: Modele;
   reglages: Reglages;
   cadres: CadreZip[];
-  /** Photos d'exemple de l'événement ; seules celles des séries réglées sur « photos » sont copiées */
+  /** Photos d'exemple à copier (événement ou série de la bibliothèque), déjà choisies : illustrationsAExporter */
   illustrations?: { cible: CibleIllustration; forme: string; image: Uint8Array }[];
   maintenant: Date;
 }): Promise<Buffer> {
@@ -124,7 +124,6 @@ export async function genererZip({ config, modele, reglages, cadres, illustratio
   }
   for (const dossier of DOSSIERS_VIDES) zip.folder(dossier);
   // Illustrations : copiées plutôt que référencées (la borne fonctionne hors ligne), rangées par forme
-  const retenues = illustrations.filter((i) => (i.cible === "cadres" ? reglages.lieu.illustrations : reglages.lieu.illustrationsAccueil) === "photos");
-  cheminsDansLeZip(retenues).forEach((chemin, n) => zip.file(chemin, retenues[n].image));
+  cheminsDansLeZip(illustrations).forEach((chemin, n) => zip.file(chemin, illustrations[n].image));
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
 }

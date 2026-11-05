@@ -8,6 +8,7 @@ import { avecGrilleDuLieu, avecInfosDuLieu, controler, infosDuLieu, infosLieuSch
 import { grilleEffective } from "../tarifs/grille.js";
 import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
 import { genererZip } from "../config-evenement/zip.js";
+import { illustrationsAExporter } from "../config-evenement/illustrations.js";
 import { chemins, cible, creerEvenement, evenementDe } from "../config-evenement/acces.js";
 
 // Fiche événement d'un lieu (CDC page souvenir § 13) : la configuration de la borne, réservée aux admins.
@@ -325,10 +326,9 @@ configEvenementRouter.get(
     if (!e) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
     const reglages = reglagesEffectifs(e.reglages, charge);
     const config = await configDe(charge, e.updatedAt, reglages);
-    const illustrations = await prisma.illustrationEvenement.findMany({ where: { configEvenementId: e.id }, select: { cible: true, forme: true, image: true }, orderBy: { id: "asc" } });
     const zip = await genererZip({
       config, modele: lireModele(), reglages, cadres: await cadresDe(e.id, true),
-      illustrations: illustrations.map((i) => ({ ...i, cible: i.cible === "accueil" ? ("accueil" as const) : ("cadres" as const) })),
+      illustrations: await illustrationsAExporter(reglages, e.id),
       maintenant: e.updatedAt,
     });
     res.setHeader("Content-Disposition", `attachment; filename="evenement-${e.code}.zip"`);
