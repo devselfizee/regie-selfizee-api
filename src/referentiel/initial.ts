@@ -18,7 +18,7 @@ const LISTES: Record<RefCategorie, [code: string, libelle: string][]> = {
   STANDING: [["ECO", "Économique"], ["STANDARD", "Standard"], ["PREMIUM", "Premium"], ["LUXE", "Luxe"]],
   CLIENTELE: [
     ["FAMILLES", "Familles"], ["TOURISTES", "Touristes"], ["ETUDIANTS", "Étudiants"],
-    ["18_25", "18-25 ans"], ["25_40", "25-40 ans"], ["SENIORS", "Seniors"],
+    ["18_25", "18-25 ans"], ["25_40", "25-40 ans"], ["40_60", "40-60 ans"], ["SENIORS", "Seniors"],
   ],
   ZONE_GEO: [
     ["URBAINE", "Urbaine"], ["PERIURBAINE", "Périurbaine"], ["RURALE", "Rurale"],

@@ -30,6 +30,12 @@ referentielRouter.get(
   })
 );
 
+// Villes principales : une seule source, l'application Antennes (synchronisation) ; jamais saisies ici
+const sourceExterne = () => new HttpError(409, "SOURCE_EXTERNE", "Les villes principales viennent de l'application Antennes : elles se modifient là-bas");
+async function refuserSourceExterne(ids: number[]) {
+  if (await prisma.refValeur.count({ where: { id: { in: ids }, categorie: "ANTENNE" } })) throw sourceExterne();
+}
+
 const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z0-9_]{2,64}$/, "Code : lettres, chiffres, _");
 
 // POST /api/referentiel/valeurs — ajouter une valeur à une liste administrable
@@ -46,6 +52,7 @@ referentielRouter.post(
         ordre: z.number().int().optional(),
       })
       .parse(req.body);
+    if (data.categorie === "ANTENNE") throw sourceExterne();
     res.status(201).json(await prisma.refValeur.create({ data }));
   })
 );
@@ -56,6 +63,7 @@ referentielRouter.post(
   exiger("ADMIN"),
   asynchrone(async (req, res) => {
     const { ids } = z.object({ ids: z.array(z.number().int()).min(1).max(500) }).parse(req.body);
+    await refuserSourceExterne(ids);
     await prisma.$transaction(ids.map((id, ordre) => prisma.refValeur.update({ where: { id }, data: { ordre } })));
     res.status(204).end();
   })
@@ -74,6 +82,7 @@ referentielRouter.patch(
         parentId: z.number().int().nullable().optional(),
       })
       .parse(req.body);
+    await refuserSourceExterne([Number(req.params.id)]);
     res.json(await prisma.refValeur.update({ where: { id: Number(req.params.id) }, data }));
   })
 );
