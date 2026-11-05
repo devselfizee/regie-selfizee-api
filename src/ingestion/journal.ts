@@ -17,7 +17,7 @@ export async function journaliserRejet(
 ) {
   const body = req.body ?? null;
   const borneIdentifiant =
-    typeof body?.borne_id === "string" ? body.borne_id.slice(0, 64) : null;
+    typeof body?.borne_id === "string" ? body.borne_id.slice(0, 64) : typeof body?.borne === "string" ? body.borne.slice(0, 64) : null; // `borne` : webhook PikCloud
 
   return prisma.importLot.create({
     data: {

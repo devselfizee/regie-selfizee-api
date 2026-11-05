@@ -59,6 +59,7 @@ curl -X POST localhost:3003/ingest/v1/transactions   -H "Authorization: Bearer <
 |---|---|
 | `POST /ingest/v1/transactions` | lot de 1 à 500 transactions ([schéma](schemas/transactions.v1.schema.json)) |
 | `POST /ingest/v1/heartbeats` | état de la borne, toutes les 5 min ([schéma](schemas/heartbeat.v1.schema.json)) |
+| `POST /webhooks/v1/pikcloud/medias` | médias des séances envoyés par PikCloud (secret `X-Synchro-Token`, [doc](docs/synchronisation-pikcloud.md)) |
 | `GET /api/imports/erreurs` | file d'erreurs d'import (back-office, Keycloak) |
 | `PATCH /api/imports/erreurs/:id` | marquer une erreur retraitée / ignorée |
 | `GET /api/imports/non-affectees` | ventes reçues de bornes sans lieu |

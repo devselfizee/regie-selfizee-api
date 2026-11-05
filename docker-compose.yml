@@ -20,6 +20,13 @@ services:
       SOUVENIR_QR_BASE_URL: ${SOUVENIR_QR_BASE_URL:-}
       PIKCLOUD_URL: ${PIKCLOUD_URL:-}
       PHOTOS_URL_MODELE: ${PHOTOS_URL_MODELE:-}
+      PIKCLOUD_SYNCHRO_SECRET: ${PIKCLOUD_SYNCHRO_SECRET:-}
+      PIKCLOUD_HOTES_AUTORISES: ${PIKCLOUD_HOTES_AUTORISES:-}
+      PIKCLOUD_VERIFIER_LIENS: ${PIKCLOUD_VERIFIER_LIENS:-}
+      MEDIAS_DIR: /app/medias
+      MEDIAS_TAILLE_MAX_MO: ${MEDIAS_TAILLE_MAX_MO:-200}
+      MEDIAS_TENTATIVES_MAX: ${MEDIAS_TENTATIVES_MAX:-5}
+      MEDIAS_RETENTION_JOURS: ${MEDIAS_RETENTION_JOURS:-}
       MAILJET_API_KEY: ${MAILJET_API_KEY:-}
       MAILJET_API_SECRET: ${MAILJET_API_SECRET:-}
       SMSENVOI_EMAIL: ${SMSENVOI_EMAIL:-}
@@ -35,3 +42,9 @@ services:
       INGEST_BODY_LIMIT: ${INGEST_BODY_LIMIT:-2mb}
     ports:
       - "${API_PORT:-3003}:3003"
+    volumes:
+      # Médias des séances PikCloud (copie Régie, PikCloud efface à 90 jours) : volume persistant
+      - medias:/app/medias
+
+volumes:
+  medias:

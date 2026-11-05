@@ -213,6 +213,7 @@ model Lieu {
   lotsCodesRemise        LotCodesRemise[]
   utilisationsCodeRemise UtilisationCodeRemise[]
   grilleTarifs           GrilleTarifs?
+  medias                 Media[]
 
   @@index([typeLieuId])
   @@index([commercialId])
@@ -412,6 +413,7 @@ model Borne {
 
   parcours               Parcours[]
   utilisationsCodeRemise UtilisationCodeRemise[]
+  medias                 Media[]
 
   @@map("bornes")
 }
@@ -475,6 +477,7 @@ model ImportLot {
   transactions Transaction[]
 
   parcours Parcours[]
+  medias   Media[]
 
   @@index([borneId, recuLe])
   @@index([payloadSha256])
@@ -494,6 +497,7 @@ enum ImportType {
   RELEVE_MONETIQUE
   PARCOURS // parcours invité (avenant du 26/10/2026)
   CODES // codes de remise saisis sur la borne (journal des refus)
+  MEDIAS // médias des séances envoyés par PikCloud (webhook de synchro, 04/11/2026)
 }
 
 enum ImportStatut {
@@ -1173,6 +1177,7 @@ model ConfigEvenement {
   lieu          Lieu                    @relation(fields: [lieuId], references: [id], onDelete: Cascade)
   cadres        CadreEvenement[]
   illustrations IllustrationEvenement[]
+  medias        Media[]
 
   @@index([lieuId])
   @@map("config_evenements")
@@ -1470,4 +1475,78 @@ model IllustrationSerieImage {
 
   @@index([serieId])
   @@map("illustrations_series_images")
+}
+
+// ─── Médias des séances (synchro PikCloud) ──────────────────
+
+// Un média par séance de borne, reçu de PikCloud par le webhook (docs/synchronisation-pikcloud.md).
+// Clé du contrat : (code_event, filename). Le JSON de la séance (data) et le média (photo) peuvent
+// arriver séparément et dans n'importe quel ordre : chacun a son URL et son état. Un renvoi ne
+// remplace jamais un fichier déjà reçu. Les paiements du JSON ne sont pas exploités (source du CA :
+// l'ingestion des ventes), le JSON complet reste dans `brut`.
+model Media {
+  id   BigInt @id @default(autoincrement())
+  // Identifiant interne : nom du fichier sur le stockage et clé des URLs de la galerie
+  uuid String @unique @default(uuid()) @db.Uuid
+
+  codeEvent String @map("code_event") @db.VarChar(8) // code de l'événement (R…), = config_evenements.code
+  filename  String // nom de base des fichiers, sans extension (2026_11_04_21_42_17_00031)
+
+  // Rattachement : événement et lieu par le code (null si inconnu : stocké quand même), borne par son identifiant
+  configEvenementId Int?   @map("config_evenement_id")
+  lieuId            Int?   @map("lieu_id")
+  borneId           Int?   @map("borne_id")
+  borneIdentifiant  String @map("borne_identifiant")
+  typeMedia         String @map("type_media") // photo, multipose, video, gif-multipose… valeur inconnue acceptée
+  importId          BigInt @map("import_id") // appel qui a créé la ligne
+
+  // Lus dans le JSON de la séance (null tant qu'il n'est pas téléchargé)
+  photoUuid String?   @map("photo_uuid") @db.Uuid // identifiant PikCloud de la séance, celui du QR imprimé
+  datePhoto DateTime? @map("date_photo") @db.Timestamptz(3) // prise de vue
+  dateSave  DateTime? @map("date_save") @db.Timestamptz(3) // enregistrement sur la borne (rétention)
+  datePrint DateTime? @map("date_print") @db.Timestamptz(3) // premier tirage, null sans tirage
+  nbTirages Int?      @map("nb_tirages")
+  // Séance de test (is_fake de l'appel ou testMode du JSON) : hors galerie par défaut
+  test      Boolean   @default(false)
+  brut      Json? // JSON de la séance tel que reçu
+
+  // Fichier JSON (data)
+  dataUrl        String?       @map("data_url")
+  dataStatut     FichierStatut @default(ABSENT) @map("data_statut")
+  // Fichier média (photo) : URL opaque, copie locale sur MEDIAS_DIR (chemin relatif)
+  mediaUrl       String?       @map("media_url")
+  mediaStatut    FichierStatut @default(ABSENT) @map("media_statut")
+  mediaChemin    String?       @map("media_chemin")
+  vignetteChemin String?       @map("vignette_chemin")
+  tailleOctets   Int?          @map("taille_octets")
+  sha256         String?       @db.Char(64)
+  tentatives     Int           @default(0)
+  derniereErreur String?       @map("derniere_erreur")
+  telechargeLe   DateTime?     @map("telecharge_le") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  evenement ConfigEvenement? @relation(fields: [configEvenementId], references: [id], onDelete: SetNull)
+  lieu      Lieu?            @relation(fields: [lieuId], references: [id], onDelete: SetNull)
+  borne     Borne?           @relation(fields: [borneId], references: [id], onDelete: SetNull)
+  import    ImportLot        @relation(fields: [importId], references: [id])
+
+  @@unique([codeEvent, filename])
+  @@index([configEvenementId, datePhoto])
+  @@index([lieuId, datePhoto])
+  @@index([photoUuid])
+  @@index([dataStatut])
+  @@index([mediaStatut])
+  @@index([dateSave])
+  @@map("medias")
+}
+
+// État d'un fichier (JSON ou média) d'une séance PikCloud
+enum FichierStatut {
+  ABSENT // pas encore annoncé par PikCloud
+  A_TELECHARGER // URL reçue, téléchargement en attente
+  TELECHARGE // copie locale faite (média) ou JSON lu (data)
+  ERREUR // échecs répétés : visible dans la file d'erreurs, un renvoi PikCloud relance
+  PURGE // fichier supprimé par la rétention, la ligne reste
 }

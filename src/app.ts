@@ -25,6 +25,7 @@ import { demoRouter } from "./routes/demo.js";
 import { contexteRouter, evenementsLieuRouter, evenementsRouter } from "./routes/contexte.js";
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
 import { mesPhotosRouter } from "./routes/mesPhotos.js";
+import { synchroPikcloudRouter } from "./routes/synchroPikcloud.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
 import { cadresEvenementRouter } from "./routes/cadresEvenement.js";
 import { illustrationsEvenementRouter } from "./routes/illustrationsEvenement.js";
@@ -61,6 +62,9 @@ export function creerApp() {
     express.json({ limit: "2kb" }),
     mesPhotosRouter
   );
+
+  // Webhook PikCloud : médias des séances, secret partagé X-Synchro-Token, pas de CORS (machine à machine)
+  app.use("/webhooks/v1/pikcloud", express.json({ limit: "64kb" }), synchroPikcloudRouter);
 
   // Cadres du studio : rendu PNG + JSON Fabric avec ses illustrations, jusqu'à 25 Mo (lu avant la limite générale)
   app.use(["/api/lieux/:id/evenement/cadres", "/api/lieux/:id/evenements-ponctuels/:eid/cadres"], express.json({ limit: "30mb" }));
