@@ -91,7 +91,26 @@ Réponse attendue :
 
 Les deux liens sont de vrais fichiers de test sur l'environnement de dev PikCloud (événement `RTS1`, borne `S99`). Comme `RTS1` n'existe pas dans Régie, la ligne est créée sans lieu et une erreur `EVENEMENT_INCONNU` apparaît dans la page Imports.
 
-## 7. État
+## 7. Essai avec le PikCloud local de Laragon
+
+Le back PikCloud (`D:\jobs\projects\laragon\www\pikcloud\back`, branche `feature/platform-kalifun-regie`) tourne sous Laragon sur `http://apidev.pikcloud.test`. Pour qu'il appelle l'API Régie locale sans changer d'URL à chaque fois, un hôte virtuel Apache `api-regie.test` fait proxy vers `npm run dev` (port 3003) :
+
+| Élément | Où |
+|---|---|
+| vhost proxy | `laragon/etc/apache2/sites-enabled/api-regie.test.conf` (fichier manuel, Laragon ne le régénère pas), modules `proxy` et `proxy_http` activés dans `httpd.conf` |
+| nom | `127.0.0.1 api-regie.test` dans `C:\Windows\System32\drivers\etc\hosts` |
+| côté PikCloud | `pikcloud/back/.env` : `REGIE_SYNCHRO_URL=http://api-regie.test/webhooks/v1/pikcloud/medias`, `REGIE_SYNCHRO_SECRET=<même secret que l'API>` |
+| côté Régie | `.env` : `PIKCLOUD_SYNCHRO_SECRET`, `PIKCLOUD_HOTES_AUTORISES=api.pikcloud.io,apidev.pikcloud.io,apidev.pikcloud.test,localhost,127.0.0.1` (les liens locaux pointent sur `apidev.pikcloud.test`) |
+
+Déclencher un envoi depuis PikCloud pour une séance en attente de l'événement `RTS1` (borne `S99`) :
+
+```bash
+curl "http://apidev.pikcloud.test/api/files/retransfert/2026_11_03_16_10_00_00004.json/RTS1"
+```
+
+PikCloud renvoie la réponse du webhook (`data` et `photo`) ; `[]` veut dire que PikCloud n'a rien trouvé à envoyer (fichier déjà marqué transféré chez lui). Vérifier ensuite la ligne dans `medias` et les fichiers dans `MEDIAS_DIR`. Le serveur de dev ne recharge pas `.env` tout seul : après une modification, toucher un fichier de `src/` ou relancer `npm run dev`.
+
+## 8. État
 
 | Étape | État |
 |---|---|
