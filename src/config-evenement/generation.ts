@@ -1,3 +1,4 @@
+import { DOSSIER_ILLUSTRATIONS } from "./illustrations.js";
 import { readFileSync } from "node:fs";
 import type { Composition, Gabarit, Reglages } from "./reglages.js";
 import { compositionAvecCadre, zoneDessinee, type CompositionKit } from "./composition.js";
@@ -148,7 +149,15 @@ export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, 
       postalFee: euros(t.envoiPostal.fraisCents),
       // Le lieu (écran 1)
       phrasesTone: l.ton,
-      illustrationSet: l.illustrations,
+      // Illustrations (mémo du 05/11) : les photos de l'événement sont dans le zip (dossier lu en premier),
+      // la série du logiciel sert de repli ; « none » = la caméra en direct ; cases unies sans illustration
+      illustrationSet: l.illustrations === "chic" ? "chic" : l.illustrations === "camera" ? "none" : "festif",
+      ...(l.illustrations === "aucune" ? { previewFillHoles: false } : {}),
+      ...(l.illustrationsAccueil === "photos"
+        ? { welcomeIllustrationSet: DOSSIER_ILLUSTRATIONS.accueil }
+        : l.illustrationsAccueil === "festif" || l.illustrationsAccueil === "chic"
+          ? { welcomeIllustrationSet: l.illustrationsAccueil }
+          : {}),
       assistanceOwner: l.assistance.proprietaire,
       ...(l.assistance.telephone ? { assistancePhone: l.assistance.telephone } : {}),
       ...(l.assistance.email ? { assistanceEmail: l.assistance.email } : {}),

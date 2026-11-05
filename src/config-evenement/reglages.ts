@@ -16,7 +16,11 @@ export const THEMES = ["nightlife"] as const;
 export const MAX_COMPOSITIONS = 9;
 
 export const TONS = ["club", "bar", "famille", "pro"] as const;
-export const ILLUSTRATIONS = ["festif", "chic"] as const;
+// Photos d'exemple dans les cases des cadres (page de choix, cadres de l'accueil) : séries du logiciel
+// (festif, chic), photos de l'événement (zip), caméra en direct, ou cases unies. L'accueil peut avoir sa
+// propre série (« memes » : celle des cadres). Mémo ILLUSTRATIONS-ADMIN-WEB du 05/11/2026.
+export const ILLUSTRATIONS = ["festif", "chic", "photos", "camera", "aucune"] as const;
+export const ILLUSTRATIONS_ACCUEIL = ["memes", "festif", "chic", "photos"] as const;
 export const LOTS = ["free", "pct50", "pct30", "none"] as const;
 
 const texte = z.string().trim().max(200);
@@ -40,6 +44,7 @@ export const reglagesSchema = z
       dateFin: jour,
       ton: z.enum(TONS).default("club"),
       illustrations: z.enum(ILLUSTRATIONS).default("festif"),
+      illustrationsAccueil: z.enum(ILLUSTRATIONS_ACCUEIL).default("memes"),
       avisGoogleUrl: facultatif(z.url({ protocol: /^https?$/ }).max(500)),
       instagram: facultatif(texte),
       tiktok: facultatif(texte),
@@ -123,6 +128,7 @@ export function reglagesParDefaut(lieu: { enseigne: string; ville: string | null
       dateFin: fin.toISOString().slice(0, 10),
       ton: "club",
       illustrations: "festif",
+      illustrationsAccueil: "memes",
       avisGoogleUrl: null,
       instagram: null,
       tiktok: null,

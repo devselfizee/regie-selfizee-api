@@ -15,7 +15,7 @@ reglages.tarifs.herite = false;
 const base = vi.hoisted(() => {
   // Sans Keycloak : l'application prend l'utilisateur de développement (admin)
   delete process.env.KEYCLOAK_URL;
-  return { crees: [] as Record<string, unknown>[], cadres: [] as Record<string, unknown>[], audits: [] as unknown[], habituel: true };
+  return { crees: [] as Record<string, unknown>[], cadres: [] as Record<string, unknown>[], illustrations: [] as Record<string, unknown>[], audits: [] as unknown[], habituel: true };
 });
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
@@ -30,6 +30,14 @@ vi.mock("../src/lib/prisma.js", () => ({
         const e = { id: 90 + base.crees.length, ...data };
         base.crees.push(e);
         return e;
+      },
+    },
+    illustrationEvenement: {
+      findMany: async ({ where }: { where: { configEvenementId: number } }) =>
+        where.configEvenementId === 70 ? [{ cible: "cadres", forme: "carre", largeur: 800, hauteur: 800, image: new Uint8Array([1]), vignette: new Uint8Array([2]) }] : [],
+      createMany: async ({ data }: { data: Record<string, unknown>[] }) => {
+        base.illustrations.push(...data);
+        return { count: data.length };
       },
     },
     cadreEvenement: {
@@ -50,6 +58,7 @@ const api = request(creerApp());
 beforeEach(() => {
   base.crees = [];
   base.cadres = [];
+  base.illustrations = [];
   base.audits = [];
   base.habituel = true;
 });
@@ -68,6 +77,7 @@ describe("dupliquer un événement", () => {
     expect(e.reglages.tarifs.herite).toBe(false);
     expect(e.reglages.lieu).toMatchObject({ dateDebut: "2026-12-20", dateFin: "2026-12-26" });
     expect(base.cadres).toEqual([expect.objectContaining({ configEvenementId: 90, lieuId: 7, compositionId: "pola", canvas: "{}", image: "data:image/png;base64,AA" })]);
+    expect(base.illustrations).toEqual([expect.objectContaining({ configEvenementId: 90, cible: "cadres", forme: "carre" })]);
     expect(base.audits).toEqual([expect.objectContaining({ action: "CREATION", apres: expect.objectContaining({ copieDe: { id: 70, code: "RAAA", nom: null }, cadres: 1 }) })]);
   });
 

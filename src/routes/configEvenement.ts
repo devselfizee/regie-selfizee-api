@@ -195,6 +195,13 @@ configEvenementRouter.post(
       select: { compositionId: true, gabarit: true, nom: true, formatId: true, gabaritStudioId: true, nbPoses: true, canvas: true, image: true, vignette: true },
     });
     if (cadres.length) await prisma.cadreEvenement.createMany({ data: cadres.map((c) => ({ ...c, lieuId, configEvenementId: e.id })) });
+    // Les photos d'exemple suivent aussi
+    const illustrations = await prisma.illustrationEvenement.findMany({
+      where: { configEvenementId: source.id },
+      select: { cible: true, forme: true, largeur: true, hauteur: true, image: true, vignette: true },
+      orderBy: { id: "asc" },
+    });
+    if (illustrations.length) await prisma.illustrationEvenement.createMany({ data: illustrations.map((i) => ({ ...i, configEvenementId: e.id })) });
     await prisma.auditLog.create({
       data: {
         userId: req.utilisateur?.id ?? null, entite: "config_evenement", entiteId: String(e.id), action: "CREATION",
@@ -318,7 +325,12 @@ configEvenementRouter.get(
     if (!e) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
     const reglages = reglagesEffectifs(e.reglages, charge);
     const config = await configDe(charge, e.updatedAt, reglages);
-    const zip = await genererZip({ config, modele: lireModele(), reglages, cadres: await cadresDe(e.id, true), maintenant: e.updatedAt });
+    const illustrations = await prisma.illustrationEvenement.findMany({ where: { configEvenementId: e.id }, select: { cible: true, forme: true, image: true }, orderBy: { id: "asc" } });
+    const zip = await genererZip({
+      config, modele: lireModele(), reglages, cadres: await cadresDe(e.id, true),
+      illustrations: illustrations.map((i) => ({ ...i, cible: i.cible === "accueil" ? ("accueil" as const) : ("cadres" as const) })),
+      maintenant: e.updatedAt,
+    });
     res.setHeader("Content-Disposition", `attachment; filename="evenement-${e.code}.zip"`);
     res.type("application/zip").send(zip);
   })

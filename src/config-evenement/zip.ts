@@ -1,3 +1,4 @@
+import { cheminsDansLeZip, type CibleIllustration } from "./illustrations.js";
 import { readdirSync, readFileSync } from "node:fs";
 import JSZip from "jszip";
 import sharp from "sharp";
@@ -89,11 +90,13 @@ export async function assemblerApercu(apercuKit: Buffer, cadre: Buffer, roiKit: 
 }
 
 /** Le zip complet : config.json, cadres et aperçus des gabarits choisis, éléments du kit. */
-export async function genererZip({ config, modele, reglages, cadres, maintenant }: {
+export async function genererZip({ config, modele, reglages, cadres, illustrations = [], maintenant }: {
   config: Config;
   modele: Modele;
   reglages: Reglages;
   cadres: CadreZip[];
+  /** Photos d'exemple de l'événement ; seules celles des séries réglées sur « photos » sont copiées */
+  illustrations?: { cible: CibleIllustration; forme: string; image: Uint8Array }[];
   maintenant: Date;
 }): Promise<Buffer> {
   const zip = new JSZip();
@@ -120,5 +123,8 @@ export async function genererZip({ config, modele, reglages, cadres, maintenant 
     for (const nom of readdirSync(new URL(`${dossier}/`, KIT))) zip.file(`${dossier}/${nom}`, lireKit(`${dossier}/${nom}`));
   }
   for (const dossier of DOSSIERS_VIDES) zip.folder(dossier);
+  // Illustrations : copiées plutôt que référencées (la borne fonctionne hors ligne), rangées par forme
+  const retenues = illustrations.filter((i) => (i.cible === "cadres" ? reglages.lieu.illustrations : reglages.lieu.illustrationsAccueil) === "photos");
+  cheminsDansLeZip(retenues).forEach((chemin, n) => zip.file(chemin, retenues[n].image));
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
 }

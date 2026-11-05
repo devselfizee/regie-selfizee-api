@@ -1168,8 +1168,9 @@ model ConfigEvenement {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  lieu   Lieu             @relation(fields: [lieuId], references: [id], onDelete: Cascade)
-  cadres CadreEvenement[]
+  lieu          Lieu                    @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  cadres        CadreEvenement[]
+  illustrations IllustrationEvenement[]
 
   @@index([lieuId])
   @@map("config_evenements")
@@ -1414,4 +1415,26 @@ model EmplacementConcurrent {
   @@index([concurrentId])
   @@index([typeLieuId])
   @@map("emplacements_concurrents")
+}
+
+// Photos d'exemple d'un événement pour les cases des cadres de la borne (kit nightlife) : série des cadres
+// ou de l'accueil, copiées dans le zip (src/config-evenement/illustrations.ts)
+model IllustrationEvenement {
+  id                Int      @id @default(autoincrement())
+  configEvenementId Int      @map("config_evenement_id")
+  // cadres | accueil
+  cible             String   @db.VarChar(10)
+  // carre | portrait | paysage, d'après le ratio
+  forme             String   @db.VarChar(10)
+  largeur           Int
+  hauteur           Int
+  // JPEG d'au plus 1200 px de côté, et sa vignette pour l'admin
+  image             Bytes
+  vignette          Bytes
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  evenement ConfigEvenement @relation(fields: [configEvenementId], references: [id], onDelete: Cascade)
+
+  @@index([configEvenementId])
+  @@map("illustrations_evenement")
 }
