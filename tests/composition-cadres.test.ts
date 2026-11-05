@@ -137,7 +137,8 @@ describe("bandelette dessinée sur la page entière (bande + carte souvenir)", (
     const c = compositionAvecCadre(kit.bandelette, pageEntiere([...toutes, qr, code, dateHeure, heure]), zoneBc);
     expect(c.qrHoles).toEqual([{ x: 932, y: 1520, width: 200, height: 200 }]);
     expect(c.sessionCode).toEqual({ x: 656, y: 1770, width: 154, height: 28, rotation: 0, color: "#f0c400", align: "AlignLeft", prefix: true });
-    // Mémo de la borne du 03/11 : police Qt, position, alignement, dateFormat DD/MM/YYYY ; pas de textKey
+    // Mémo de la borne du 03/11 : police Qt, position, alignement, dateFormat DD/MM/YYYY ; pas de textKey ;
+    // pas de `rotation` pour un texte droit
     expect(c.dynamicTexts).toEqual([
       {
         font: "Figtree,-1,32,5,700,0,0,0,0,0,0,0,0,0,0,1",
@@ -146,9 +147,10 @@ describe("bandelette dessinée sur la page entière (bande + carte souvenir)", (
       },
       {
         font: "Inter,-1,24,5,400,1,0,0,0,0,0,0,0,0,0,1",
-        // Dépassait la page de 40 px : ramené dans la planche
-        position: { x: 1080, y: 280, width: 160, height: 40 },
-        color: "#ffffff", alignment: ["AlignVCenter", "AlignLeft"], dateFormat: "HH:mm",
+        // Tournée de 90° (rotation des dynamicTexts, borne du 05/11) : rectangle visible, haut et étroit,
+        // centré au même endroit (1180, 300) ; se lit de haut en bas
+        position: { x: 1160, y: 200, width: 40, height: 200 },
+        color: "#ffffff", alignment: ["AlignVCenter", "AlignLeft"], rotation: 90, dateFormat: "HH:mm",
       },
     ]);
   });
@@ -236,6 +238,24 @@ describe("photo 10x15 paysage", () => {
     const c = compositionAvecCadre(kit.paysage, paysage);
     expect(c.holes).toEqual([{ shootId: 0, x: 80, y: 60, width: 1200, height: 1120 }]);
     expect(c.dynamicTexts).toEqual([expect.objectContaining({ position: { x: 1360, y: 1120, width: 400, height: 40 }, dateFormat: "DD/MM/YYYY" })]);
+  });
+
+  it("date tournée (exemple de la borne) : le long du bord droit, se lit de bas en haut", () => {
+    const date = (angle: number) =>
+      JSON.stringify({
+        width: 922,
+        height: 620,
+        objects: [
+          { type: "Rect", originX: "left", originY: "top", left: 0, top: 0, width: 922, height: 620, _isShootZone: true, _shootIndex: 1 },
+          { type: "Textbox", originX: "center", originY: "center", left: 885, top: 310, width: 320, height: 30, angle, fontSize: 22, fill: "white", textAlign: "center", fontFamily: "Segoe UI", fontWeight: "bold", _zoneBorne: "date-heure" },
+        ],
+      });
+    // -90 (= 270) : rectangle visible haut et étroit, centré sur (1770, 620)
+    expect(compositionAvecCadre(kit.paysage, date(-90)).dynamicTexts).toEqual([
+      { font: "Segoe UI,-1,44,5,700,0,0,0,0,0,0,0,0,0,0,1", position: { x: 1740, y: 300, width: 60, height: 640 }, color: "white", alignment: ["AlignVCenter", "AlignHCenter"], rotation: 270, dateFormat: "DD/MM/YYYY HH:mm" },
+    ]);
+    // Angle libre : transmis tel quel, la boîte de la ligne n'est pas échangée (puis ramenée dans la planche)
+    expect(compositionAvecCadre(kit.paysage, date(45)).dynamicTexts).toEqual([expect.objectContaining({ position: { x: 1450, y: 590, width: 394, height: 60 }, rotation: 45 })]);
   });
 
   it("zip : cadre du studio en 1844×1240, aperçu refait", async () => {

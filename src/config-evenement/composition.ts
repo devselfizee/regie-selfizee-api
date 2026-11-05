@@ -51,6 +51,11 @@ export interface TexteDynamique {
   position: { x: number; y: number; width: number; height: number };
   color: string;
   alignment: ["AlignVCenter", Alignement];
+  /**
+   * Degrés dans le sens horaire, autour du centre de `position` (borne, 05/11/2026) ; absent = 0. 90 se lit
+   * de haut en bas, 270 de bas en haut. `position` reste le rectangle visible sur la planche.
+   */
+  rotation?: number;
   /** Date de la prise de vue : DD/MM/YYYY, HH:mm… (MM = mois, mm = minutes) */
   dateFormat: string;
 }
@@ -200,15 +205,23 @@ export function zonesBorneDuCadre(canvas: string, zone: Roi) {
       if (cote >= 1 && dans({ x, y, width: cote, height: cote }, zone)) qrHoles.push({ x, y, width: cote, height: cote });
     } else if (o._zoneBorne === "code-seance") sessionCode ??= { x: b.x, y: b.y, width: b.width, height: b.height, rotation: b.rotation, color: couleur, align, prefix: true };
     else if (FORMATS_DATE[o._zoneBorne]) {
-      // Pas de rotation dans le format de la borne (le studio la bloque sur ces zones) ; rectangle ramené
-      // dans la zone dessinée (x, y ≥ 0)
-      const x = borne(b.x, zone.x, zone.x + zone.width - 1);
-      const y = borne(b.y, zone.y, zone.y + zone.height - 1);
+      // Rotation (borne, 05/11/2026) : sens horaire autour du centre. `position` = le rectangle visible sur
+      // la planche : à 90° et 270°, largeur et hauteur de la ligne échangées autour du même centre (les
+      // angles libres gardent la boîte de la ligne). Rectangle ramené dans la zone dessinée (x, y ≥ 0).
+      let rotation = Math.round((((b.rotation % 360) + 360) % 360) * 100) / 100;
+      const quart = [0, 90, 180, 270, 360].find((q) => Math.abs(rotation - q) < 0.5);
+      if (quart !== undefined) rotation = quart % 360;
+      const debout = rotation === 90 || rotation === 270;
+      const l = debout ? b.height : b.width;
+      const h = debout ? b.width : b.height;
+      const x = borne(Math.round(b.x + b.width / 2 - l / 2), zone.x, zone.x + zone.width - 1);
+      const y = borne(Math.round(b.y + b.height / 2 - h / 2), zone.y, zone.y + zone.height - 1);
       dynamicTexts.push({
         font: policeQt(String(o.fontFamily ?? ""), (o.fontSize ?? 0) * (o.scaleY ?? 1) * lu.sy, graisse(o.fontWeight), o.fontStyle === "italic"),
-        position: { x, y, width: borne(b.width, 1, zone.x + zone.width - x), height: borne(b.height, 1, zone.y + zone.height - y) },
+        position: { x, y, width: borne(l, 1, zone.x + zone.width - x), height: borne(h, 1, zone.y + zone.height - y) },
         color: couleur,
         alignment: ["AlignVCenter", align],
+        ...(rotation ? { rotation } : {}),
         dateFormat: FORMATS_DATE[o._zoneBorne],
       });
     }
