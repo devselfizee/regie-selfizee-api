@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable, Transform } from "node:stream";
@@ -67,6 +67,27 @@ export async function ecrireBuffer(relatif: string, contenu: Buffer): Promise<vo
 export function lireFlux(relatif: string): Readable {
   return createReadStream(cheminAbsolu(relatif));
 }
+
+export function lireBuffer(relatif: string): Promise<Buffer> {
+  return readFile(cheminAbsolu(relatif));
+}
+
+const MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+};
+export const EXTENSIONS_VIDEO = new Set(["mp4", "mov"]);
+
+/** Extension (minuscule, sans point) d'un chemin de stockage. */
+export const extensionDuChemin = (chemin: string) => /\.([a-z0-9]+)$/i.exec(chemin)?.[1]?.toLowerCase() ?? "";
+
+/** Type MIME d'un fichier du stockage d'après son extension. */
+export const mimeDe = (chemin: string) => MIME[extensionDuChemin(chemin)] ?? "application/octet-stream";
 
 export async function existe(relatif: string): Promise<boolean> {
   return stat(cheminAbsolu(relatif)).then(() => true, () => false);

@@ -105,7 +105,7 @@ const filtreBorne = (q: unknown) => (typeof q === "string" && q.trim() ? q.trim(
 importsRouter.get("/journal", async (req, res, next) => {
   try {
     const borne = filtreBorne(req.query.borne);
-    const type = ["TRANSACTIONS", "HEARTBEAT", "RELEVE_MONETIQUE", "PARCOURS"].includes(String(req.query.type)) ? (String(req.query.type) as ImportType) : undefined;
+    const type = ["TRANSACTIONS", "HEARTBEAT", "RELEVE_MONETIQUE", "PARCOURS", "CODES", "MEDIAS"].includes(String(req.query.type)) ? (String(req.query.type) as ImportType) : undefined;
     const statut = ["OK", "PARTIEL", "REJETE"].includes(String(req.query.statut)) ? (String(req.query.statut) as ImportStatut) : undefined;
     const page = Math.max(1, Number(req.query.page) || 1);
     const where: Prisma.ImportLotWhereInput = {

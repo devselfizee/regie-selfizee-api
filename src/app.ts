@@ -26,6 +26,7 @@ import { contexteRouter, evenementsLieuRouter, evenementsRouter } from "./routes
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
 import { mesPhotosRouter } from "./routes/mesPhotos.js";
 import { synchroPikcloudRouter } from "./routes/synchroPikcloud.js";
+import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
 import { cadresEvenementRouter } from "./routes/cadresEvenement.js";
 import { illustrationsEvenementRouter } from "./routes/illustrationsEvenement.js";
@@ -99,6 +100,9 @@ export function creerApp() {
   app.use("/api/illustrations-series", illustrationsSeriesRouter);
   app.use("/api/lieux", suiviLieuRouter);
   app.use("/api/lieux", tarifsLieuRouter);
+  // Galerie des médias PikCloud du lieu (droits vérifiés dans les routes : lieux du commercial, lieu du partenaire)
+  app.use("/api/lieux", mediasLieuRouter);
+  app.use("/api/medias", mediasRouter);
   app.use("/api/tarifs", tarifsRouter);
   app.use("/api/commentaires", exiger("ADMIN", "COMMERCIAL", "TECHNICIEN"), commentairesRouter);
   app.use("/api/evenements", evenementsRouter);

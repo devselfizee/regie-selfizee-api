@@ -117,4 +117,4 @@ PikCloud renvoie la réponse du webhook (`data` et `photo`) ; `[]` veut dire que
 | Table `medias`, réception, idempotence, codes de réponse | en place, 13 tests |
 | Worker de téléchargement, lecture du JSON, vignettes, vérification des liens | en place, 14 tests |
 | Rétention et purge | en place, durée à fixer par Selfizee (`MEDIAS_RETENTION_JOURS`) |
-| Galerie (API et front) | à faire |
+| Galerie : `GET /api/lieux/:id/medias`, `/medias/resume`, `GET /api/medias/:uuid`, `/fichier`, `/vignette` ; onglet Galerie de la fiche lieu | en place, 8 tests |
