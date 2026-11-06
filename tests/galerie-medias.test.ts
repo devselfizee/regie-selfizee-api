@@ -193,7 +193,7 @@ describe("galerie : un média", () => {
     expect(r.body.vente).toMatchObject({ montantTtcCents: 500, statut: "ACCEPTEE", moyenPaiement: "CB", nbTirages: 2 });
     expect(r.body.parcours).toBeNull();
     // Page souvenir : base du QR (défaut sans SOUVENIR_QR_BASE_URL) + code d'événement + photo_uuid
-    expect(r.body.pageSouvenir).toBe("https://myevent.selfizee.fr/p/RAAA3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53");
+    expect(r.body.pageSouvenir).toBe("https://myevent.selfizee.fr/p/RAAA-3f9c2a7e5b1d4c8a9e217d4b0c6a1f53");
     expect((await admin.get(`/api/medias/${ids.attente5}`).expect(200)).body.pageSouvenir).toBeNull();
     expect((await admin.get(`/api/medias/${ids.multi2}`).expect(200)).body.vente).toBeNull();
   });

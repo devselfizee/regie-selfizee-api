@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { reglagesParDefaut } from "../src/config-evenement/reglages.js";
 import { ecrireBuffer } from "../src/lib/stockage.js";
 import { ecrireJeton, lireJeton } from "../src/souvenir/jeton.js";
+import { baseQr } from "../src/config-evenement/generation.js";
 
 // API de la page souvenir : séance par jeton (événement, état, visuels signés), code de séance, fichiers signés.
 // Base simulée : les médias sont de vrais fichiers sur un dossier temporaire.
@@ -114,6 +115,16 @@ describe("jeton de la page souvenir", () => {
     expect(lireJeton(UUID.replace(/-/g, ""))).toBeNull(); // sans code
     expect(lireJeton(`R/../-${UUID}`)).toBeNull();
     expect(ecrireJeton("RA7K", UUID)).toBe(jeton(UUID));
+  });
+});
+
+describe("base du lien de la page souvenir (SOUVENIR_QR_BASE_URL)", () => {
+  it("garde une base avec #TOKEN#, complète une adresse nue par /p/#TOKEN#, défaut myevent", () => {
+    expect(baseQr("https://souvenir.orkessidev.com/p/#TOKEN#")).toBe("https://souvenir.orkessidev.com/p/#TOKEN#");
+    expect(baseQr("https://souvenir.orkessidev.com/")).toBe("https://souvenir.orkessidev.com/p/#TOKEN#");
+    expect(baseQr(" https://souvenir.orkessidev.com ")).toBe("https://souvenir.orkessidev.com/p/#TOKEN#");
+    expect(baseQr(undefined)).toBe("https://myevent.selfizee.fr/p/#TOKEN#");
+    expect(baseQr("")).toBe("https://myevent.selfizee.fr/p/#TOKEN#");
   });
 });
 

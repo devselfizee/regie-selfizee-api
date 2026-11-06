@@ -1,6 +1,7 @@
 import { DOSSIER_ILLUSTRATIONS } from "./illustrations.js";
 import { readFileSync } from "node:fs";
 import type { Composition, Gabarit, Reglages } from "./reglages.js";
+import { ecrireJeton } from "../souvenir/jeton.js";
 import { compositionAvecCadre, zoneDessinee, type CompositionKit } from "./composition.js";
 
 // Génère le config.json chargé par la borne pour un lieu en régie (CDC page souvenir § 13.4).
@@ -20,8 +21,19 @@ let modele: Modele | null = null;
 export const lireModele = (): Modele =>
   (modele ??= JSON.parse(readFileSync(new URL("../../modeles/evenement-nightlife.json", import.meta.url), "utf8")) as Modele);
 
-/** Base du lien imprimé en QR (#TOKEN# = code d'événement + photo_uuid de la séance). */
-export const QR_BASE_URL = process.env.SOUVENIR_QR_BASE_URL || "https://myevent.selfizee.fr/p/#TOKEN#";
+/**
+ * Base du lien imprimé en QR (#TOKEN# = code d'événement, tiret, photo_uuid de la séance), d'après SOUVENIR_QR_BASE_URL.
+ * Une adresse donnée sans #TOKEN# (« https://souvenir.exemple.com/ ») est complétée par le chemin de la page, /p/#TOKEN#.
+ */
+export function baseQr(valeur: string | undefined): string {
+  const v = valeur?.trim();
+  if (!v) return "https://myevent.selfizee.fr/p/#TOKEN#";
+  return v.includes("#TOKEN#") ? v : `${v.replace(/\/+$/, "")}/p/#TOKEN#`;
+}
+export const QR_BASE_URL = baseQr(process.env.SOUVENIR_QR_BASE_URL);
+
+/** Lien de la page souvenir d'une séance : la base du QR avec le jeton `CODE-photo_uuid`. */
+export const lienPageSouvenir = (code: string, photoUuid: string) => QR_BASE_URL.replace("#TOKEN#", ecrireJeton(code, photoUuid));
 
 export interface HoraireOuverture {
   jourSemaine: number; // 1 = lundi … 7 = dimanche

@@ -1,4 +1,4 @@
-import { QR_BASE_URL } from "../config-evenement/generation.js";
+import { lienPageSouvenir } from "../config-evenement/generation.js";
 
 // Recherche des séances pour la page publique « Mes photos » (CDC page souvenir § 4.7).
 // Les séances et les e-mails des invités sont chez PikCloud : tant que son API n'est pas
@@ -21,7 +21,7 @@ export const CODE_EXEMPLE = "K7PX2M";
 /** Lien de la page souvenir d'une séance trouvée par son code (90 derniers jours), ou null. */
 export async function pageSouvenirDuCode(code: string): Promise<string | null> {
   if (simulation()) {
-    return code === CODE_EXEMPLE ? QR_BASE_URL.replace("#TOKEN#", `FJT5${"0".repeat(32)}`) : null;
+    return code === CODE_EXEMPLE ? lienPageSouvenir("FJT5", "0".repeat(32)) : null;
   }
   // À brancher sur l'API PikCloud (résolution session_code → photo_uuid), dès que son contrat est connu
   return null;
