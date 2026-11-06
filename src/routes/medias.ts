@@ -8,6 +8,7 @@ import { exiger, verifierAccesLieu, type UtilisateurRequest } from "../middlewar
 import { EXTENSIONS_VIDEO, extensionDuChemin, lireBuffer, lireFlux, mimeDe } from "../lib/stockage.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
 import { declencherTelechargement } from "../synchro-pikcloud/telechargement.js";
+import { QR_BASE_URL } from "../config-evenement/generation.js";
 
 // Galerie des médias reçus de PikCloud (docs/synchronisation-pikcloud.md) : les photos et vidéos des séances
 // d'un lieu, par événement. Ce sont des photos de personnes : admin, commercial sur ses lieux, partenaire sur
@@ -210,9 +211,12 @@ mediasRouter.get(
           prisma.parcours.findFirst({ where: { photoUuid: m.photoUuid }, select: { id: true, issue: true, dureeS: true, tirages: true } }),
         ])
       : [null, null];
+    // Page souvenir de la séance : la base du QR imprimé, avec le jeton code d'événement + photo_uuid tel que la borne l'écrit
+    const uuidBorne = typeof (m.brut as { photo_uuid?: unknown } | null)?.photo_uuid === "string" ? (m.brut as { photo_uuid: string }).photo_uuid : m.photoUuid;
     res.json({
       ...(await versClient(m)),
       photoUuid: m.photoUuid,
+      pageSouvenir: uuidBorne ? QR_BASE_URL.replace("#TOKEN#", `${m.codeEvent}${uuidBorne}`) : null,
       dateSave: m.dateSave,
       lieuId: m.lieuId,
       sha256: m.sha256,
