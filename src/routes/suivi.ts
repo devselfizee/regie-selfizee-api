@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { envoyerEmail } from "../lib/envoi.js";
-import { envoyerNotificationPlateforme } from "../lib/notificationsPlateforme.js";
+import { envoyerNotificationPlateforme, idHub } from "../lib/notificationsPlateforme.js";
 import { verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { LIBELLES } from "../alertes/notifications.js";
 import { titreLotCodes } from "../codes/codes.js";
@@ -51,11 +51,11 @@ const selectCommentaire = {
 } as const;
 
 /** Prévient les personnes nouvellement mentionnées : e-mail, et cloche de la plateforme Konitys */
-async function notifierMentions(lieuId: number, auteur: { prenom: string; nom: string }, texte: string, userIds: number[], commentaireId: number) {
+async function notifierMentions(lieuId: number, auteur: { prenom: string; nom: string }, texte: string, userIds: number[], commentaireId: number, autorisation: string | undefined) {
   if (!userIds.length) return;
   const [lieu, users] = await Promise.all([
     prisma.lieu.findUnique({ where: { id: lieuId }, select: { enseigne: true } }),
-    prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, email: true, plateformeUserId: true } }),
+    prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, email: true, keycloakSub: true, plateformeUserId: true } }),
   ]);
   const lien = APP_URL() ? `${APP_URL()}/lieux/${lieuId}?onglet=suivi` : null;
   const sujet = `${nomComplet(auteur)} vous a mentionné · ${lieu?.enseigne ?? "lieu"}`;
@@ -66,18 +66,18 @@ async function notifierMentions(lieuId: number, auteur: { prenom: string; nom: s
   for (const u of users) {
     const erreur = await envoyerEmail(u.email, sujet, html).catch((e: Error) => e.message);
     if (erreur) console.log(`[mention] e-mail non envoyé à ${u.email} : ${erreur}`);
-    // La cloche : seulement pour qui s'est connecté depuis (son identifiant plateforme est alors connu)
-    if (u.plateformeUserId) {
-      const echec = await envoyerNotificationPlateforme({
-        destinataire: u.plateformeUserId,
-        titre: sujet,
-        contenu: texte.length > 300 ? `${texte.slice(0, 297)}…` : texte,
-        cle: `regie-mention-${commentaireId}-${u.id}`,
+    // La cloche de la topbar : ID Hub tiré du sub Keycloak (compte fédéré), sinon celui relevé à la connexion.
+    // Envoyée avec le jeton de l'auteur, sans attendre : une notification ne bloque jamais le commentaire.
+    const destinataire = idHub(u.keycloakSub) ?? u.plateformeUserId;
+    if (destinataire)
+      void envoyerNotificationPlateforme(autorisation, {
+        destinataire,
+        titre: `${nomComplet(auteur)} vous a mentionné`,
+        contenu: `${lieu?.enseigne ?? "Lieu"} : ${texte.length > 280 ? `${texte.slice(0, 277)}…` : texte}`,
+        cle: `mention-${commentaireId}-${u.id}`,
         entityId: String(lieuId),
         ...(lien ? { url: lien } : {}),
-      });
-      if (echec) console.log(`[mention] notification non envoyée à ${u.email} : ${echec}`);
-    }
+      }).then((echec) => echec && console.log(`[mention] notification non envoyée à ${u.email} : ${echec}`));
   }
 }
 
@@ -105,7 +105,7 @@ suiviLieuRouter.post(
       data: { lieuId, auteurId: req.utilisateur!.id, texte: c.texte, mentions: { create: ids.map((userId) => ({ userId })) } },
       select: selectCommentaire,
     });
-    await notifierMentions(lieuId, req.utilisateur!, c.texte, ids, cree.id);
+    await notifierMentions(lieuId, req.utilisateur!, c.texte, ids, cree.id, req.header("authorization"));
     res.status(201).json(cree);
   })
 );
@@ -285,7 +285,7 @@ commentairesRouter.put(
       if (nouveaux.length) await db.mentionCommentaire.createMany({ data: nouveaux.map((userId) => ({ commentaireId: ancien.id, userId })) });
       return db.commentaireLieu.update({ where: { id: ancien.id }, data: { texte: c.texte, modifieLe: new Date() }, select: selectCommentaire });
     });
-    await notifierMentions(ancien.lieuId, req.utilisateur!, c.texte, nouveaux, ancien.id);
+    await notifierMentions(ancien.lieuId, req.utilisateur!, c.texte, nouveaux, ancien.id, req.header("authorization"));
     res.json(maj);
   })
 );

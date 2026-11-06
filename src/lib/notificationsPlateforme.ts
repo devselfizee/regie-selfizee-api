@@ -1,51 +1,54 @@
-// Notifications de la plateforme Konitys (la cloche de l'en-tête commun) : POST /api/notifications de la passerelle,
-// authentifié par ws_token. Sans jeton configuré, rien n'est envoyé (les e-mails, eux, partent quand même).
-const URL_NOTIFICATIONS = () => (process.env.KONITYS_NOTIFICATIONS_URL || "https://plateform-gateway.orkessidev.com/api/notifications").trim();
-const JETON = () => (process.env.KONITYS_WS_TOKEN ?? "").trim();
-// Origine affichée par la plateforme ; « regie » par défaut, réglable si la plateforme impose une liste
-const ORIGINE = () => (process.env.KONITYS_NOTIFICATIONS_ORIGINE || "regie").trim();
+// Notifications de la cloche de la topbar Konitys (guide « notifications topbar pour apps », 06/11/2026) :
+// POST {KONITYS_GATEWAY_URL}/api/notifications, authentifié par le jeton Keycloak de l'utilisateur qui agit (relayé).
+// Jamais bloquant : une notification ne fait pas échouer l'action, on journalise seulement.
+const GATEWAY = () => (process.env.KONITYS_GATEWAY_URL || "https://plateform-gateway.orkessi.com").trim().replace(/\/+$/, "");
+// Slug de l'app, filtre côté Hub
+const ORIGINE = () => (process.env.KONITYS_APP_SLUG || "regie").trim();
 
-export const notificationsPlateformeConfigurees = () => !!JETON();
+/** ID Hub d'un utilisateur fédéré : dernier segment du sub Keycloak « f:<componentId>:<idHub> » ; null sinon */
+export function idHub(sub: string | null | undefined): number | null {
+  if (!sub?.startsWith("f:")) return null;
+  const id = Number(sub.split(":").pop());
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
 
 export interface NotificationPlateforme {
-  /** Identifiant de l'utilisateur sur la plateforme (pas celui de la Régie) */
+  /** ID de l'utilisateur dans le Hub (pas celui de la Régie) */
   destinataire: number;
   titre: string;
   contenu?: string;
-  /** Clé unique : la plateforme ignore un doublon */
+  /** Étiquette libre : ne déduplique pas côté Hub */
   cle?: string;
   entityId?: string;
+  /** URL absolue ouverte au clic */
   url?: string;
 }
 
-/** Corps de la requête, au format de la plateforme */
+/** Corps de la requête, au format du Gateway */
 export function corpsNotification(n: NotificationPlateforme, origine = ORIGINE()) {
   return {
     titre: n.titre.slice(0, 255),
-    ...(n.contenu ? { contenu: n.contenu } : {}),
-    ...(n.cle ? { cle: n.cle } : {}),
+    contenu: n.contenu ?? "",
+    url: n.url ?? "",
     origine,
-    ...(n.entityId ? { entity_id: n.entityId } : {}),
-    ...(n.url ? { url: n.url } : {}),
+    entity_id: n.entityId ?? "",
+    cle: n.cle ?? "",
     recipient_type: "user",
     recipient_user_id: n.destinataire,
   };
 }
 
-/** Envoie une notification ; rend l'erreur en texte (null si envoyée ou si non configuré), sans jamais lever */
-export async function envoyerNotificationPlateforme(n: NotificationPlateforme): Promise<string | null> {
-  if (!notificationsPlateformeConfigurees()) return null;
-  const url = new URL(URL_NOTIFICATIONS());
-  url.searchParams.set("ws_token", JETON());
+/** Envoie la notification avec le jeton (« Bearer … ») de l'utilisateur qui agit ; rend l'erreur en texte, null si envoyée */
+export async function envoyerNotificationPlateforme(autorisation: string | undefined, n: NotificationPlateforme): Promise<string | null> {
+  if (!autorisation?.startsWith("Bearer ")) return "pas de jeton utilisateur à relayer";
   try {
-    const r = await fetch(url, {
+    const r = await fetch(`${GATEWAY()}/api/notifications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: autorisation },
       body: JSON.stringify(corpsNotification(n)),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(5000),
     });
-    if (!r.ok) return `HTTP ${r.status} : ${(await r.text()).slice(0, 200)}`;
-    return null;
+    return r.ok ? null : `HTTP ${r.status} : ${(await r.text()).slice(0, 200)}`;
   } catch (e) {
     return (e as Error).message;
   }

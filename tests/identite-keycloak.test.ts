@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { identiteKeycloak, idPlateforme, urlPhotoKonitys } from "../src/middleware/utilisateur.js";
-import { corpsNotification } from "../src/lib/notificationsPlateforme.js";
+import { corpsNotification, idHub } from "../src/lib/notificationsPlateforme.js";
 
 describe("identité recopiée de Keycloak", () => {
   it("reprend nom, prénom et téléphone du jeton", () => {
@@ -39,10 +39,17 @@ describe("notifications de la plateforme", () => {
     expect(idPlateforme({ data: {} })).toBeNull();
   });
 
+  it("tire l'ID Hub du sub Keycloak d'un compte fédéré", () => {
+    expect(idHub("f:3c1e2a:141")).toBe(141);
+    expect(idHub("6f1c2d3e-uuid-non-federe")).toBeNull();
+    expect(idHub(null)).toBeNull();
+  });
+
   it("construit le corps attendu par POST /api/notifications", () => {
-    expect(corpsNotification({ destinataire: 141, titre: "Seb vous a mentionné", cle: "regie-mention-1-2", entityId: "7", url: "https://x/lieux/7" }, "regie")).toEqual({
+    expect(corpsNotification({ destinataire: 141, titre: "Seb vous a mentionné", cle: "mention-1-2", entityId: "7", url: "https://x/lieux/7" }, "regie")).toEqual({
       titre: "Seb vous a mentionné",
-      cle: "regie-mention-1-2",
+      contenu: "",
+      cle: "mention-1-2",
       origine: "regie",
       entity_id: "7",
       url: "https://x/lieux/7",
