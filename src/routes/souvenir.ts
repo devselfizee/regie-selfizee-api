@@ -8,6 +8,9 @@ import { cheminAbsolu, extensionDuChemin, lireFlux } from "../lib/stockage.js";
 import { normaliserCode } from "../mes-photos/seances.js";
 import { lireJeton, signatureValide } from "../souvenir/jeton.js";
 import { COTE_WEB, jetonDuCodeSeance, lireSeanceSouvenir } from "../souvenir/seance.js";
+import {
+  demanderLien, EVENEMENTS_JOURNAL, gratter, inscription, inscrire, journaliserDepuisPage, mesSeances, RefusSouvenir, renvoyer, reveler,
+} from "../souvenir/donnees.js";
 
 // API de la page souvenir (projet souvenirs, myevent.selfizee.fr), montée sous /souvenir/v1.
 // - Lecture d'une séance et résolution d'un code : appelées par le serveur de la page souvenir, jamais par le
@@ -60,6 +63,125 @@ souvenirRouter.post(
     const token = normalise ? await jetonDuCodeSeance(normalise) : null;
     if (!token) throw new HttpError(404, "CODE_INCONNU");
     res.json({ token });
+  })
+);
+
+// ─── Ce que l'invité écrit (CDC § 4.2 à 4.8) : appels du serveur de la page souvenir, avec le secret ───
+
+/** Le jeton de la route, ou 404. */
+function jetonDe(req: Request) {
+  const j = lireJeton(String(req.params.token));
+  if (!j) throw new HttpError(404, "INTROUVABLE");
+  return j;
+}
+const idInscription = (req: Request) => {
+  const id = z.uuid().safeParse(req.params.id);
+  if (!id.success) throw new HttpError(404, "INTROUVABLE");
+  return id.data;
+};
+/** Refus métier (limite, page expirée…) : 422 avec le message à montrer à l'invité. */
+const refus = (e: unknown) => {
+  if (e instanceof RefusSouvenir) throw new HttpError(422, "REFUS", e.message);
+  throw e;
+};
+
+const inscriptionSchema = z.object({
+  email: z.email().max(200).transform((v) => v.trim().toLowerCase()),
+  prenom: z.string().trim().max(60).optional(),
+  estMoi: z.literal(true),
+  optinLieu: z.boolean(),
+  optinSelfizee: z.boolean(),
+  textes: z.array(z.string().max(300)).min(1).max(5),
+  ip: z.string().max(64),
+  userAgent: z.string().max(1000).default(""),
+});
+
+// POST /souvenir/v1/seances/:token/inscriptions — « Recevoir mes photos » ; même adresse : renvoi du mail
+souvenirRouter.post(
+  "/seances/:token/inscriptions",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    const j = jetonDe(req);
+    const d = inscriptionSchema.parse(req.body);
+    res.status(201).json(await inscrire(j, d).catch(refus));
+  })
+);
+
+// GET /souvenir/v1/seances/:token/inscriptions/:id — l'inscription (envois, carte) ; la livraison différée part si la photo est arrivée
+souvenirRouter.get(
+  "/seances/:token/inscriptions/:id",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    const i = await inscription(jetonDe(req), idInscription(req));
+    if (!i) throw new HttpError(404, "INTROUVABLE");
+    res.setHeader("Cache-Control", "no-store");
+    res.json(i);
+  })
+);
+
+// POST /souvenir/v1/seances/:token/inscriptions/:id/renvoi — « Renvoyer » (3 par heure)
+souvenirRouter.post(
+  "/seances/:token/inscriptions/:id/renvoi",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    await renvoyer(jetonDe(req), idInscription(req)).catch(refus);
+    res.status(204).end();
+  })
+);
+
+// POST /souvenir/v1/seances/:token/inscriptions/:id/carte — tire la carte à gratter (idempotent)
+souvenirRouter.post(
+  "/seances/:token/inscriptions/:id/carte",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    res.json(await gratter(jetonDe(req), idInscription(req)).catch(refus));
+  })
+);
+
+// POST /souvenir/v1/seances/:token/inscriptions/:id/revelation — la carte a été grattée
+souvenirRouter.post(
+  "/seances/:token/inscriptions/:id/revelation",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    await reveler(jetonDe(req), idInscription(req));
+    res.status(204).end();
+  })
+);
+
+// POST /souvenir/v1/liens { email } — lien « Toutes tes photos » ; toujours 202 (adresse connue ou non). Le lien part
+// par le mail 3 (fournisseur pas encore branché) ; en recette (SOUVENIR_SEANCES_TEST=1), il est rendu au serveur de la page.
+souvenirRouter.post(
+  "/liens",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    const { email } = z.object({ email: z.email().max(200).transform((v) => v.trim().toLowerCase()) }).parse(req.body);
+    const lien = await demanderLien(email);
+    res.status(202).json(lien && process.env.SOUVENIR_SEANCES_TEST === "1" ? { recette: lien } : {});
+  })
+);
+
+// GET /souvenir/v1/liens/:jeton — l'adresse et les jetons des séances qui lui ont été livrées ; 404 si expiré ou déjà consommé
+souvenirRouter.get(
+  "/liens/:jeton",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    const jeton = String(req.params.jeton);
+    const r = /^[A-Za-z0-9_-]{20,80}$/.test(jeton) ? await mesSeances(jeton) : null;
+    if (!r) throw new HttpError(404, "INTROUVABLE");
+    res.setHeader("Cache-Control", "no-store");
+    res.json(r);
+  })
+);
+
+// POST /souvenir/v1/journal { evenement, token?, details? } — compteur de la page (scan, gestes), sans donnée personnelle
+souvenirRouter.post(
+  "/journal",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    const b = z.object({ evenement: z.enum(EVENEMENTS_JOURNAL), token: z.string().max(80).nullish(), details: z.record(z.string(), z.unknown()).optional() }).parse(req.body);
+    const j = b.token ? lireJeton(b.token) : null;
+    if (!b.token || j) await journaliserDepuisPage(b.evenement, j, b.details);
+    res.status(204).end();
   })
 );
 

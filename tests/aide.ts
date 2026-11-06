@@ -8,6 +8,9 @@ export const exemple = (nom: string) =>
 export async function viderBase() {
   await prisma.$transaction([
     prisma.auditLog.deleteMany(),
+    prisma.souvenirJournal.deleteMany(),
+    prisma.souvenirLien.deleteMany(),
+    prisma.souvenirInscription.deleteMany(),
     prisma.media.deleteMany(),
     prisma.reversementAjustement.deleteMany(),
     prisma.reversement.deleteMany(),

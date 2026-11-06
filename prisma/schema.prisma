@@ -217,6 +217,7 @@ model Lieu {
   utilisationsCodeRemise UtilisationCodeRemise[]
   grilleTarifs           GrilleTarifs?
   medias                 Media[]
+  souvenirInscriptions   SouvenirInscription[]
 
   @@index([typeLieuId])
   @@index([commercialId])
@@ -1177,10 +1178,11 @@ model ConfigEvenement {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  lieu          Lieu                    @relation(fields: [lieuId], references: [id], onDelete: Cascade)
-  cadres        CadreEvenement[]
-  illustrations IllustrationEvenement[]
-  medias        Media[]
+  lieu                 Lieu                    @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  cadres               CadreEvenement[]
+  illustrations        IllustrationEvenement[]
+  medias               Media[]
+  souvenirInscriptions SouvenirInscription[]
 
   @@index([lieuId])
   @@map("config_evenements")
@@ -1327,8 +1329,9 @@ model CodeRemise {
   utilise     Int       @default(0)
   desactiveLe DateTime? @map("desactive_le") @db.Timestamptz(3)
 
-  lot          LotCodesRemise          @relation(fields: [lotId], references: [id], onDelete: Cascade)
-  utilisations UtilisationCodeRemise[]
+  lot           LotCodesRemise          @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  utilisations  UtilisationCodeRemise[]
+  carteSouvenir SouvenirCarte?
 
   @@index([lotId])
   @@map("codes_remise")
@@ -1554,4 +1557,108 @@ enum FichierStatut {
   TELECHARGE // copie locale faite (média) ou JSON lu (data)
   ERREUR // échecs répétés : visible dans la file d'erreurs, un renvoi PikCloud relance
   PURGE // fichier supprimé par la rétention, la ligne reste
+}
+
+// ─── Page souvenir : ce que l'invité y fait (CDC page souvenir § 1.2, § 4, § 9) ───
+// Décision du 06/11/2026 : stocké dans la Régie (la page souvenir passe par /souvenir/v1, jamais par la base).
+// La séance est désignée par le jeton (code d'événement + photo_uuid), comme la table medias.
+
+// Inscription « Recevoir mes photos » : plusieurs par séance (photo de groupe). E-mail, prénom, IP et navigateur
+// sont effacés à 90 jours (conservation, CDC § 9.2) sauf opt-in, ou à la demande de l'invité (§ 9.3).
+model SouvenirInscription {
+  id                String    @id @default(uuid()) @db.Uuid
+  codeEvent         String    @map("code_event") @db.VarChar(8)
+  photoUuid         String    @map("photo_uuid") @db.Uuid
+  configEvenementId Int?      @map("config_evenement_id")
+  lieuId            Int?      @map("lieu_id")
+  email             String? // null une fois anonymisée
+  prenom            String?
+  estMoi            Boolean   @map("est_moi")
+  optinLieu         Boolean   @map("optin_lieu")
+  optinSelfizee     Boolean   @map("optin_selfizee")
+  // Textes exacts des cases au moment du consentement (preuve, CDC § 4.2)
+  textes            Json
+  ipTronquee        String?   @map("ip_tronquee") @db.VarChar(64)
+  userAgent         String?   @map("user_agent") @db.VarChar(400)
+  anonymiseeLe      DateTime? @map("anonymisee_le") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  evenement  ConfigEvenement?    @relation(fields: [configEvenementId], references: [id], onDelete: SetNull)
+  lieu       Lieu?               @relation(fields: [lieuId], references: [id], onDelete: SetNull)
+  livraisons SouvenirLivraison[]
+  carte      SouvenirCarte?
+
+  @@index([codeEvent, photoUuid])
+  @@index([lieuId, createdAt])
+  @@index([email])
+  @@map("souvenir_inscriptions")
+}
+
+// État d'une livraison (mail 1, CDC § 6.1)
+enum EtatLivraison {
+  EN_ATTENTE_MEDIA // inscription faite avant l'arrivée de la photo
+  A_ENVOYER // photo là : à envoyer par le fournisseur de mails (pas encore branché)
+  ENVOYE
+  ECHEC // rebond dur
+}
+
+// Livraison du mail 1 : la première, puis chaque « Renvoyer »
+model SouvenirLivraison {
+  id            BigInt        @id @default(autoincrement())
+  inscriptionId String        @map("inscription_id") @db.Uuid
+  renvoi        Boolean       @default(false)
+  etat          EtatLivraison
+  envoyeLe      DateTime?     @map("envoye_le") @db.Timestamptz(3)
+  erreur        String?
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  inscription SouvenirInscription @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([inscriptionId])
+  @@index([etat])
+  @@map("souvenir_livraisons")
+}
+
+// Carte à gratter : une par inscription, lot tiré côté serveur (CDC § 7). Un lot gagné est un vrai code de remise
+// de la Régie (valable 30 jours sur toutes les bornes en régie), que la borne vérifie comme les autres.
+model SouvenirCarte {
+  id            Int       @id @default(autoincrement())
+  inscriptionId String    @unique @map("inscription_id") @db.Uuid
+  lot           String    @db.VarChar(8) // none, pct30, pct50, free
+  codeRemiseId  Int?      @unique @map("code_remise_id")
+  reveleeLe     DateTime? @map("revelee_le") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  inscription SouvenirInscription @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
+  codeRemise  CodeRemise?         @relation(fields: [codeRemiseId], references: [id], onDelete: SetNull)
+
+  @@map("souvenir_cartes")
+}
+
+// Lien magique « Toutes tes photos » (CDC § 4.6) : 24 h ; seul son empreinte SHA-256 est gardée
+model SouvenirLien {
+  id        Int       @id @default(autoincrement())
+  jetonHash String    @unique @map("jeton_hash") @db.Char(64)
+  email     String
+  expireLe  DateTime  @map("expire_le") @db.Timestamptz(3)
+  ouvertLe  DateTime? @map("ouvert_le") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([expireLe])
+  @@map("souvenir_liens")
+}
+
+// Analytique de la page (CDC § 4.8) : compteurs serveur, sans donnée personnelle ni cookie tiers
+model SouvenirJournal {
+  id        BigInt   @id @default(autoincrement())
+  evenement String   @db.VarChar(30) // page_view, registered, scratch_revealed…
+  codeEvent String?  @map("code_event") @db.VarChar(8)
+  photoUuid String?  @map("photo_uuid") @db.Uuid
+  lieuId    Int?     @map("lieu_id")
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([lieuId, evenement, createdAt])
+  @@index([photoUuid, evenement])
+  @@map("souvenir_journal")
 }

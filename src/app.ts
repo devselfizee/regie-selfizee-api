@@ -28,6 +28,7 @@ import { mesPhotosRouter } from "./routes/mesPhotos.js";
 import { synchroPikcloudRouter } from "./routes/synchroPikcloud.js";
 import { souvenirRouter } from "./routes/souvenir.js";
 import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
+import { souvenirLieuRouter } from "./routes/souvenirLieu.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
 import { cadresEvenementRouter } from "./routes/cadresEvenement.js";
 import { illustrationsEvenementRouter } from "./routes/illustrationsEvenement.js";
@@ -66,7 +67,7 @@ export function creerApp() {
   );
 
   // Page souvenir (myevent.selfizee.fr) : séances et codes pour son serveur (secret partagé), visuels sur URL signée
-  app.use("/souvenir/v1", express.json({ limit: "2kb" }), souvenirRouter);
+  app.use("/souvenir/v1", express.json({ limit: "8kb" }), souvenirRouter);
 
   // Webhook PikCloud : médias des séances, secret partagé X-Synchro-Token, pas de CORS (machine à machine)
   app.use("/webhooks/v1/pikcloud", express.json({ limit: "64kb" }), synchroPikcloudRouter);
@@ -106,6 +107,8 @@ export function creerApp() {
   app.use("/api/lieux", tarifsLieuRouter);
   // Galerie des médias PikCloud du lieu (droits vérifiés dans les routes : lieux du commercial, lieu du partenaire)
   app.use("/api/lieux", mediasLieuRouter);
+  // Page souvenir du lieu : entonnoir et contacts opt-in lieu (mêmes droits que la galerie)
+  app.use("/api/lieux", souvenirLieuRouter);
   app.use("/api/medias", mediasRouter);
   app.use("/api/tarifs", tarifsRouter);
   app.use("/api/commentaires", exiger("ADMIN", "COMMERCIAL", "TECHNICIEN"), commentairesRouter);

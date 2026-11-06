@@ -77,7 +77,37 @@ async function dimensions(m: Media, gif: boolean): Promise<{ largeur: number; ha
 }
 
 /** Séances de test (is_fake, testMode) montrées seulement si SOUVENIR_SEANCES_TEST=1 (recette). */
-const avecTests = () => process.env.SOUVENIR_SEANCES_TEST === "1";
+export const avecTests = () => process.env.SOUVENIR_SEANCES_TEST === "1";
+
+type MediaEtat = Pick<Media, "mediaStatut" | "mediaChemin" | "dateSave" | "datePhoto" | "createdAt">;
+
+/** Un visuel affichable : fichier copié, photo fixe ou GIF (pas de vidéo tant que la story n'est pas générée). */
+const affichable = (m: Pick<Media, "mediaStatut" | "mediaChemin">) => {
+  if (m.mediaStatut !== "TELECHARGE" || !m.mediaChemin) return false;
+  const ext = extensionDuChemin(m.mediaChemin);
+  return ext === "gif" || IMAGES_FIXES.has(ext);
+};
+
+/** État de la séance d'après ses médias : expirée (90 jours, ou purgée), disponible (un visuel), sinon en attente. */
+export function etatDesMedias(medias: MediaEtat[], maintenant = Date.now()) {
+  const date = medias.map((m) => m.dateSave ?? m.datePhoto).find(Boolean) ?? null;
+  const reference = date?.getTime() ?? medias[0]?.createdAt.getTime() ?? null;
+  const expiree = (reference !== null && maintenant - reference > CONSERVATION_JOURS * JOUR) || medias.some((m) => m.mediaStatut === "PURGE");
+  const etat: SeanceSouvenir["etat"] = expiree ? "expiree" : medias.some(affichable) ? "disponible" : "en-attente";
+  return { etat, date, reference };
+}
+
+/** L'événement et l'état de la séance, sans lire les fichiers : pour les écritures de la page souvenir. */
+export async function contexteSeance(j: JetonSouvenir, maintenant = Date.now()) {
+  const e = await prisma.configEvenement.findUnique({ where: { code: j.code }, select: { id: true, lieuId: true, reglages: true } });
+  if (!e) return null;
+  const medias = await prisma.media.findMany({
+    where: { codeEvent: j.code, photoUuid: j.photoUuid, ...(avecTests() ? {} : { test: false }) },
+    select: { mediaStatut: true, mediaChemin: true, dateSave: true, datePhoto: true, createdAt: true },
+    orderBy: { id: "asc" },
+  });
+  return { evenement: e, reglages: reglagesSchema.parse(e.reglages), ...etatDesMedias(medias, maintenant) };
+}
 
 /**
  * La séance du jeton, ou null si l'événement n'existe pas (404). Une séance pas encore reçue est « en attente »
@@ -117,21 +147,17 @@ export async function lireSeanceSouvenir(j: JetonSouvenir, base: string, mainten
 
   const token = ecrireJeton(j.code, j.photoUuid);
   // Date de la séance : enregistrement sur la borne, à défaut prise de vue ou réception
-  const date = medias.map((m) => m.dateSave ?? m.datePhoto).find(Boolean) ?? null;
+  const { etat, date, reference } = etatDesMedias(medias, maintenant);
   const brut = medias.map((m) => m.brut as { session_code?: unknown } | null).find((b) => typeof b?.session_code === "string");
   const codeSeance = brut ? String(brut.session_code) : undefined;
   const commun = { token, evenement, ...(codeSeance ? { codeSeance } : {}) };
 
-  const reference = date?.getTime() ?? medias[0]?.createdAt.getTime() ?? null;
-  const expiree = (reference !== null && maintenant - reference > CONSERVATION_JOURS * JOUR) || medias.some((m) => m.mediaStatut === "PURGE");
-  if (expiree) return { ...commun, etat: "expiree", ...(date ? { prisLe: date.toISOString() } : {}), visuels: [] };
+  if (etat === "expiree") return { ...commun, etat: "expiree", ...(date ? { prisLe: date.toISOString() } : {}), visuels: [] };
 
   const visuels: Visuel[] = [];
   for (const m of medias) {
-    if (m.mediaStatut !== "TELECHARGE" || !m.mediaChemin) continue;
-    const ext = extensionDuChemin(m.mediaChemin);
-    const gif = ext === "gif";
-    if (!gif && !IMAGES_FIXES.has(ext)) continue; // vidéos : pas encore de story (dérivés à générer, CDC GENERATION-GIF-STORY)
+    if (!affichable(m)) continue; // vidéos : pas encore de story (dérivés à générer, CDC GENERATION-GIF-STORY)
+    const gif = extensionDuChemin(m.mediaChemin!) === "gif";
     const d = await dimensions(m, gif);
     if (d) visuels.push({ type: gif ? "gif" : "photo", url: urlSignee(base, `/fichiers/${m.uuid}`), ...d });
   }
