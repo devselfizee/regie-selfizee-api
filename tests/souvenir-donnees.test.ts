@@ -32,7 +32,7 @@ vi.mock("../src/lib/prisma.js", () => {
       if (k === "OR") return (v as Record<string, unknown>[]).some((w) => corresp(l, w));
       if (k === "livraisons") return b.livraisons.some((liv) => liv.inscriptionId === l.id && corresp(liv, (v as { some: Record<string, unknown> }).some));
       if (k === "inscription") return corresp(b.inscriptions.find((i) => i.id === l.inscriptionId)!, v as Record<string, unknown>);
-      if (k === "codeRemise") return corresp(b.codes.find((c) => c.id === l.codeRemiseId) ?? ({ utilise: 0 } as Ligne), v as Record<string, unknown>);
+      if (k === "codeRemise") return corresp(b.codes.find((c) => c.id === l.codeRemiseId) ?? ({ id: 0, utilise: 0 } as Ligne), v as Record<string, unknown>);
       if (v && typeof v === "object" && !(v instanceof Date)) {
         const o = v as Record<string, unknown>;
         if ("not" in o) return o.not === null ? x !== null && x !== undefined : x !== o.not;
@@ -62,7 +62,7 @@ vi.mock("../src/lib/prisma.js", () => {
     },
     count: async ({ where }: { where?: Record<string, unknown> } = {}) => rows().filter((l) => corresp(l, where)).length,
     create: async ({ data }: { data: Record<string, unknown> }) => {
-      const { livraisons, ...reste } = data as { livraisons?: { create: Record<string, unknown> } };
+      const { livraisons, ...reste } = data as { livraisons?: { create: Record<string, unknown> }; id?: unknown };
       const l: Ligne = { id: reste.id ?? (rows() === b.inscriptions ? `00000000-0000-4000-8000-${String(b.n++).padStart(12, "0")}` : b.n++), createdAt: new Date(), ...defauts(), ...reste };
       if (rows() === b.cartes && rows().some((c) => c.inscriptionId === l.inscriptionId)) throw Object.assign(new Error("unique"), { code: "P2002" });
       rows().push(l);
