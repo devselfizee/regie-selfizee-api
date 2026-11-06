@@ -19,12 +19,19 @@ export const adminsInitiaux = (brut = process.env.ADMIN_EMAILS ?? "") =>
     .map((e) => e.trim().replace(/^["']|["']$/g, "").toLowerCase())
     .filter((e) => e.includes("@"));
 
-const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true } as const;
+const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true } as const;
 
 // Photo du compte sur la plateforme Konitys (celle de l'en-tête), relevée au plus toutes les 12 h
 const GATEWAY_KONITYS = (process.env.KONITYS_GATEWAY_URL || "https://plateform-gateway.orkessi.com").replace(/\/+$/, "");
 const PLATEFORME_KONITYS = (process.env.KONITYS_PLATEFORME_URL || "https://plateform.orkessi.com").replace(/\/+$/, "");
 const PHOTO_VALIDE_MS = 12 * 3_600_000;
+
+/** Identifiant de l'utilisateur sur la plateforme d'après la réponse de /api/users/me, ou null */
+export function idPlateforme(reponse: unknown): number | null {
+  const r = reponse as { data?: { data?: { id?: unknown }; id?: unknown }; id?: unknown } | null;
+  const id = Number((r?.data?.data ?? r?.data ?? r)?.id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
 
 /** URL de la photo d'après la réponse de /api/users/me de la plateforme (photo_nom), ou null */
 export function urlPhotoKonitys(reponse: unknown, base = PLATEFORME_KONITYS): string | null {
@@ -39,8 +46,12 @@ function releverPhoto(userId: number, autorisation: string) {
   fetch(`${GATEWAY_KONITYS}/api/users/me`, { headers: { Authorization: autorisation }, signal: AbortSignal.timeout(5000) })
     .then(async (r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const photoUrl = urlPhotoKonitys(await r.json());
-      await prisma.user.update({ where: { id: userId }, data: { photoUrl, photoVerifieeLe: new Date() } });
+      const moi = await r.json();
+      const plateformeUserId = idPlateforme(moi);
+      await prisma.user.update({
+        where: { id: userId },
+        data: { photoUrl: urlPhotoKonitys(moi), photoVerifieeLe: new Date(), ...(plateformeUserId ? { plateformeUserId } : {}) },
+      });
     })
     .catch(async (err) => {
       console.warn("Photo du compte Konitys non relevée :", (err as Error).message);
@@ -145,8 +156,9 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
         email,
       });
     }
+    // Photo et identifiant plateforme : toutes les 12 h, ou 10 min tant que l'identifiant manque
     const autorisation = req.header("authorization");
-    if (autorisation?.startsWith("Bearer ") && (!u.photoVerifieeLe || Date.now() - u.photoVerifieeLe.getTime() > PHOTO_VALIDE_MS)) {
+    if (autorisation?.startsWith("Bearer ") && (!u.photoVerifieeLe || Date.now() - u.photoVerifieeLe.getTime() > (u.plateformeUserId ? PHOTO_VALIDE_MS : 10 * 60_000))) {
       u = { ...u, photoVerifieeLe: new Date() };
       releverPhoto(u.id, autorisation);
     }

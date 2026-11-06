@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { identiteKeycloak, urlPhotoKonitys } from "../src/middleware/utilisateur.js";
+import { identiteKeycloak, idPlateforme, urlPhotoKonitys } from "../src/middleware/utilisateur.js";
+import { corpsNotification } from "../src/lib/notificationsPlateforme.js";
 
 describe("identité recopiée de Keycloak", () => {
   it("reprend nom, prénom et téléphone du jeton", () => {
@@ -28,5 +29,25 @@ describe("photo du compte Konitys", () => {
     expect(urlPhotoKonitys({ data: { photo_nom: null } })).toBeNull();
     expect(urlPhotoKonitys({ data: { photo_nom: "  " } })).toBeNull();
     expect(urlPhotoKonitys(null)).toBeNull();
+  });
+});
+
+describe("notifications de la plateforme", () => {
+  it("lit l'identifiant plateforme de /api/users/me", () => {
+    expect(idPlateforme({ data: { id: 141 } })).toBe(141);
+    expect(idPlateforme({ data: { data: { id: "12" } } })).toBe(12);
+    expect(idPlateforme({ data: {} })).toBeNull();
+  });
+
+  it("construit le corps attendu par POST /api/notifications", () => {
+    expect(corpsNotification({ destinataire: 141, titre: "Seb vous a mentionné", cle: "regie-mention-1-2", entityId: "7", url: "https://x/lieux/7" }, "regie")).toEqual({
+      titre: "Seb vous a mentionné",
+      cle: "regie-mention-1-2",
+      origine: "regie",
+      entity_id: "7",
+      url: "https://x/lieux/7",
+      recipient_type: "user",
+      recipient_user_id: 141,
+    });
   });
 });
