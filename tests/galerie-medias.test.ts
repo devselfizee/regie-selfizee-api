@@ -13,6 +13,7 @@ import { viderBase } from "./aide.js";
 // Galerie des médias PikCloud : liste par lieu et événement, filtres, droits par rôle, fichiers servis derrière le jeton.
 const app = creerApp();
 const en = (email: string | null) => ({
+  post: (url: string) => (email ? request(app).post(url).set("X-Dev-Utilisateur", email) : request(app).post(url)),
   get: (url: string) => (email ? request(app).get(url).set("X-Dev-Utilisateur", email) : request(app).get(url)),
 });
 const admin = en(null);
@@ -223,5 +224,30 @@ describe("galerie : un média", () => {
     const r = await admin.get(`/api/medias/${ids.attente5}/fichier`).expect(404);
     expect(r.body.error).toBe("FICHIER_ABSENT");
     expect((await admin.get(`/api/medias/${ids.attente5}`).expect(200)).body.statut).toBe("A_TELECHARGER");
+  });
+});
+
+describe("galerie : relance des téléchargements", () => {
+  it("remet en attente les fichiers en erreur d'un média, puis de tout le lieu ; admin seulement", async () => {
+    await prisma.media.update({ where: { uuid: ids.attente5 }, data: { mediaUrl: "https://apidev.pikcloud.io/x.jpg", mediaStatut: "ERREUR", tentatives: 5, derniereErreur: "HTTP 404" } });
+    await prisma.media.update({ where: { uuid: ids.photo1 }, data: { dataUrl: "https://apidev.pikcloud.io/x.json", dataStatut: "ERREUR", tentatives: 5 } });
+
+    const resume = await admin.get(`/api/lieux/${lieuA}/medias/resume`).expect(200);
+    // attente5 : média en erreur, et son JSON toujours en attente
+    expect(resume.body).toMatchObject({ enAttente: 1, enErreur: 2 });
+
+    await alice.post(`/api/medias/${ids.attente5}/relancer`).expect(403);
+    const r = await admin.post(`/api/medias/${ids.attente5}/relancer`).expect(200);
+    expect(r.body.relances).toBe(1);
+    expect(r.body.media).toMatchObject({ statut: "A_TELECHARGER" });
+    expect(await prisma.media.findUniqueOrThrow({ where: { uuid: ids.attente5 } })).toMatchObject({ mediaStatut: "A_TELECHARGER", tentatives: 0, derniereErreur: null });
+
+    // Un média déjà reçu n'est pas touché
+    expect((await admin.post(`/api/medias/${ids.multi2}/relancer`).expect(200)).body.relances).toBe(0);
+
+    await alice.post(`/api/lieux/${lieuA}/medias/relancer`).expect(403);
+    expect((await admin.post(`/api/lieux/${lieuA}/medias/relancer`).expect(200)).body.relances).toBe(2);
+    expect(await prisma.media.findUniqueOrThrow({ where: { uuid: ids.photo1 } })).toMatchObject({ dataStatut: "A_TELECHARGER", mediaStatut: "TELECHARGE", tentatives: 0 });
+    expect((await admin.get(`/api/lieux/${lieuA}/medias/resume`).expect(200)).body).toMatchObject({ enAttente: 2, enErreur: 0 });
   });
 });

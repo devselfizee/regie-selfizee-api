@@ -7,6 +7,7 @@ import { asynchrone, HttpError } from "../lib/http.js";
 import { exiger, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { EXTENSIONS_VIDEO, extensionDuChemin, lireBuffer, lireFlux, mimeDe } from "../lib/stockage.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
+import { declencherTelechargement } from "../synchro-pikcloud/telechargement.js";
 
 // Galerie des médias reçus de PikCloud (docs/synchronisation-pikcloud.md) : les photos et vidéos des séances
 // d'un lieu, par événement. Ce sont des photos de personnes : admin, commercial sur ses lieux, partenaire sur
@@ -119,21 +120,59 @@ mediasLieuRouter.get(
     const lieuId = lieuParam(req);
     await verifierAccesLieu(req.utilisateur, lieuId);
     const where = { lieuId, test: false };
-    const [total, derniere, parEvenement, parType, evenements] = await Promise.all([
+    const [total, derniere, parEvenement, parType, evenements, enAttente, enErreur] = await Promise.all([
       prisma.media.count({ where }),
       prisma.media.aggregate({ where, _max: { datePhoto: true } }),
       prisma.media.groupBy({ by: ["codeEvent", "configEvenementId"], where, _count: { _all: true } }),
       prisma.media.groupBy({ by: ["typeMedia"], where, _count: { _all: true }, orderBy: { _count: { typeMedia: "desc" } } }),
       prisma.configEvenement.findMany({ where: { lieuId }, select: { id: true, code: true, nom: true, habituel: true }, orderBy: [{ habituel: "desc" }, { id: "asc" }] }),
+      // Fichiers pas encore copiés (le worker repasse chaque minute) et fichiers abandonnés (relance manuelle ou renvoi PikCloud)
+      prisma.media.count({ where: { lieuId, OR: [{ mediaStatut: "A_TELECHARGER" }, { dataStatut: "A_TELECHARGER" }] } }),
+      prisma.media.count({ where: { lieuId, OR: [{ mediaStatut: "ERREUR" }, { dataStatut: "ERREUR" }] } }),
     ]);
     const comptes = new Map(parEvenement.map((g) => [g.codeEvent, g._count._all]));
     res.json({
       total,
       derniere: derniere._max.datePhoto,
+      enAttente,
+      enErreur,
       // Tous les événements du lieu, même sans média : le sélecteur de la galerie les liste tous
       parEvenement: evenements.map((e) => ({ ...e, total: comptes.get(e.code) ?? 0 })),
       parType: parType.map((g) => ({ type: g.typeMedia, total: g._count._all })),
     });
+  })
+);
+
+const admin = exiger("ADMIN");
+
+/** Condition « fichier à relancer » : annoncé (URL connue) et pas encore copié, ou abandonné après les tentatives. */
+const aRelancer: Prisma.MediaWhereInput = {
+  OR: [
+    { mediaUrl: { not: null }, mediaStatut: { in: ["A_TELECHARGER", "ERREUR"] } },
+    { dataUrl: { not: null }, dataStatut: { in: ["A_TELECHARGER", "ERREUR"] } },
+  ],
+};
+
+/** Remet en attente les fichiers d'un média (ou d'un lot) et réveille le worker. */
+async function relancer(where: Prisma.MediaWhereInput): Promise<number> {
+  // Deux passes : chaque fichier ne repasse en attente que s'il a une URL et n'est pas déjà reçu
+  const [m, d] = await Promise.all([
+    prisma.media.updateMany({ where: { ...where, mediaUrl: { not: null }, mediaStatut: { in: ["A_TELECHARGER", "ERREUR"] } }, data: { mediaStatut: "A_TELECHARGER", tentatives: 0, derniereErreur: null } }),
+    prisma.media.updateMany({ where: { ...where, dataUrl: { not: null }, dataStatut: { in: ["A_TELECHARGER", "ERREUR"] } }, data: { dataStatut: "A_TELECHARGER", tentatives: 0, derniereErreur: null } }),
+  ]);
+  const n = await prisma.media.count({ where: { ...where, ...aRelancer } });
+  if (m.count + d.count) declencherTelechargement();
+  return n;
+}
+
+// POST /api/lieux/:id/medias/relancer — relance tous les téléchargements en attente ou en erreur du lieu (admin)
+mediasLieuRouter.post(
+  "/:id/medias/relancer",
+  admin,
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const lieuId = lieuParam(req);
+    await verifierAccesLieu(req.utilisateur, lieuId);
+    res.json({ relances: await relancer({ lieuId }) });
   })
 );
 
@@ -182,6 +221,18 @@ mediasRouter.get(
       vente,
       parcours,
     });
+  })
+);
+
+// POST /api/medias/:uuid/relancer — remet les fichiers du média en attente et réveille le worker (admin)
+mediasRouter.post(
+  "/:uuid/relancer",
+  admin,
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const m = await mediaAccessible(req);
+    const relances = await relancer({ id: m.id });
+    const apres = await prisma.media.findUniqueOrThrow({ where: { id: m.id }, include: { evenement: selectionEvenement } });
+    res.json({ relances, media: await versClient(apres) });
   })
 );
 
