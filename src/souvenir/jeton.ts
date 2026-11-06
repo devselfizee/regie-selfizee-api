@@ -54,3 +54,20 @@ export function signatureValide(chemin: string, exp: unknown, sig: unknown, main
   const recu = Buffer.from(sig);
   return attendu.length === recu.length && timingSafeEqual(attendu, recu);
 }
+
+// ─── Lien « Supprimer mes photos » (CDC § 9.3) ───
+// Jeton propre à l'inscription, écrit dans le pied des mails : `<id de l'inscription>.<signature>`. Sans expiration
+// (l'inscription est de toute façon effacée à 90 jours) ; la signature empêche de viser l'inscription d'un autre.
+
+const signerOubli = (id: string) => createHmac("sha256", secret()).update(`oubli\n${id}`).digest("base64url");
+
+export const jetonOubli = (inscriptionId: string) => `${inscriptionId}.${signerOubli(inscriptionId)}`;
+
+/** L'id d'inscription d'un jeton « Supprimer mes photos » bien signé, sinon null. */
+export function lireJetonOubli(brut: string): string | null {
+  const m = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/.exec(brut);
+  if (!m || !secret()) return null;
+  const attendu = Buffer.from(signerOubli(m[1]));
+  const recu = Buffer.from(m[2]);
+  return attendu.length === recu.length && timingSafeEqual(attendu, recu) ? m[1] : null;
+}

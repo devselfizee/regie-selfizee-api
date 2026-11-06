@@ -51,9 +51,9 @@ export interface SeanceSouvenir {
   visuels: Visuel[];
 }
 
-/** URL absolue et signée d'un fichier servi par /souvenir/v1. */
-function urlSignee(base: string, chemin: string): string {
-  const { exp, sig } = signature(chemin, VALIDITE_S);
+/** URL absolue et signée d'un fichier servi par /souvenir/v1 (6 h par défaut ; plus longue pour les mails). */
+export function urlSignee(base: string, chemin: string, validiteS = VALIDITE_S): string {
+  const { exp, sig } = signature(chemin, validiteS);
   return `${base}/souvenir/v1${chemin}?exp=${exp}&sig=${sig}`;
 }
 
@@ -82,7 +82,7 @@ export const avecTests = () => process.env.SOUVENIR_SEANCES_TEST === "1";
 type MediaEtat = Pick<Media, "mediaStatut" | "mediaChemin" | "dateSave" | "datePhoto" | "createdAt">;
 
 /** Un visuel affichable : fichier copié, photo fixe ou GIF (pas de vidéo tant que la story n'est pas générée). */
-const affichable = (m: Pick<Media, "mediaStatut" | "mediaChemin">) => {
+export const affichable = (m: Pick<Media, "mediaStatut" | "mediaChemin">) => {
   if (m.mediaStatut !== "TELECHARGE" || !m.mediaChemin) return false;
   const ext = extensionDuChemin(m.mediaChemin);
   return ext === "gif" || IMAGES_FIXES.has(ext);
@@ -109,26 +109,32 @@ export async function contexteSeance(j: JetonSouvenir, maintenant = Date.now()) 
   return { evenement: e, reglages: reglagesSchema.parse(e.reglages), ...etatDesMedias(medias, maintenant) };
 }
 
-/**
- * La séance du jeton, ou null si l'événement n'existe pas (404). Une séance pas encore reçue est « en attente »
- * (le QR peut être scanné avant l'arrivée du média) ; au-delà de 90 jours, ou purgée, elle a expiré.
- */
-export async function lireSeanceSouvenir(j: JetonSouvenir, base: string, maintenant = Date.now()): Promise<SeanceSouvenir | null> {
+/** L'événement du code et ses réglages tels que la borne les a reçus (grille et infos du lieu reprises) ; null si inconnu. */
+export async function evenementAffiche(code: string) {
   const e = await prisma.configEvenement.findUnique({
-    where: { code: j.code },
+    where: { code },
     include: { lieu: { select: { id: true, enseigne: true, ville: true, infosBorne: true } } },
   });
   if (!e) return null;
-  const [tarifsLieu, infosLieu, medias] = await Promise.all([
-    grilleEffective(e.lieuId),
-    infosLieuDe(e.lieu),
+  const [tarifsLieu, infosLieu] = await Promise.all([grilleEffective(e.lieuId), infosLieuDe(e.lieu)]);
+  return { e, r: avecInfosDuLieu(avecGrilleDuLieu(reglagesSchema.parse(e.reglages), tarifsLieu.grille), infosLieu) };
+}
+
+/**
+ * La séance du jeton, ou null si l'événement n'existe pas (404). Une séance pas encore reçue est « en attente »
+ * (le QR peut être scanné avant l'arrivée du média) ; au-delà de 90 jours, ou purgée, elle a expiré.
+ * `validiteS` : durée des URLs signées (6 h pour la page ; plus pour les images d'un mail).
+ */
+export async function lireSeanceSouvenir(j: JetonSouvenir, base: string, maintenant = Date.now(), validiteS = VALIDITE_S): Promise<SeanceSouvenir | null> {
+  const [affiche, medias] = await Promise.all([
+    evenementAffiche(j.code),
     prisma.media.findMany({
       where: { codeEvent: j.code, photoUuid: j.photoUuid, ...(avecTests() ? {} : { test: false }) },
       orderBy: { id: "asc" },
     }),
   ]);
-  // Réglages tels que la borne les a reçus : grille et infos du lieu reprises
-  const r = avecInfosDuLieu(avecGrilleDuLieu(reglagesSchema.parse(e.reglages), tarifsLieu.grille), infosLieu);
+  if (!affiche) return null;
+  const { e, r } = affiche;
 
   const evenement: SeanceSouvenir["evenement"] = {
     code: e.code,
@@ -142,7 +148,7 @@ export async function lireSeanceSouvenir(j: JetonSouvenir, base: string, mainten
     },
     ton: r.lieu.ton,
     liens: { avisGoogle: r.lieu.avisGoogleUrl, instagram: r.lieu.instagram, tiktok: r.lieu.tiktok, hashtag: r.lieu.hashtag },
-    illustrations: await illustrationsDe(r, e.id, base),
+    illustrations: await illustrationsDe(r, e.id, base, validiteS),
   };
 
   const token = ecrireJeton(j.code, j.photoUuid);
@@ -159,7 +165,7 @@ export async function lireSeanceSouvenir(j: JetonSouvenir, base: string, mainten
     if (!affichable(m)) continue; // vidéos : pas encore de story (dérivés à générer, CDC GENERATION-GIF-STORY)
     const gif = extensionDuChemin(m.mediaChemin!) === "gif";
     const d = await dimensions(m, gif);
-    if (d) visuels.push({ type: gif ? "gif" : "photo", url: urlSignee(base, `/fichiers/${m.uuid}`), ...d });
+    if (d) visuels.push({ type: gif ? "gif" : "photo", url: urlSignee(base, `/fichiers/${m.uuid}`, validiteS), ...d });
   }
   // Photo d'abord, puis le GIF (ordre du carrousel)
   visuels.sort((a, b) => Number(a.type === "gif") - Number(b.type === "gif"));
@@ -168,15 +174,15 @@ export async function lireSeanceSouvenir(j: JetonSouvenir, base: string, mainten
 }
 
 /** Photos d'exemple choisies pour l'événement (les siennes ou une série de la bibliothèque), en URLs signées. */
-async function illustrationsDe(r: Reglages, evenementId: number, base: string): Promise<string[]> {
+async function illustrationsDe(r: Reglages, evenementId: number, base: string, validiteS: number): Promise<string[]> {
   const l = r.lieu;
   if (l.illustrations === "photos") {
     const p = await prisma.illustrationEvenement.findMany({ where: { configEvenementId: evenementId, cible: "cadres" }, select: { id: true }, orderBy: { id: "asc" }, take: ILLUSTRATIONS_MAX });
-    return p.map((i) => urlSignee(base, `/illustrations/e/${i.id}`));
+    return p.map((i) => urlSignee(base, `/illustrations/e/${i.id}`, validiteS));
   }
   if (l.illustrations === "serie" && l.illustrationsSerieId) {
     const p = await prisma.illustrationSerieImage.findMany({ where: { serieId: l.illustrationsSerieId }, select: { id: true }, orderBy: { id: "asc" }, take: ILLUSTRATIONS_MAX });
-    return p.map((i) => urlSignee(base, `/illustrations/s/${i.id}`));
+    return p.map((i) => urlSignee(base, `/illustrations/s/${i.id}`, validiteS));
   }
   return []; // séries du logiciel (festif, chic) : la page souvenir a les siennes
 }

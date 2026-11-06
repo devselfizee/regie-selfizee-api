@@ -8,12 +8,22 @@ export interface PieceJointe {
   contenu: Buffer;
 }
 
+export interface OptionsEmail {
+  /** Expéditeur (défaut : NOTIF_EXPEDITEUR_EMAIL / NOTIF_EXPEDITEUR_NOM) ; doit être validé dans Mailjet */
+  expediteur?: { email: string; nom: string };
+  /** Version texte du mail */
+  texte?: string;
+  /** Identifiant renvoyé par Mailjet dans ses événements (rebonds) : relie l'événement à ce qui a été envoyé */
+  idSuivi?: string;
+}
+
 /** Envoie un e-mail. Renvoie null si l'envoi a réussi, sinon le motif de l'échec. */
 export async function envoyerEmail(
   destinataire: string | string[],
   sujet: string,
   html: string,
-  piecesJointes: PieceJointe[] = []
+  piecesJointes: PieceJointe[] = [],
+  options: OptionsEmail = {}
 ): Promise<string | null> {
   const destinataires = Array.isArray(destinataire) ? destinataire : [destinataire];
   const cle = process.env.MAILJET_API_KEY;
@@ -31,10 +41,14 @@ export async function envoyerEmail(
     body: JSON.stringify({
       Messages: [
         {
-          From: { Email: process.env.NOTIF_EXPEDITEUR_EMAIL ?? "alertes@selfizee.fr", Name: process.env.NOTIF_EXPEDITEUR_NOM ?? "Régie Selfizee" },
+          From: options.expediteur
+            ? { Email: options.expediteur.email, Name: options.expediteur.nom }
+            : { Email: process.env.NOTIF_EXPEDITEUR_EMAIL ?? "alertes@selfizee.fr", Name: process.env.NOTIF_EXPEDITEUR_NOM ?? "Régie Selfizee" },
           To: destinataires.map((Email) => ({ Email })),
           Subject: sujet,
           HTMLPart: html,
+          ...(options.texte ? { TextPart: options.texte } : {}),
+          ...(options.idSuivi ? { CustomID: options.idSuivi } : {}),
           ...(piecesJointes.length
             ? { Attachments: piecesJointes.map((p) => ({ ContentType: p.type, Filename: p.nom, Base64Content: p.contenu.toString("base64") })) }
             : {}),

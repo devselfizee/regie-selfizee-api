@@ -1597,9 +1597,10 @@ model SouvenirInscription {
 // État d'une livraison (mail 1, CDC § 6.1)
 enum EtatLivraison {
   EN_ATTENTE_MEDIA // inscription faite avant l'arrivée de la photo
-  A_ENVOYER // photo là : à envoyer par le fournisseur de mails (pas encore branché)
+  A_ENVOYER // photo là : le planificateur l'envoie par Mailjet (src/souvenir/envois.ts)
   ENVOYE
-  ECHEC // rebond dur
+  ECHEC // rebond dur (webhook Mailjet), ou envoi refusé après plusieurs essais
+  PHOTO_INTROUVABLE // photo toujours absente 24 h après l'inscription : mail « on n'a pas retrouvé ta photo » envoyé
 }
 
 // Livraison du mail 1 : la première, puis chaque « Renvoyer »
@@ -1610,6 +1611,9 @@ model SouvenirLivraison {
   etat          EtatLivraison
   envoyeLe      DateTime?     @map("envoye_le") @db.Timestamptz(3)
   erreur        String?
+  // Essais d'envoi refusés par le fournisseur, et quand réessayer (espacement croissant)
+  tentatives    Int           @default(0)
+  prochainEssai DateTime?     @map("prochain_essai") @db.Timestamptz(3)
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
   inscription SouvenirInscription @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
@@ -1622,12 +1626,17 @@ model SouvenirLivraison {
 // Carte à gratter : une par inscription, lot tiré côté serveur (CDC § 7). Un lot gagné est un vrai code de remise
 // de la Régie (valable 30 jours sur toutes les bornes en régie), que la borne vérifie comme les autres.
 model SouvenirCarte {
-  id            Int       @id @default(autoincrement())
-  inscriptionId String    @unique @map("inscription_id") @db.Uuid
-  lot           String    @db.VarChar(8) // none, pct30, pct50, free
-  codeRemiseId  Int?      @unique @map("code_remise_id")
-  reveleeLe     DateTime? @map("revelee_le") @db.Timestamptz(3)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                Int       @id @default(autoincrement())
+  inscriptionId     String    @unique @map("inscription_id") @db.Uuid
+  lot               String    @db.VarChar(8) // none, pct30, pct50, free
+  codeRemiseId      Int?      @unique @map("code_remise_id")
+  reveleeLe         DateTime? @map("revelee_le") @db.Timestamptz(3)
+  // Mail 2 (code gagné, CDC § 6.2) : envoyé à la révélation d'un lot
+  mailEnvoyeLe      DateTime? @map("mail_envoye_le") @db.Timestamptz(3)
+  mailErreur        String?   @map("mail_erreur")
+  mailTentatives    Int       @default(0) @map("mail_tentatives")
+  mailProchainEssai DateTime? @map("mail_prochain_essai") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   inscription SouvenirInscription @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
   codeRemise  CodeRemise?         @relation(fields: [codeRemiseId], references: [id], onDelete: SetNull)

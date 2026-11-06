@@ -27,6 +27,7 @@ import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter 
 import { mesPhotosRouter } from "./routes/mesPhotos.js";
 import { synchroPikcloudRouter } from "./routes/synchroPikcloud.js";
 import { souvenirRouter } from "./routes/souvenir.js";
+import { webhookMailjetRouter } from "./routes/webhookMailjet.js";
 import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
 import { souvenirLieuRouter } from "./routes/souvenirLieu.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
@@ -71,6 +72,8 @@ export function creerApp() {
 
   // Webhook PikCloud : médias des séances, secret partagé X-Synchro-Token, pas de CORS (machine à machine)
   app.use("/webhooks/v1/pikcloud", express.json({ limit: "64kb" }), synchroPikcloudRouter);
+  // Webhook Mailjet : rebonds des mails de la page souvenir, clé partagée dans l'URL (?cle=MAILJET_WEBHOOK_SECRET)
+  app.use("/webhooks/v1/mailjet", express.json({ limit: "1mb" }), webhookMailjetRouter);
 
   // Cadres du studio : rendu PNG + JSON Fabric avec ses illustrations, jusqu'à 25 Mo (lu avant la limite générale)
   app.use(["/api/lieux/:id/evenement/cadres", "/api/lieux/:id/evenements-ponctuels/:eid/cadres"], express.json({ limit: "30mb" }));

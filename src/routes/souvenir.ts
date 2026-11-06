@@ -6,10 +6,13 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { cheminAbsolu, extensionDuChemin, lireFlux } from "../lib/stockage.js";
 import { normaliserCode } from "../mes-photos/seances.js";
-import { lireJeton, signatureValide } from "../souvenir/jeton.js";
-import { COTE_WEB, jetonDuCodeSeance, lireSeanceSouvenir } from "../souvenir/seance.js";
+import { lireJeton, lireJetonOubli, signatureValide } from "../souvenir/jeton.js";
+import { COTE_WEB, evenementAffiche, jetonDuCodeSeance, lireSeanceSouvenir } from "../souvenir/seance.js";
+import { baseFichiers } from "../souvenir/base.js";
+import { compteReseau, declencherEnvois, envoyerLienParMail, type CibleSuivie } from "../souvenir/envois.js";
 import {
-  demanderLien, EVENEMENTS_JOURNAL, gratter, inscription, inscrire, journaliserDepuisPage, mesSeances, RefusSouvenir, renvoyer, reveler,
+  demanderLien, EVENEMENTS_JOURNAL, gratter, infoOubli, inscription, inscrire, journaliser, journaliserDepuisPage, mesSeances, oublier, RefusSouvenir,
+  renvoyer, reveler,
 } from "../souvenir/donnees.js";
 
 // API de la page souvenir (projet souvenirs, myevent.selfizee.fr), montée sous /souvenir/v1.
@@ -35,9 +38,6 @@ function serveurSouvenir(req: Request, res: Response, next: NextFunction) {
   if (typeof recu !== "string" || !recu || !memeSecret(recu, attendu)) return res.status(401).json({ error: "TOKEN_INVALIDE" });
   next();
 }
-
-/** Base absolue des URLs de fichiers : celle que le navigateur de l'invité peut joindre. */
-const baseFichiers = (req: Request) => (process.env.SOUVENIR_URL_FICHIERS || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
 
 // GET /souvenir/v1/seances/:token — la séance du jeton (événement, état, visuels) ; 404 si le jeton n'a pas de sens
 souvenirRouter.get(
@@ -103,7 +103,9 @@ souvenirRouter.post(
   asynchrone(async (req, res) => {
     const j = jetonDe(req);
     const d = inscriptionSchema.parse(req.body);
+    baseFichiers(req); // adresse publique retenue pour les images des mails
     res.status(201).json(await inscrire(j, d).catch(refus));
+    declencherEnvois();
   })
 );
 
@@ -116,6 +118,7 @@ souvenirRouter.get(
     if (!i) throw new HttpError(404, "INTROUVABLE");
     res.setHeader("Cache-Control", "no-store");
     res.json(i);
+    declencherEnvois(); // livraison débloquée si la photo vient d'arriver
   })
 );
 
@@ -126,6 +129,7 @@ souvenirRouter.post(
   asynchrone(async (req, res) => {
     await renvoyer(jetonDe(req), idInscription(req)).catch(refus);
     res.status(204).end();
+    declencherEnvois();
   })
 );
 
@@ -145,17 +149,20 @@ souvenirRouter.post(
   asynchrone(async (req, res) => {
     await reveler(jetonDe(req), idInscription(req));
     res.status(204).end();
+    declencherEnvois(); // mail 2 si la carte est gagnante
   })
 );
 
 // POST /souvenir/v1/liens { email } — lien « Toutes tes photos » ; toujours 202 (adresse connue ou non). Le lien part
-// par le mail 3 (fournisseur pas encore branché) ; en recette (SOUVENIR_SEANCES_TEST=1), il est rendu au serveur de la page.
+// par le mail 3, sans attendre (même temps de réponse dans les deux cas) ; en recette (SOUVENIR_SEANCES_TEST=1), il est
+// aussi rendu au serveur de la page.
 souvenirRouter.post(
   "/liens",
   serveurSouvenir,
   asynchrone(async (req, res) => {
     const { email } = z.object({ email: z.email().max(200).transform((v) => v.trim().toLowerCase()) }).parse(req.body);
     const lien = await demanderLien(email);
+    if (lien) envoyerLienParMail(email, lien).then((e) => e && console.error("Mail 3 de la page souvenir :", e), (err) => console.error("Mail 3 de la page souvenir :", err));
     res.status(202).json(lien && process.env.SOUVENIR_SEANCES_TEST === "1" ? { recette: lien } : {});
   })
 );
@@ -185,6 +192,61 @@ souvenirRouter.post(
   })
 );
 
+// ─── « Supprimer mes photos » (CDC § 9.3) : page de confirmation de la page souvenir, lien du pied des mails ───
+
+const oubliDe = (req: Request) => {
+  const id = lireJetonOubli(String(req.params.jeton));
+  if (!id) throw new HttpError(404, "INTROUVABLE");
+  return id;
+};
+
+// GET /souvenir/v1/oubli/:jeton — { lieu, date, seule } ; 404 si le lien est faux ou l'inscription déjà effacée
+souvenirRouter.get(
+  "/oubli/:jeton",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    const info = await infoOubli(oubliDe(req));
+    if (!info) throw new HttpError(404, "INTROUVABLE");
+    res.setHeader("Cache-Control", "no-store");
+    res.json(info);
+  })
+);
+
+// POST /souvenir/v1/oubli/:jeton — efface ; { photosEffacees } (false : d'autres personnes ont demandé la photo)
+souvenirRouter.post(
+  "/oubli/:jeton",
+  serveurSouvenir,
+  asynchrone(async (req, res) => {
+    const r = await oublier(oubliDe(req));
+    if (!r) throw new HttpError(404, "INTROUVABLE");
+    res.json(r);
+  })
+);
+
+// ─── Liens suivis des mails (CDC § 4.8) : public, sur URL signée ; la destination vient des réglages du lieu ───
+
+const CIBLES: Record<string, CibleSuivie> = { avis: "avis", instagram: "instagram", tiktok: "tiktok" };
+
+// GET /souvenir/v1/r/:cible/:id?exp=&sig= — compte le clic, puis redirige vers l'avis Google ou le compte du réseau
+souvenirRouter.get(
+  "/r/:cible/:id",
+  asynchrone(async (req, res) => {
+    verifierSignature(req);
+    const cible = CIBLES[String(req.params.cible)];
+    const id = z.uuid().safeParse(req.params.id);
+    const i = cible && id.success ? await prisma.souvenirInscription.findUnique({ where: { id: id.data }, select: { codeEvent: true, photoUuid: true, lieuId: true } }) : null;
+    const ev = i ? await evenementAffiche(i.codeEvent) : null;
+    if (!i || !ev) throw new HttpError(404, "INTROUVABLE");
+    const l = ev.r.lieu;
+    const vers = cible === "avis" ? l.avisGoogleUrl : compteReseau(cible, cible === "instagram" ? l.instagram : l.tiktok);
+    if (!vers) throw new HttpError(404, "INTROUVABLE");
+    const j = { code: i.codeEvent, photoUuid: i.photoUuid };
+    await journaliser(cible === "avis" ? "review_click" : "social_click", j, i.lieuId, cible === "avis" ? undefined : { reseau: cible }).catch(() => undefined);
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.redirect(302, vers);
+  })
+);
+
 /** Refuse (404, sans détail) une URL de fichier mal signée ou expirée. */
 function verifierSignature(req: Request) {
   if (!signatureValide(req.path, req.query.exp, req.query.sig)) throw new HttpError(404, "INTROUVABLE");
@@ -200,7 +262,8 @@ function entetes(res: Response, type: string, exp: unknown) {
 
 const uuidSchema = z.uuid();
 
-// GET /souvenir/v1/fichiers/:uuid?exp=&sig= — visuel d'une séance : photo réduite à 1600 px, GIF tel quel
+// GET /souvenir/v1/fichiers/:uuid?exp=&sig=[&l=500] — visuel d'une séance : photo réduite à 1600 px (500 px pour
+// l'aperçu des mails), GIF tel quel
 souvenirRouter.get(
   "/fichiers/:uuid",
   asynchrone(async (req, res) => {
@@ -217,7 +280,8 @@ souvenirRouter.get(
     }
     let image: Buffer;
     try {
-      image = await sharp(cheminAbsolu(m.mediaChemin)).rotate().resize(COTE_WEB, COTE_WEB, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
+      const cote = req.query.l === "500" ? 500 : COTE_WEB;
+      image = await sharp(cheminAbsolu(m.mediaChemin)).rotate().resize(cote, cote, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
     } catch {
       throw new HttpError(404, "INTROUVABLE");
     }

@@ -8,6 +8,7 @@ import { synchroniserMeteo } from "./calendrier/meteo.js";
 import { antennesConfigure, synchroniserVillesPrincipales } from "./antennes/villes.js";
 import { purgerMedias, telechargerEnAttente } from "./synchro-pikcloud/telechargement.js";
 import { purgerSouvenir, rattraperLivraisons } from "./souvenir/donnees.js";
+import { envoyerEnAttente } from "./souvenir/envois.js";
 
 const MINUTE = 60_000;
 const HEURE_RECAP = 8; // récapitulatif quotidien des alertes, heure de Paris
@@ -21,8 +22,8 @@ const HEURE_RECAP = 8; // récapitulatif quotidien des alertes, heure de Paris
  *   (DONNEES_EXTERNES=0 pour couper) ;
  * - médias PikCloud : téléchargement des fichiers en attente toutes les minutes (rattrapage, le webhook
  *   déclenche déjà une passe à chaque réception), purge de rétention toutes les heures (MEDIAS_RETENTION_JOURS) ;
- * - page souvenir : livraisons en attente de la photo débloquées toutes les minutes, données des invités
- *   effacées à 90 jours toutes les heures (CDC page souvenir § 9.2).
+ * - page souvenir : livraisons en attente de la photo débloquées et mails envoyés (Mailjet) toutes les minutes,
+ *   données des invités effacées à 90 jours toutes les heures (CDC page souvenir § 6, § 9.2).
  */
 export function demarrerPlanificateur() {
   const reversements = () =>
@@ -74,6 +75,8 @@ export function demarrerPlanificateur() {
   const livraisons = () =>
     rattraperLivraisons()
       .then((n) => n && console.log(`Page souvenir : ${n} livraison(s) débloquée(s), photo arrivée`))
+      .then(() => envoyerEnAttente())
+      .then((b) => b.envoyes + b.echecs && console.log(`Page souvenir : ${b.envoyes} mail(s) envoyé(s), ${b.echecs} échec(s)`))
       .catch((err) => console.error("Livraisons de la page souvenir :", err));
   const purgeSouvenir = () =>
     purgerSouvenir()

@@ -225,10 +225,13 @@ export async function purgerMedias(maintenant = new Date()): Promise<number> {
     where: { mediaStatut: "TELECHARGE", OR: [{ dateSave: { lt: limite } }, { dateSave: null, createdAt: { lt: limite } }] },
     take: 500,
   });
-  for (const m of perimes) {
-    await supprimer(m.mediaChemin);
-    await supprimer(m.vignetteChemin);
-    await prisma.media.update({ where: { id: m.id }, data: { mediaStatut: "PURGE", mediaChemin: null, vignetteChemin: null } });
-  }
+  for (const m of perimes) await purgerMedia(m);
   return perimes.length;
+}
+
+/** Efface les fichiers d'un média (et sa vignette) ; la ligne reste, en « purgé » (compteurs, ventes). */
+export async function purgerMedia(m: { id: bigint; mediaChemin: string | null; vignetteChemin: string | null }) {
+  await supprimer(m.mediaChemin);
+  await supprimer(m.vignetteChemin);
+  await prisma.media.update({ where: { id: m.id }, data: { mediaStatut: "PURGE", mediaChemin: null, vignetteChemin: null } });
 }

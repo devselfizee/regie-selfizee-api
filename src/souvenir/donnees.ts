@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { TZDate } from "@date-fns/tz";
 import { FUSEAU_METIER, jourEtHeureLocaux } from "../lib/temps.js";
 import { genererCode } from "../codes/codes.js";
+import { purgerMedia } from "../synchro-pikcloud/telechargement.js";
 import { LOTS } from "../config-evenement/reglages.js";
 import { ecrireJeton, type JetonSouvenir } from "./jeton.js";
 import { CONSERVATION_JOURS, contexteSeance } from "./seance.js";
@@ -20,6 +21,10 @@ const LIBELLE_LOT = "Carte à gratter (page souvenir)";
 
 export type Lot = (typeof LOTS)[number];
 export class RefusSouvenir extends Error {}
+/** Début du motif d'une livraison refusée par la boîte du destinataire (webhook Mailjet) */
+export const REBOND = "Rebond";
+/** Livraison qui attend la photo : pas encore arrivée, ou signalée introuvable après 24 h (elle peut encore arriver) */
+const ATTENTE_PHOTO = ["EN_ATTENTE_MEDIA", "PHOTO_INTROUVABLE"] as const;
 
 // ─── Inscriptions et livraisons ───
 
@@ -51,8 +56,9 @@ function versPage(i: InscriptionChargee) {
     optinSelfizee: i.optinSelfizee,
     creeLe: i.createdAt.toISOString(),
     // Envois du mail 1 déclenchés (la livraison en attente de la photo n'en est pas un)
-    envois: i.livraisons.filter((l) => l.etat !== "EN_ATTENTE_MEDIA").map((l) => l.createdAt.getTime()),
-    echec: i.livraisons.some((l) => l.etat === "ECHEC"),
+    envois: i.livraisons.filter((l) => !(ATTENTE_PHOTO as readonly string[]).includes(l.etat)).map((l) => l.createdAt.getTime()),
+    // Adresse refusée par sa boîte (rebond dur) : « Cette adresse ne reçoit pas nos mails » (CDC § 11)
+    echec: i.livraisons.some((l) => l.etat === "ECHEC" && Boolean(l.erreur?.startsWith(REBOND))),
     ...(i.carte ? { carte: { lot: i.carte.lot, revelee: Boolean(i.carte.reveleeLe), ...(i.carte.codeRemise ? { code: i.carte.codeRemise.code } : {}) } } : {}),
   };
 }
@@ -112,7 +118,7 @@ export async function inscrire(j: JetonSouvenir, d: DonneesInscription, maintena
 export async function inscription(j: JetonSouvenir, id: string, maintenant = Date.now()): Promise<InscriptionPage | null> {
   const i = await prisma.souvenirInscription.findFirst({ where: { id, ...deLaSeance(j), email: { not: null } }, include: inclure });
   if (!i) return null;
-  if (i.livraisons.some((l) => l.etat === "EN_ATTENTE_MEDIA") && (await contexteSeance(j, maintenant))?.etat === "disponible") {
+  if (i.livraisons.some((l) => (ATTENTE_PHOTO as readonly string[]).includes(l.etat)) && (await contexteSeance(j, maintenant))?.etat === "disponible") {
     await debloquerLivraisons([i.id]);
     await journaliser("mail_sent", j, i.lieuId, { differe: true });
     return versPage(await prisma.souvenirInscription.findUniqueOrThrow({ where: { id }, include: inclure }));
@@ -121,7 +127,7 @@ export async function inscription(j: JetonSouvenir, id: string, maintenant = Dat
 }
 
 const debloquerLivraisons = (inscriptions: string[]) =>
-  prisma.souvenirLivraison.updateMany({ where: { inscriptionId: { in: inscriptions }, etat: "EN_ATTENTE_MEDIA" }, data: { etat: "A_ENVOYER" } });
+  prisma.souvenirLivraison.updateMany({ where: { inscriptionId: { in: inscriptions }, etat: { in: [...ATTENTE_PHOTO] } }, data: { etat: "A_ENVOYER" } });
 
 /** « Renvoyer » (CDC § 4.3) : 3 renvois par heure au plus. */
 export async function renvoyer(j: JetonSouvenir, id: string, maintenant = Date.now()): Promise<void> {
@@ -138,7 +144,7 @@ export async function renvoyer(j: JetonSouvenir, id: string, maintenant = Date.n
 /** Livraisons en attente dont la photo est arrivée depuis : passées « à envoyer » (rattrapage du planificateur). */
 export async function rattraperLivraisons(maintenant = Date.now()): Promise<number> {
   const enAttente = await prisma.souvenirLivraison.findMany({
-    where: { etat: "EN_ATTENTE_MEDIA", createdAt: { gt: new Date(maintenant - CONSERVATION_JOURS * JOUR) } },
+    where: { etat: { in: [...ATTENTE_PHOTO] }, createdAt: { gt: new Date(maintenant - CONSERVATION_JOURS * JOUR) } },
     select: { inscription: { select: { id: true, codeEvent: true, photoUuid: true } } },
     take: 500,
   });
@@ -270,9 +276,10 @@ export const EVENEMENTS_JOURNAL = [
   "page_view", "carousel_swipe", "form_open", "registered", "mail_sent", "mail_resent", "scratch_shown", "scratch_revealed",
   "reprint_open", "reprint_paid", "mine_requested", "mine_opened",
 ] as const;
-export type EvenementJournal = (typeof EVENEMENTS_JOURNAL)[number];
+/** Événements venus des mails et des droits de l'invité (jamais postés par la page) */
+export type EvenementJournal = (typeof EVENEMENTS_JOURNAL)[number] | "review_click" | "social_click" | "data_deleted";
 /** Seuls détails gardés : jamais d'e-mail, de code ni d'IP. */
-const DETAILS_PERMIS = new Set(["lot", "optinLieu", "optinSelfizee", "differe", "copies", "montant", "index"]);
+const DETAILS_PERMIS = new Set(["lot", "optinLieu", "optinSelfizee", "differe", "copies", "montant", "index", "reseau", "photos"]);
 
 export async function journaliser(evenement: EvenementJournal, j: JetonSouvenir | null, lieuId: number | null | undefined, details?: Record<string, unknown>) {
   const propres = details ? Object.fromEntries(Object.entries(details).filter(([k, v]) => DETAILS_PERMIS.has(k) && ["string", "number", "boolean"].includes(typeof v))) : null;
@@ -292,6 +299,47 @@ export async function journaliserDepuisPage(evenement: EvenementJournal, j: Jeto
   const lieuId = j ? (await prisma.configEvenement.findUnique({ where: { code: j.code }, select: { lieuId: true } }))?.lieuId : null;
   if (j && lieuId === undefined) return; // événement inconnu : rien à compter
   await journaliser(evenement, j, lieuId, details);
+}
+
+// ─── « Supprimer mes photos » (CDC § 9.3) ───
+
+/** Ce que la page de confirmation montre : lieu, date, et si d'autres personnes ont demandé la même photo. */
+export async function infoOubli(id: string) {
+  const i = await prisma.souvenirInscription.findFirst({
+    where: { id, email: { not: null } },
+    select: { id: true, codeEvent: true, photoUuid: true, createdAt: true, lieu: { select: { enseigne: true } } },
+  });
+  if (!i) return null;
+  const autres = await prisma.souvenirInscription.count({ where: { ...deLaSeance({ code: i.codeEvent, photoUuid: i.photoUuid }), email: { not: null }, id: { not: id } } });
+  return { lieu: i.lieu?.enseigne ?? "", date: i.createdAt.toISOString(), seule: autres === 0 };
+}
+
+/**
+ * Efface l'e-mail, le prénom et les traces techniques de l'inscription, et annule ses envois en attente. Si personne
+ * d'autre n'a demandé cette photo, ses fichiers sont effacés aussi (la page de la séance expire). Les ventes, les
+ * cartes et les compteurs restent, sans donnée personnelle. null : déjà effacée ou inconnue.
+ */
+export async function oublier(id: string, maintenant = Date.now()): Promise<{ photosEffacees: boolean } | null> {
+  const i = await prisma.souvenirInscription.findFirst({ where: { id, email: { not: null } }, select: { id: true, codeEvent: true, photoUuid: true, lieuId: true } });
+  if (!i) return null;
+  const j = { code: i.codeEvent, photoUuid: i.photoUuid };
+  await prisma.souvenirInscription.update({
+    where: { id: i.id },
+    data: { email: null, prenom: null, ipTronquee: null, userAgent: null, anonymiseeLe: new Date(maintenant) },
+  });
+  await prisma.souvenirLivraison.deleteMany({ where: { inscriptionId: i.id, etat: { in: ["A_ENVOYER", ...ATTENTE_PHOTO] } } });
+  const autres = await prisma.souvenirInscription.count({ where: { ...deLaSeance(j), email: { not: null } } });
+  let photosEffacees = false;
+  if (autres === 0) {
+    const medias = await prisma.media.findMany({
+      where: { codeEvent: i.codeEvent, photoUuid: i.photoUuid, mediaStatut: "TELECHARGE" },
+      select: { id: true, mediaChemin: true, vignetteChemin: true },
+    });
+    for (const m of medias) await purgerMedia(m);
+    photosEffacees = true;
+  }
+  await journaliser("data_deleted", j, i.lieuId, { photos: photosEffacees });
+  return { photosEffacees };
 }
 
 // ─── Conservation (CDC § 9.2) ───

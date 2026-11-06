@@ -2,6 +2,9 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reglagesParDefaut } from "../src/config-evenement/reglages.js";
 import { tirerLot } from "../src/souvenir/donnees.js";
+import { envoyerEnAttente, expediteur } from "../src/souvenir/envois.js";
+import { mailLivraison } from "../src/souvenir/mails.js";
+import { rattraperLivraisons } from "../src/souvenir/donnees.js";
 
 // Ce que l'invité écrit sur la page souvenir, stocké dans la Régie : inscription, renvoi, livraison différée, carte à
 // gratter avec un vrai code de remise, lien « Toutes tes photos », journal, export des contacts opt-in lieu.
@@ -22,13 +25,60 @@ const b = vi.hoisted(() => {
     journal: [] as Ligne[],
     audit: [] as Ligne[],
     n: 1,
+    // Fournisseur de mails simulé : ce qui aurait été envoyé, et sa réponse (null = accepté)
+    mailjet: false,
+    reponseMailjet: null as string | null,
+    envois: [] as { a: string; sujet: string; html: string; pj: { nom: string }[]; options: { idSuivi?: string; expediteur?: { email: string } } }[],
+    codeSeance: "K7PX2M" as string | null,
   };
+});
+
+vi.mock("../src/lib/envoi.js", () => ({
+  emailConfigure: () => b.mailjet,
+  envoyerEmail: async (a: string, sujet: string, html: string, pj: { nom: string }[] = [], options = {}) => {
+    b.envois.push({ a, sujet, html, pj, options });
+    return b.reponseMailjet;
+  },
+}));
+
+// Fichiers simulés : photo et GIF lisibles, rien n'est effacé du disque
+vi.mock("../src/lib/stockage.js", async (orig) => ({
+  ...(await orig<typeof import("../src/lib/stockage.js")>()),
+  lireBuffer: async (c: string) => Buffer.alloc(c.endsWith(".gif") ? 2000 : 1000),
+  supprimer: async () => undefined,
+}));
+
+// Séance telle que la lit la page (fichiers et grille simulés) ; l'état vient des médias de la base simulée
+vi.mock("../src/souvenir/seance.js", async (orig) => {
+  const vrai = await orig<typeof import("../src/souvenir/seance.js")>();
+  type R = { lieu: { ton: "club"; avisGoogleUrl: string | null; instagram: string | null; tiktok: string | null; hashtag: string | null } };
+  const evenementAffiche = async (code: string) =>
+    code === "RA7K" ? { e: { id: 70, code, lieuId: 7, lieu: { enseigne: "La Ruche", ville: "Trégueux" } }, r: b.reglages as R } : null;
+  const lireSeanceSouvenir = async (j: { code: string; photoUuid: string }, base: string) => {
+    if (j.code !== "RA7K") return null;
+    const l = (b.reglages as R).lieu;
+    const dispo = b.medias.some((m) => m.photoUuid === j.photoUuid && m.mediaStatut === "TELECHARGE");
+    return {
+      token: `RA7K-${j.photoUuid.replace(/-/g, "")}`,
+      evenement: {
+        code: "RA7K", lieu: "La Ruche", ville: "Trégueux", jeu: { actif: true, lots: {}, maxLotsParJour: 50 }, reimpressionWeb: false,
+        tarifs: { paliers: [{ from: 1, unitPrice: 5 }, { from: 2, unitPrice: 3.5 }] }, ton: l.ton,
+        liens: { avisGoogle: l.avisGoogleUrl, instagram: l.instagram, tiktok: l.tiktok, hashtag: l.hashtag }, illustrations: [],
+      },
+      etat: dispo ? "disponible" : "en-attente",
+      ...(b.codeSeance ? { codeSeance: b.codeSeance } : {}),
+      ...(dispo ? { prisLe: "2026-10-19T21:42:00.000Z", visuels: [{ type: "photo", url: `${base}/souvenir/v1/fichiers/u?exp=1&sig=s`, largeur: 1, hauteur: 1 }] } : { visuels: [] }),
+    };
+  };
+  return { ...vrai, evenementAffiche, lireSeanceSouvenir };
 });
 
 vi.mock("../src/lib/prisma.js", () => {
   const corresp = (l: Ligne, where: Record<string, unknown> = {}): boolean =>
     Object.entries(where).every(([k, v]) => {
       const x = l[k];
+      if (v === null) return x === null || x === undefined;
+      if (typeof v === "bigint") return BigInt(x as number) === v;
       if (k === "OR") return (v as Record<string, unknown>[]).some((w) => corresp(l, w));
       if (k === "livraisons") return b.livraisons.some((liv) => liv.inscriptionId === l.id && corresp(liv, (v as { some: Record<string, unknown> }).some));
       if (k === "inscription") return corresp(b.inscriptions.find((i) => i.id === l.inscriptionId)!, v as Record<string, unknown>);
@@ -37,10 +87,11 @@ vi.mock("../src/lib/prisma.js", () => {
         const o = v as Record<string, unknown>;
         if ("not" in o) return o.not === null ? x !== null && x !== undefined : x !== o.not;
         if ("in" in o) return (o.in as unknown[]).includes(x);
-        if ("gt" in o || "gte" in o || "lt" in o) {
+        if ("gt" in o || "gte" in o || "lt" in o || "lte" in o) {
           const t = x instanceof Date ? x.getTime() : Number(x);
           const n = (d: unknown) => (d instanceof Date ? d.getTime() : Number(d));
-          return (!("gt" in o) || t > n(o.gt)) && (!("gte" in o) || t >= n(o.gte)) && (!("lt" in o) || t < n(o.lt));
+          if (x === null || x === undefined) return false;
+          return (!("gt" in o) || t > n(o.gt)) && (!("gte" in o) || t >= n(o.gte)) && (!("lt" in o) || t < n(o.lt)) && (!("lte" in o) || t <= n(o.lte));
         }
         return false;
       }
@@ -66,7 +117,7 @@ vi.mock("../src/lib/prisma.js", () => {
       const l: Ligne = { id: reste.id ?? (rows() === b.inscriptions ? `00000000-0000-4000-8000-${String(b.n++).padStart(12, "0")}` : b.n++), createdAt: new Date(), ...defauts(), ...reste };
       if (rows() === b.cartes && rows().some((c) => c.inscriptionId === l.inscriptionId)) throw Object.assign(new Error("unique"), { code: "P2002" });
       rows().push(l);
-      if (livraisons) b.livraisons.push({ id: b.n++, inscriptionId: l.id, renvoi: false, createdAt: new Date(), ...livraisons.create });
+      if (livraisons) b.livraisons.push({ id: b.n++, inscriptionId: l.id, renvoi: false, tentatives: 0, prochainEssai: null, erreur: null, createdAt: new Date(), ...livraisons.create });
       return avec(l, true);
     },
     update: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
@@ -79,7 +130,11 @@ vi.mock("../src/lib/prisma.js", () => {
       r.forEach((l) => Object.assign(l, data));
       return { count: r.length };
     },
-    deleteMany: async () => ({ count: 0 }),
+    deleteMany: async ({ where }: { where?: Record<string, unknown> } = {}) => {
+      const r = rows().filter((l) => corresp(l, where));
+      r.forEach((l) => rows().splice(rows().indexOf(l), 1));
+      return { count: r.length };
+    },
     groupBy: async ({ by, where }: { by: string[]; where?: Record<string, unknown> }) => {
       const g = new Map<unknown, number>();
       rows().filter((l) => corresp(l, where)).forEach((l) => g.set(l[by[0]], (g.get(l[by[0]]) ?? 0) + 1));
@@ -95,7 +150,10 @@ vi.mock("../src/lib/prisma.js", () => {
       return { ...l, livraisons: b.livraisons.filter((x) => x.inscriptionId === l.id), carte: carte ? { ...carte, codeRemise: code ? { code: code.code } : null } : null, evenement: { nom: null, habituel: true } };
     }
     if ("inscriptionId" in l && "renvoi" in l) return { ...l, inscription: b.inscriptions.find((i) => i.id === l.inscriptionId) };
-    if ("lot" in l && "inscriptionId" in l) return { ...l, inscription: b.inscriptions.find((i) => i.id === l.inscriptionId) };
+    if ("lot" in l && "inscriptionId" in l) {
+      const code = b.codes.find((c) => c.id === l.codeRemiseId);
+      return { ...l, inscription: b.inscriptions.find((i) => i.id === l.inscriptionId), codeRemise: code ? { code: code.code } : null };
+    }
     return l;
   };
   const prisma = {
@@ -106,8 +164,8 @@ vi.mock("../src/lib/prisma.js", () => {
     },
     media: table(() => b.medias),
     souvenirInscription: table(() => b.inscriptions, () => ({ anonymiseeLe: null })),
-    souvenirLivraison: table(() => b.livraisons, () => ({ renvoi: false })),
-    souvenirCarte: table(() => b.cartes, () => ({ reveleeLe: null })),
+    souvenirLivraison: table(() => b.livraisons, () => ({ renvoi: false, tentatives: 0, prochainEssai: null, erreur: null })),
+    souvenirCarte: table(() => b.cartes, () => ({ reveleeLe: null, mailEnvoyeLe: null, mailErreur: null, mailTentatives: 0, mailProchainEssai: null })),
     codeRemise: table(() => b.codes, () => ({ utilise: 0 })),
     lotCodesRemise: table(() => b.lots),
     souvenirLien: table(() => b.liens, () => ({ ouvertLe: null })),
@@ -142,6 +200,10 @@ beforeEach(() => {
   r.tarifs.jeu = { actif: true, lots: { free: 0, pct50: 0, pct30: 1, none: 0 }, maxLotsParJour: 50 };
   b.reglages = r;
   for (const k of ["medias", "inscriptions", "livraisons", "cartes", "codes", "lots", "liens", "journal", "audit"] as const) b[k] = [];
+  b.envois = [];
+  b.mailjet = false;
+  b.reponseMailjet = null;
+  b.codeSeance = "K7PX2M";
 });
 
 describe("tirage du lot", () => {
@@ -274,5 +336,167 @@ describe("fiche lieu : entonnoir et contacts opt-in lieu", () => {
     expect(csv.text).toContain("oui@exemple.fr");
     expect(csv.text).not.toContain("non@exemple.fr");
     expect(b.audit[0]).toMatchObject({ action: "EXPORT_CONTACTS_SOUVENIR", entiteId: "7" });
+  });
+});
+
+describe("mails de la page souvenir (Mailjet simulé)", () => {
+  const avecMails = () => {
+    b.mailjet = true;
+    process.env.SOUVENIR_URL_FICHIERS = "https://api.test";
+    process.env.SOUVENIR_PAGE_URL = "https://souvenir.test";
+    process.env.MAILJET_WEBHOOK_SECRET = "cle-webhook";
+  };
+  const gifArrive = () => b.medias.push({ id: 2, lieuId: 7, codeEvent: "RA7K", photoUuid: UUID_CANON, test: false, mediaStatut: "TELECHARGE", mediaChemin: "00/x.gif", dateSave: new Date(), datePhoto: null, createdAt: new Date() });
+  const sansEsperluettes = (u: string) => u.replace(/&amp;/g, "&");
+
+  it("expéditeur : SENDER_SELFIZEE, adresse seule ou « Nom <adresse> »", () => {
+    expect(expediteur("Selfizee Photos <photos@selfizee.fr>")).toEqual({ email: "photos@selfizee.fr", nom: "Selfizee Photos" });
+    expect(expediteur("bonjour@selfizee.fr")).toEqual({ email: "bonjour@selfizee.fr", nom: "Selfizee" });
+    expect(expediteur(undefined)).toEqual({ email: "photos@selfizee.fr", nom: "Selfizee" });
+  });
+
+  it("mail 1 : photo et GIF en pièces jointes, code, avis, réseaux, « Supprimer mes photos » ; clic suivi ; rebond dur → « échec »", async () => {
+    avecMails();
+    process.env.SENDER_SELFIZEE = "Selfizee <photos@selfizee.fr>";
+    const r = b.reglages as { lieu: { avisGoogleUrl: string | null; instagram: string | null } };
+    r.lieu.avisGoogleUrl = "https://g.page/r/la-ruche/review";
+    r.lieu.instagram = "@laruche";
+    photoArrivee();
+    gifArrive();
+    const a = await srv.post(`/seances/${TOKEN}/inscriptions`, corps("lou@exemple.fr")).expect(201);
+    await envoyerEnAttente();
+    expect(b.envois).toHaveLength(1);
+    const m = b.envois[0];
+    expect(m).toMatchObject({ a: "lou@exemple.fr", sujet: "Tes photos de La Ruche sont là" });
+    expect(m.options).toMatchObject({ expediteur: { email: "photos@selfizee.fr" }, idSuivi: `souvenir-l-${b.livraisons[0].id}` });
+    expect(m.pj.map((p) => p.nom)).toEqual(["selfizee-la-ruche-2026-10-19.jpg", "anim.gif"]);
+    expect(m.html).toContain("Ta photo et ton GIF sont en pièces jointes.");
+    expect(m.html).toContain(`/p/${TOKEN}"`); // même lien que le QR imprimé (SOUVENIR_QR_BASE_URL)
+    expect(m.html).toContain("K7PX2M");
+    expect(m.html).toContain("Dès 3,50");
+    expect(m.html).toContain("Je laisse mon avis");
+    expect(m.html).toContain("https://api.test/souvenir/v1/fichiers/u?exp=1&amp;sig=s&amp;l=500");
+    expect(m.html).toContain("https://souvenir.test/forget/");
+    expect(m.html).toContain("La Ruche, Trégueux, le 19 octobre 2026");
+    expect(b.livraisons[0]).toMatchObject({ etat: "ENVOYE" });
+
+    // « Je laisse mon avis » : compté, puis redirigé vers l'avis Google réglé dans la Régie
+    const avis = sansEsperluettes(/href="(https:\/\/api\.test\/souvenir\/v1\/r\/avis\/[^"]+)"/.exec(m.html)![1]).replace("https://api.test", "");
+    const redir = await request(app).get(avis).expect(302);
+    expect(redir.headers.location).toBe("https://g.page/r/la-ruche/review");
+    expect(b.journal.some((j) => j.evenement === "review_click")).toBe(true);
+    await request(app).get(avis.replace(/sig=[^&]+/, "sig=faux")).expect(404);
+    const insta = sansEsperluettes(/href="(https:\/\/api\.test\/souvenir\/v1\/r\/instagram\/[^"]+)"/.exec(m.html)![1]).replace("https://api.test", "");
+    expect((await request(app).get(insta).expect(302)).headers.location).toBe("https://www.instagram.com/laruche/");
+
+    // Rebond dur signalé par Mailjet
+    const evt = [{ event: "bounce", hard_bounce: true, error_related_to: "recipient", error: "user unknown", CustomID: m.options.idSuivi }];
+    await request(app).post("/webhooks/v1/mailjet").send(evt).expect(401);
+    await request(app).post("/webhooks/v1/mailjet?cle=cle-webhook").send(evt).expect(200);
+    expect(b.livraisons[0]).toMatchObject({ etat: "ECHEC" });
+    expect((await srv.get(`/seances/${TOKEN}/inscriptions/${a.body.id}`).expect(200)).body.echec).toBe(true);
+    delete process.env.SENDER_SELFIZEE;
+  });
+
+  it("refus du fournisseur : réessais espacés, puis « échec » sans accuser l'adresse ; sans Mailjet, rien ne part", async () => {
+    photoArrivee();
+    const a = await srv.post(`/seances/${TOKEN}/inscriptions`, corps("lou@exemple.fr")).expect(201);
+    await envoyerEnAttente();
+    expect(b.envois).toHaveLength(0);
+    expect(b.livraisons[0].etat).toBe("A_ENVOYER");
+
+    avecMails();
+    b.reponseMailjet = "Mailjet 503 : indisponible";
+    await envoyerEnAttente();
+    expect(b.envois).toHaveLength(1);
+    expect(b.livraisons[0]).toMatchObject({ etat: "A_ENVOYER", tentatives: 1 });
+    expect((b.livraisons[0].prochainEssai as Date).getTime()).toBeGreaterThan(Date.now());
+    await envoyerEnAttente();
+    expect(b.envois).toHaveLength(1);
+    Object.assign(b.livraisons[0], { tentatives: 5, prochainEssai: new Date(Date.now() - 1000) });
+    await envoyerEnAttente();
+    expect(b.livraisons[0]).toMatchObject({ etat: "ECHEC", erreur: "Mailjet 503 : indisponible" });
+    expect((await srv.get(`/seances/${TOKEN}/inscriptions/${a.body.id}`).expect(200)).body.echec).toBe(false);
+  });
+
+  it("mail 2 : code gagné envoyé une fois, à la révélation de la carte", async () => {
+    avecMails();
+    photoArrivee();
+    const a = await srv.post(`/seances/${TOKEN}/inscriptions`, corps("lou@exemple.fr")).expect(201);
+    const carte = (await srv.post(`/seances/${TOKEN}/inscriptions/${a.body.id}/carte`).expect(200)).body;
+    await envoyerEnAttente();
+    expect(b.envois.map((e) => e.sujet)).toEqual(["Tes photos de La Ruche sont là"]);
+    await srv.post(`/seances/${TOKEN}/inscriptions/${a.body.id}/revelation`).expect(204);
+    await envoyerEnAttente();
+    expect(b.envois.map((e) => e.sujet)).toEqual(["Tes photos de La Ruche sont là", "Gagné : -30 % sur ta prochaine photo"]);
+    expect(b.envois[1].html).toContain(carte.code);
+    expect(b.envois[1].html).toContain("https://souvenir.test/illustrations/illus-1.jpg");
+    expect(b.cartes[0].mailEnvoyeLe).toBeInstanceOf(Date);
+    await envoyerEnAttente();
+    expect(b.envois).toHaveLength(2);
+  });
+
+  it("photo introuvable 24 h après l'inscription : mail, puis livraison si elle finit par arriver", async () => {
+    avecMails();
+    await srv.post(`/seances/${TOKEN}/inscriptions`, corps("lou@exemple.fr")).expect(201);
+    await envoyerEnAttente();
+    expect(b.envois).toHaveLength(0);
+    b.livraisons[0].createdAt = new Date(Date.now() - 25 * 3_600_000);
+    await envoyerEnAttente();
+    expect(b.envois.map((e) => e.sujet)).toEqual(["On n'a pas retrouvé ta photo"]);
+    expect(b.livraisons[0].etat).toBe("PHOTO_INTROUVABLE");
+    photoArrivee();
+    expect(await rattraperLivraisons()).toBe(1);
+    await envoyerEnAttente();
+    expect(b.envois.map((e) => e.sujet)).toEqual(["On n'a pas retrouvé ta photo", "Tes photos de La Ruche sont là"]);
+  });
+
+  it("mail 3 : le lien « Toutes tes photos » part seulement vers une adresse livrée", async () => {
+    avecMails();
+    photoArrivee();
+    await srv.post(`/seances/${TOKEN}/inscriptions`, corps("lou@exemple.fr")).expect(201);
+    await envoyerEnAttente();
+    await srv.post("/liens", { email: "inconnu@exemple.fr" }).expect(202);
+    await srv.post("/liens", { email: "lou@exemple.fr" }).expect(202);
+    await vi.waitFor(() => expect(b.envois).toHaveLength(2));
+    expect(b.envois.map((e) => e.a)).toEqual(["lou@exemple.fr", "lou@exemple.fr"]);
+    expect(b.envois[1]).toMatchObject({ sujet: "Toutes tes photos Selfizee" });
+    expect(b.envois[1].html).toMatch(/https:\/\/souvenir\.test\/mine\/[A-Za-z0-9_-]{30,}/);
+    expect(b.envois[1].html).toContain("1 photo sur 90 jours");
+  });
+
+  it("« Supprimer mes photos » : lien signé ; l'e-mail seul si d'autres ont demandé la photo, sinon les fichiers aussi", async () => {
+    avecMails();
+    photoArrivee();
+    await srv.post(`/seances/${TOKEN}/inscriptions`, corps("lou@exemple.fr")).expect(201);
+    await srv.post(`/seances/${TOKEN}/inscriptions`, corps("max@exemple.fr")).expect(201);
+    await envoyerEnAttente();
+    const jetons = b.envois.map((e) => /https:\/\/souvenir\.test\/forget\/([^"]+)"/.exec(e.html)![1]);
+    await srv.get(`/oubli/${jetons[0].slice(0, -3)}abc`).expect(404);
+    await request(app).get(`/souvenir/v1/oubli/${jetons[0]}`).expect(401);
+
+    expect((await srv.get(`/oubli/${jetons[0]}`).expect(200)).body).toMatchObject({ seule: false });
+    expect((await srv.post(`/oubli/${jetons[0]}`).expect(200)).body).toEqual({ photosEffacees: false });
+    expect(b.inscriptions[0]).toMatchObject({ email: null, prenom: null, ipTronquee: null });
+    expect(b.medias[0].mediaStatut).toBe("TELECHARGE");
+    await srv.get(`/oubli/${jetons[0]}`).expect(404);
+
+    expect((await srv.get(`/oubli/${jetons[1]}`).expect(200)).body).toMatchObject({ seule: true });
+    expect((await srv.post(`/oubli/${jetons[1]}`).expect(200)).body).toEqual({ photosEffacees: true });
+    expect(b.medias[0]).toMatchObject({ mediaStatut: "PURGE", mediaChemin: null });
+    expect(JSON.stringify(b.journal.filter((j) => j.evenement === "data_deleted"))).not.toMatch(/exemple\.fr/);
+  });
+
+  it("gabarit : sans code de séance ni lien d'avis, ni bloc de réimpression ni bloc avis ; tout est échappé", () => {
+    const m = mailLivraison({
+      lieu: "<b>Bar</b>", ville: "", date: new Date("2026-10-19T21:42:00Z"), page: "https://p.test/p/X", instagram: "https://i.test", tiktok: "https://t.test",
+      hashtag: "@selfizee", avecGif: false, pied: { logo: "https://p.test/selfizee.png", viePrivee: "https://p.test/vie-privee", raison: "r" },
+    });
+    expect(m.html).not.toContain("Réimprime ta photo");
+    expect(m.html).not.toContain("Je laisse mon avis");
+    expect(m.html).not.toContain("<b>Bar</b>");
+    expect(m.html).toContain("&lt;b&gt;Bar&lt;/b&gt;");
+    expect(m.html).toContain("Ta photo est en pièce jointe.");
+    expect(m.texte).toContain("https://p.test/p/X");
   });
 });
