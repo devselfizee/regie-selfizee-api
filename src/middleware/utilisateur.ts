@@ -3,7 +3,6 @@ import type { User, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../lib/http.js";
 import type { AuthRequest } from "./auth.js";
-import { reglagesComptes, reglagesComptesDefaut } from "../lib/reglagesComptes.js";
 
 export interface UtilisateurRequest extends AuthRequest {
   utilisateur?: Pick<User, "id" | "email" | "nom" | "prenom" | "role" | "lieuId">;
@@ -20,7 +19,7 @@ export const adminsInitiaux = (brut = process.env.ADMIN_EMAILS ?? "") =>
     .map((e) => e.trim().replace(/^["']|["']$/g, "").toLowerCase())
     .filter((e) => e.includes("@"));
 
-const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true, roleKeycloak: true, rolesJeton: true } as const;
+const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true, roleKeycloak: true } as const;
 
 // Photo du compte sur la plateforme Konitys (celle de l'en-tête), relevée au plus toutes les 12 h
 const GATEWAY_KONITYS = (process.env.KONITYS_GATEWAY_URL || "https://plateform-gateway.orkessi.com").replace(/\/+$/, "");
@@ -34,14 +33,20 @@ export function idPlateforme(reponse: unknown): number | null {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+// Champs possibles du téléphone dans la fiche Hub (le nom exact n'est pas documenté) ; réglable si besoin
+const CHAMPS_TELEPHONE = () =>
+  (process.env.KONITYS_CHAMPS_TELEPHONE || "telephone,tel,phone,phone_number,mobile,portable,telephone_portable,telephone_mobile")
+    .split(/[,;\s]+/)
+    .filter(Boolean);
+
 /**
  * Téléphone de la fiche Hub (/api/users/me), pour les alertes SMS : Keycloak et le Hub ont les mêmes utilisateurs,
  * le Hub est la source. Null s'il n'y en a pas (le numéro déjà connu est alors gardé).
  */
-export function telephoneHub(reponse: unknown, champs = reglagesComptesDefaut().champsTelephone): string | null {
+export function telephoneHub(reponse: unknown): string | null {
   const r = reponse as { data?: { data?: Record<string, unknown> } & Record<string, unknown> } & Record<string, unknown>;
   const d = (r?.data?.data ?? r?.data ?? r) as Record<string, unknown> | undefined;
-  for (const champ of champs) {
+  for (const champ of CHAMPS_TELEPHONE()) {
     const v = d?.[champ];
     if (typeof v === "string" && v.replace(/\D/g, "").length >= 6) return v.trim();
   }
@@ -57,13 +62,13 @@ export function urlPhotoKonitys(reponse: unknown, base = PLATEFORME_KONITYS): st
 }
 
 /** Relève la photo du compte avec le jeton de la personne, sans retarder la requête ; une panne de la plateforme ne bloque rien */
-function releverPhoto(userId: number, autorisation: string, champsTelephone: string[]) {
+function releverPhoto(userId: number, autorisation: string) {
   fetch(`${GATEWAY_KONITYS}/api/users/me`, { headers: { Authorization: autorisation }, signal: AbortSignal.timeout(5000) })
     .then(async (r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const moi = await r.json();
       const plateformeUserId = idPlateforme(moi);
-      const telephone = telephoneHub(moi, champsTelephone);
+      const telephone = telephoneHub(moi);
       await prisma.user.update({
         where: { id: userId },
         data: {
@@ -93,17 +98,24 @@ export function identiteKeycloak(jeton: AuthRequest["user"]): { nom?: string; pr
 export const rolesAdminKeycloak = (brut = process.env.KEYCLOAK_ROLES_ADMIN || "admin,administrateur,administrator,super-admin,super_admin,superadmin") =>
   brut.split(/[,;\s]+/).map((r) => r.trim().toLowerCase()).filter(Boolean);
 
+const liste = (brut: string) => brut.split(/[,;]+/).map((r) => r.trim().toLowerCase()).filter(Boolean);
+
 /**
  * Rôles Keycloak (realm ou client, sans tenir compte de la casse) qui donnent chaque rôle de la Régie.
  * Keycloak est la source des rôles (retour de Sébastien) ; noms réglables par variable d'environnement.
  * Ordre de priorité : un compte qui a plusieurs rôles prend le plus large.
  */
-const PRIORITE: UserRole[] = ["ADMIN", "TECHNICIEN", "COMMERCIAL", "PARTENAIRE"];
+const ROLES_KEYCLOAK: [UserRole, () => string[]][] = [
+  ["ADMIN", () => rolesAdminKeycloak()],
+  ["TECHNICIEN", () => liste(process.env.KEYCLOAK_ROLES_TECHNICIEN || "technicien,installateur,regie-technicien")],
+  ["COMMERCIAL", () => liste(process.env.KEYCLOAK_ROLES_COMMERCIAL || "commercial,konitys commercial,konitys-commercial,konitys_commercial,regie-commercial")],
+  ["PARTENAIRE", () => liste(process.env.KEYCLOAK_ROLES_PARTENAIRE || "partenaire,regie-partenaire")],
+];
 
-/** Rôle de la Régie d'après les rôles du jeton Keycloak (correspondance réglée dans Paramètres) ; null si aucun */
-export function roleKeycloak(jeton: AuthRequest["user"], correspondance: Record<UserRole, string[]> = reglagesComptesDefaut().roles): UserRole | null {
+/** Rôle de la Régie d'après les rôles du jeton Keycloak ; null si le jeton n'en porte aucun */
+export function roleKeycloak(jeton: AuthRequest["user"]): UserRole | null {
   const roles = new Set([...(jeton?.realm_access?.roles ?? []), ...Object.values(jeton?.resource_access ?? {}).flatMap((c) => c.roles ?? [])].map((r) => r.toLowerCase()));
-  return PRIORITE.find((r) => (correspondance[r] ?? []).some((n) => roles.has(n.toLowerCase()))) ?? null;
+  return ROLES_KEYCLOAK.find(([, noms]) => noms().some((n) => roles.has(n)))?.[0] ?? null;
 }
 
 /** Le jeton porte-t-il un rôle admin, au niveau du realm ou d'un client ? */
@@ -148,8 +160,7 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     if (!sub) return res.status(401).json({ error: "Token invalide" });
 
     // Rôle tenu dans Keycloak ; ADMIN_EMAILS ne sert qu'à l'amorçage (premier admin)
-    const reglages = await reglagesComptes();
-    const roleKc = roleKeycloak(req.user, reglages.roles) ?? (email !== undefined && adminsInitiaux().includes(email) ? "ADMIN" : null);
+    const roleKc = roleKeycloak(req.user) ?? (email !== undefined && adminsInitiaux().includes(email) ? "ADMIN" : null);
     let u = await prisma.user.findUnique({ where: { keycloakSub: sub }, select: champs });
 
     // Première connexion : rattachement par e-mail à un utilisateur ajouté par un admin, sinon création
@@ -172,11 +183,9 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
       }
     }
 
-    // Le rôle suit Keycloak à chaque connexion ; sans rôle de la Régie dans Keycloak, le compte garde le sien.
-    // Les rôles du jeton sont retenus : Paramètres les propose pour régler la correspondance.
-    const rolesJeton = [...new Set([...(req.user?.realm_access?.roles ?? []), ...Object.values(req.user?.resource_access ?? {}).flatMap((c) => c.roles ?? [])])].sort();
-    if (u && (u.roleKeycloak !== !!roleKc || (roleKc && u.role !== roleKc) || u.rolesJeton.join("|") !== rolesJeton.join("|"))) {
-      u = await prisma.user.update({ where: { id: u.id }, data: { roleKeycloak: !!roleKc, rolesJeton, ...(roleKc ? { role: roleKc } : {}) }, select: champs });
+    // Le rôle suit Keycloak à chaque connexion ; sans rôle de la Régie dans Keycloak, le compte garde le sien
+    if (u && (u.roleKeycloak !== !!roleKc || (roleKc && u.role !== roleKc))) {
+      u = await prisma.user.update({ where: { id: u.id }, data: { roleKeycloak: !!roleKc, ...(roleKc ? { role: roleKc } : {}) }, select: champs });
     }
 
     // Nom, prénom et téléphone suivent Keycloak à chaque connexion
@@ -199,7 +208,7 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     const autorisation = req.header("authorization");
     if (autorisation?.startsWith("Bearer ") && (!u.photoVerifieeLe || Date.now() - u.photoVerifieeLe.getTime() > (u.plateformeUserId ? PHOTO_VALIDE_MS : 10 * 60_000))) {
       u = { ...u, photoVerifieeLe: new Date() };
-      releverPhoto(u.id, autorisation, reglages.champsTelephone);
+      releverPhoto(u.id, autorisation);
     }
     req.utilisateur = u;
     next();

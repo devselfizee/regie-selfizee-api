@@ -33,7 +33,6 @@ model User {
   plateformeUserId Int?      @map("plateforme_user_id") // destinataire des notifications de la plateforme
   role             UserRole  @default(COMMERCIAL)
   roleKeycloak     Boolean   @default(false) @map("role_keycloak") // rôle lu dans Keycloak à la dernière connexion
-  rolesJeton       String[]  @default([]) @map("roles_jeton") // rôles Keycloak du dernier jeton
   lieuId           Int?      @map("lieu_id") // rôle PARTENAIRE uniquement (V2)
   isActive         Boolean   @default(true) @map("is_active")
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1554,13 +1553,4 @@ enum FichierStatut {
   TELECHARGE // copie locale faite (média) ou JSON lu (data)
   ERREUR // échecs répétés : visible dans la file d'erreurs, un renvoi PikCloud relance
   PURGE // fichier supprimé par la rétention, la ligne reste
-}
-
-/// Réglages de l'application modifiables dans Paramètres (clé → valeur JSON)
-model ReglageApplication {
-  cle       String   @id
-  valeur    Json
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  @@map("reglages_application")
 }

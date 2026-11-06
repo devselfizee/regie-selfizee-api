@@ -3,39 +3,10 @@ import { RefCategorie } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
-import { enregistrerReglagesComptes, reglagesComptes, reglagesComptesDefaut, reglagesComptesSchema } from "../lib/reglagesComptes.js";
+import { exiger } from "../middleware/utilisateur.js";
 import { antennesConfigure, synchroniserVillesPrincipales } from "../antennes/villes.js";
 
 export const referentielRouter = Router();
-
-// GET /api/referentiel/comptes — rôles Keycloak de chaque rôle de la Régie, champs du téléphone dans le Hub (Paramètres)
-referentielRouter.get(
-  "/comptes",
-  exiger("ADMIN"),
-  asynchrone(async (_req, res) => {
-    // Rôles Keycloak vus dans les jetons, avec le nombre de comptes qui les portent
-    const comptes = await prisma.user.findMany({ where: { isActive: true }, select: { rolesJeton: true } });
-    const vus = new Map<string, number>();
-    for (const c of comptes) for (const r of c.rolesJeton) vus.set(r, (vus.get(r) ?? 0) + 1);
-    res.json({
-      reglages: await reglagesComptes(),
-      defaut: reglagesComptesDefaut(),
-      rolesVus: [...vus].map(([role, nb]) => ({ role, nb })).sort((a, b) => b.nb - a.nb || a.role.localeCompare(b.role)),
-    });
-  })
-);
-
-// PUT /api/referentiel/comptes — pris en compte à la connexion suivante de chacun (au plus une minute après)
-referentielRouter.put(
-  "/comptes",
-  exiger("ADMIN"),
-  asynchrone<UtilisateurRequest>(async (req, res) => {
-    const r = reglagesComptesSchema.parse(req.body);
-    if (!r.roles.ADMIN.length) throw new HttpError(400, "VALIDATION", "Au moins un rôle Keycloak doit donner le rôle administrateur");
-    res.json({ reglages: await enregistrerReglagesComptes(r, req.utilisateur?.id ?? null), defaut: reglagesComptesDefaut() });
-  })
-);
 
 // GET /api/referentiel — toutes les listes nécessaires aux formulaires et filtres
 referentielRouter.get(
