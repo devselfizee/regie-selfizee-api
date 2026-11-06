@@ -248,8 +248,8 @@ async function commentaireModifiable(req: UtilisateurRequest) {
   const c = await prisma.commentaireLieu.findUnique({ where: { id: Number(req.params.id) } });
   if (!c) throw new HttpError(404, "INTROUVABLE");
   await verifierAccesLieu(req.utilisateur, c.lieuId);
-  if (c.auteurId !== req.utilisateur!.id && req.utilisateur!.role !== "ADMIN")
-    throw new HttpError(403, "INTERDIT", "Seul l'auteur (ou un administrateur) peut modifier ce commentaire");
+  // Seul l'auteur modifie ou supprime son commentaire, même un admin ne touche pas à celui d'un autre (retour du 06/11/2026)
+  if (c.auteurId !== req.utilisateur!.id) throw new HttpError(403, "INTERDIT", "Seul l'auteur peut modifier ou supprimer ce commentaire");
   return c;
 }
 
