@@ -26,6 +26,7 @@ import { contexteRouter, evenementsLieuRouter, evenementsRouter } from "./routes
 import { coutsBornesRouter, coutsRouter, interventionsRouter, rentabiliteRouter } from "./routes/couts.js";
 import { mesPhotosRouter } from "./routes/mesPhotos.js";
 import { synchroPikcloudRouter } from "./routes/synchroPikcloud.js";
+import { souvenirRouter } from "./routes/souvenir.js";
 import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
 import { cadresEvenementRouter } from "./routes/cadresEvenement.js";
@@ -63,6 +64,9 @@ export function creerApp() {
     express.json({ limit: "2kb" }),
     mesPhotosRouter
   );
+
+  // Page souvenir (myevent.selfizee.fr) : séances et codes pour son serveur (secret partagé), visuels sur URL signée
+  app.use("/souvenir/v1", express.json({ limit: "2kb" }), souvenirRouter);
 
   // Webhook PikCloud : médias des séances, secret partagé X-Synchro-Token, pas de CORS (machine à machine)
   app.use("/webhooks/v1/pikcloud", express.json({ limit: "64kb" }), synchroPikcloudRouter);

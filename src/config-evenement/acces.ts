@@ -2,7 +2,7 @@ import type { Request } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../lib/http.js";
-import { genererCodeEvenement, genererMotDePasse, type Reglages } from "./reglages.js";
+import { genererCodeEvenement, genererMotDePasse, infosDuLieu, type Reglages } from "./reglages.js";
 
 // Événements de la borne d'un lieu : l'habituel (/api/lieux/:id/evenement) et les ponctuels
 // (/api/lieux/:id/evenements-ponctuels/:eid : Halloween, une soirée…). Mêmes routes pour les deux.
@@ -40,3 +40,10 @@ export async function creerEvenement(data: { lieuId: number; habituel: boolean; 
 
 /** Le config.json change avec les cadres : l'événement passe « modifié depuis la publication ». */
 export const toucher = (evenementId: number) => prisma.configEvenement.update({ where: { id: evenementId }, data: { updatedAt: new Date() } });
+
+/** Infos du lieu pour la borne ; tant qu'elles ne sont pas enregistrées, celles de l'événement par défaut. */
+export async function infosLieuDe(lieu: { id: number; enseigne: string; ville: string | null; infosBorne: unknown }) {
+  if (lieu.infosBorne) return infosDuLieu(lieu.infosBorne, lieu);
+  const habituel = await prisma.configEvenement.findFirst({ where: { lieuId: lieu.id, habituel: true }, select: { reglages: true } });
+  return infosDuLieu(null, lieu, habituel?.reglages);
+}

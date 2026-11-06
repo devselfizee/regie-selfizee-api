@@ -4,12 +4,12 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
-import { avecGrilleDuLieu, avecInfosDuLieu, controler, infosDuLieu, infosLieuSchema, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
+import { avecGrilleDuLieu, avecInfosDuLieu, controler, infosLieuSchema, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
 import { grilleEffective } from "../tarifs/grille.js";
 import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
 import { genererZip } from "../config-evenement/zip.js";
 import { illustrationsAExporter } from "../config-evenement/illustrations.js";
-import { chemins, cible, creerEvenement, evenementDe } from "../config-evenement/acces.js";
+import { chemins, cible, creerEvenement, evenementDe, infosLieuDe } from "../config-evenement/acces.js";
 
 // Fiche événement d'un lieu (CDC page souvenir § 13) : la configuration de la borne, réservée aux admins.
 // Montée sous /api/lieux, à côté des routes de la fiche lieu. Un lieu a son événement habituel et des
@@ -42,13 +42,6 @@ async function charger(lieuId: number, eid: number | null) {
   return { lieu, evenement, horaires, tarifsLieu, infosLieu };
 }
 type Charge = Awaited<ReturnType<typeof charger>>;
-
-/** Infos du lieu pour la borne ; tant qu'elles ne sont pas enregistrées, celles de l'événement par défaut. */
-async function infosLieuDe(lieu: { id: number; enseigne: string; ville: string | null; infosBorne: unknown }) {
-  if (lieu.infosBorne) return infosDuLieu(lieu.infosBorne, lieu);
-  const habituel = await prisma.configEvenement.findFirst({ where: { lieuId: lieu.id, habituel: true }, select: { reglages: true } });
-  return infosDuLieu(null, lieu, habituel?.reglages);
-}
 
 /** Réglages enregistrés, avec la grille et les infos du lieu (ce que la borne recevra). */
 const reglagesEffectifs = (brut: unknown, { tarifsLieu, infosLieu }: Pick<Charge, "tarifsLieu" | "infosLieu">) =>
