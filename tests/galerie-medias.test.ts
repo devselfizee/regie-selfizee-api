@@ -204,6 +204,12 @@ describe("galerie : un média", () => {
     const t = await admin.get(`/api/medias/${ids.photo1}/fichier?telecharger=1`).expect(200);
     expect(t.headers["content-disposition"]).toMatch(/^attachment; /);
 
+    // Avec le nom donné par PikCloud, c'est lui qui sert, préfixé du code d'événement
+    await prisma.media.update({ where: { uuid: ids.photo1 }, data: { nomFichier: "2026_11_01_00_00_00_photo1.jpg" } });
+    const n = await admin.get(`/api/medias/${ids.photo1}/fichier`).expect(200);
+    expect(n.headers["content-disposition"]).toBe('inline; filename="RAAA-2026_11_01_00_00_00_photo1.jpg"');
+    expect((await admin.get(`/api/medias/${ids.photo1}`).expect(200)).body.nomFichier).toBe("2026_11_01_00_00_00_photo1.jpg");
+
     const v = await admin.get(`/api/medias/${ids.photo1}/vignette`).expect(200);
     expect(v.headers["content-type"]).toBe("image/jpeg");
     expect(Buffer.from(v.body).equals(vignetteJpeg)).toBe(true);

@@ -62,6 +62,7 @@ async function versClient(m: MediaListe) {
   return {
     uuid: m.uuid,
     filename: m.filename,
+    nomFichier: m.nomFichier,
     codeEvent: m.codeEvent,
     type: m.typeMedia,
     video: EXTENSIONS_VIDEO.has(ext),
@@ -204,7 +205,8 @@ mediasRouter.get(
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const m = await mediaAccessible(req);
     if (m.mediaStatut !== "TELECHARGE" || !m.mediaChemin) throw new HttpError(404, "FICHIER_ABSENT", "Média pas encore téléchargé, ou purgé");
-    envoyerFichier(res, m.mediaChemin, `${m.codeEvent}-${m.filename}.${extensionDuChemin(m.mediaChemin)}`, m.tailleOctets, req.query.telecharger === "1");
+    // Nom de téléchargement : celui de PikCloud, préfixé du code d'événement
+    envoyerFichier(res, m.mediaChemin, `${m.codeEvent}-${m.nomFichier ?? `${m.filename}.${extensionDuChemin(m.mediaChemin)}`}`, m.tailleOctets, req.query.telecharger === "1");
   })
 );
 

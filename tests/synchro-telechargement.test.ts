@@ -127,6 +127,7 @@ describe("worker de téléchargement", () => {
       sha256: createHash("sha256").update(photoJpeg).digest("hex"),
       tentatives: 0,
       derniereErreur: null,
+      nomFichier: "2026_11_04_21_42_17_00031.jpg", // name_photo du JSON
     });
     expect(m.datePhoto?.toISOString()).toBe("2026-11-04T20:42:17.000Z");
     expect(m.dateSave?.toISOString()).toBe("2026-11-04T20:42:31.000Z");

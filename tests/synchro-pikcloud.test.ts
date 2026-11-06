@@ -93,6 +93,7 @@ describe("webhook PikCloud : réception", () => {
       mediaUrl,
       mediaStatut: "A_TELECHARGER",
       photoUuid: null,
+      nomFichier: `${FICHIER}.jpg`, // d'après le lien, en attendant le name_photo du JSON
     });
     expect(m.uuid).toMatch(/^[0-9a-f-]{36}$/);
 

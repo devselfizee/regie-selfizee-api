@@ -43,7 +43,17 @@ const CHAMPS = {
   photo: { url: "mediaUrl", statut: "mediaStatut" },
 } as const;
 
-type MajFichiers = Partial<Pick<Media, "dataUrl" | "dataStatut" | "mediaUrl" | "mediaStatut">>;
+type MajFichiers = Partial<Pick<Media, "dataUrl" | "dataStatut" | "mediaUrl" | "mediaStatut" | "nomFichier">>;
+
+/** Nom du fichier à la fin d'un lien PikCloud (sans la query), ou null. */
+export function nomFichierDuLien(url: string): string | null {
+  try {
+    const dernier = decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "");
+    return dernier.includes(".") ? dernier : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function recevoirMedia(corps: CorpsWebhook, ipSource: string | undefined): Promise<ReponseWebhook> {
   const [evenement, borne, existant] = await Promise.all([
@@ -110,6 +120,8 @@ export async function recevoirMedia(corps: CorpsWebhook, ipSource: string | unde
       }
       maj[champ.url] = url;
       maj[champ.statut] = "A_TELECHARGER";
+      // Nom avec extension d'après le lien, en attendant le name_photo du JSON (qui prime)
+      if (type === "photo" && !existant?.nomFichier) maj.nomFichier = nomFichierDuLien(url);
       aTelecharger = true;
       reponse[type] = succes();
     }

@@ -17,6 +17,8 @@ const schema = z.looseObject({
   count_print: z.number().int().min(0).optional(),
   testMode: z.boolean().optional(),
   type: z.string().optional(),
+  name_photo: z.string().optional(),
+  filename: z.string().optional(),
 });
 
 export interface ChampsSeance {
@@ -27,6 +29,8 @@ export interface ChampsSeance {
   nbTirages: number | null;
   testMode: boolean;
   type: string | null;
+  /** Nom du média avec extension donné par la borne (name_photo, sinon filename du JSON) */
+  nomFichier: string | null;
   brut: Record<string, unknown>;
 }
 
@@ -68,6 +72,7 @@ export function lireJsonSeance(texte: string): ChampsSeance {
     nbTirages: d.count_print ?? null,
     testMode: d.testMode === true,
     type: d.type ?? null,
+    nomFichier: d.name_photo?.trim() || d.filename?.trim() || null,
     brut: d as Record<string, unknown>,
   };
 }

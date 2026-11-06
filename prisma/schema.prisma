@@ -1489,8 +1489,10 @@ model Media {
   // Identifiant interne : nom du fichier sur le stockage et clé des URLs de la galerie
   uuid String @unique @default(uuid()) @db.Uuid
 
-  codeEvent String @map("code_event") @db.VarChar(8) // code de l'événement (R…), = config_evenements.code
-  filename  String // nom de base des fichiers, sans extension (2026_11_04_21_42_17_00031)
+  codeEvent  String  @map("code_event") @db.VarChar(8) // code de l'événement (R…), = config_evenements.code
+  filename   String // nom de base des fichiers, sans extension (2026_11_04_21_42_17_00031) : clé commune au JSON et au média
+  // Nom du média avec son extension, tel que PikCloud le donne : name_photo du JSON de séance, à défaut la fin de media_url
+  nomFichier String? @map("nom_fichier")
 
   // Rattachement : événement et lieu par le code (null si inconnu : stocké quand même), borne par son identifiant
   configEvenementId Int?   @map("config_evenement_id")

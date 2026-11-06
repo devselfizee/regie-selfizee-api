@@ -93,6 +93,7 @@ async function traiterData(m: Media): Promise<void> {
       datePrint: c.datePrint,
       nbTirages: c.nbTirages,
       test: m.test || c.testMode,
+      ...(c.nomFichier ? { nomFichier: c.nomFichier } : {}),
       brut: c.brut as Prisma.InputJsonValue,
     },
   });
