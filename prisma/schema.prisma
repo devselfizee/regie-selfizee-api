@@ -32,6 +32,7 @@ model User {
   photoVerifieeLe  DateTime? @map("photo_verifiee_le") @db.Timestamptz(3)
   plateformeUserId Int?      @map("plateforme_user_id") // destinataire des notifications de la plateforme
   role             UserRole  @default(COMMERCIAL)
+  roleKeycloak     Boolean   @default(false) @map("role_keycloak") // rôle lu dans Keycloak à la dernière connexion
   lieuId           Int?      @map("lieu_id") // rôle PARTENAIRE uniquement (V2)
   isActive         Boolean   @default(true) @map("is_active")
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)

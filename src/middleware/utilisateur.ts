@@ -19,7 +19,7 @@ export const adminsInitiaux = (brut = process.env.ADMIN_EMAILS ?? "") =>
     .map((e) => e.trim().replace(/^["']|["']$/g, "").toLowerCase())
     .filter((e) => e.includes("@"));
 
-const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true } as const;
+const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true, roleKeycloak: true } as const;
 
 // Photo du compte sur la plateforme Konitys (celle de l'en-tête), relevée au plus toutes les 12 h
 const GATEWAY_KONITYS = (process.env.KONITYS_GATEWAY_URL || "https://plateform-gateway.orkessi.com").replace(/\/+$/, "");
@@ -72,6 +72,26 @@ export function identiteKeycloak(jeton: AuthRequest["user"]): { nom?: string; pr
 export const rolesAdminKeycloak = (brut = process.env.KEYCLOAK_ROLES_ADMIN || "admin,administrateur,administrator,super-admin,super_admin,superadmin") =>
   brut.split(/[,;\s]+/).map((r) => r.trim().toLowerCase()).filter(Boolean);
 
+const liste = (brut: string) => brut.split(/[,;]+/).map((r) => r.trim().toLowerCase()).filter(Boolean);
+
+/**
+ * Rôles Keycloak (realm ou client, sans tenir compte de la casse) qui donnent chaque rôle de la Régie.
+ * Keycloak est la source des rôles (retour de Sébastien) ; noms réglables par variable d'environnement.
+ * Ordre de priorité : un compte qui a plusieurs rôles prend le plus large.
+ */
+const ROLES_KEYCLOAK: [UserRole, () => string[]][] = [
+  ["ADMIN", () => rolesAdminKeycloak()],
+  ["TECHNICIEN", () => liste(process.env.KEYCLOAK_ROLES_TECHNICIEN || "technicien,installateur,regie-technicien")],
+  ["COMMERCIAL", () => liste(process.env.KEYCLOAK_ROLES_COMMERCIAL || "commercial,konitys commercial,konitys-commercial,konitys_commercial,regie-commercial")],
+  ["PARTENAIRE", () => liste(process.env.KEYCLOAK_ROLES_PARTENAIRE || "partenaire,regie-partenaire")],
+];
+
+/** Rôle de la Régie d'après les rôles du jeton Keycloak ; null si le jeton n'en porte aucun */
+export function roleKeycloak(jeton: AuthRequest["user"]): UserRole | null {
+  const roles = new Set([...(jeton?.realm_access?.roles ?? []), ...Object.values(jeton?.resource_access ?? {}).flatMap((c) => c.roles ?? [])].map((r) => r.toLowerCase()));
+  return ROLES_KEYCLOAK.find(([, noms]) => noms().some((n) => roles.has(n)))?.[0] ?? null;
+}
+
 /** Le jeton porte-t-il un rôle admin, au niveau du realm ou d'un client ? */
 export function estAdminKeycloak(jeton: AuthRequest["user"]): boolean {
   const roles = [...(jeton?.realm_access?.roles ?? []), ...Object.values(jeton?.resource_access ?? {}).flatMap((c) => c.roles ?? [])];
@@ -113,7 +133,8 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     const email = (req.user?.email ?? (identifiant?.includes("@") ? identifiant : undefined))?.toLowerCase();
     if (!sub) return res.status(401).json({ error: "Token invalide" });
 
-    const admin = estAdminKeycloak(req.user) || (email !== undefined && adminsInitiaux().includes(email));
+    // Rôle tenu dans Keycloak ; ADMIN_EMAILS ne sert qu'à l'amorçage (premier admin)
+    const roleKc = roleKeycloak(req.user) ?? (email !== undefined && adminsInitiaux().includes(email) ? "ADMIN" : null);
     let u = await prisma.user.findUnique({ where: { keycloakSub: sub }, select: champs });
 
     // Première connexion : rattachement par e-mail à un utilisateur ajouté par un admin, sinon création
@@ -128,16 +149,17 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
             keycloakSub: sub,
             nom: req.user?.family_name ?? email,
             prenom: req.user?.given_name ?? "",
-            role: admin ? "ADMIN" : "COMMERCIAL",
+            role: roleKc ?? "COMMERCIAL",
+            roleKeycloak: !!roleKc,
           },
           select: champs,
         });
       }
     }
 
-    // Admin dans Keycloak = admin ici, même si le compte existait avec un autre rôle
-    if (u?.isActive && admin && u.role !== "ADMIN") {
-      u = await prisma.user.update({ where: { id: u.id }, data: { role: "ADMIN" }, select: champs });
+    // Le rôle suit Keycloak à chaque connexion ; sans rôle de la Régie dans Keycloak, le compte garde le sien
+    if (u && (u.roleKeycloak !== !!roleKc || (roleKc && u.role !== roleKc))) {
+      u = await prisma.user.update({ where: { id: u.id }, data: { roleKeycloak: !!roleKc, ...(roleKc ? { role: roleKc } : {}) }, select: champs });
     }
 
     // Nom, prénom et téléphone suivent Keycloak à chaque connexion

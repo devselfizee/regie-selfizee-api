@@ -3,7 +3,7 @@ import { UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { authDesactivee, exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
 
 export const utilisateursRouter = Router();
 
@@ -16,7 +16,7 @@ utilisateursRouter.get(
 );
 
 const select = {
-  id: true, email: true, nom: true, prenom: true, telephone: true, role: true, isActive: true,
+  id: true, email: true, nom: true, prenom: true, telephone: true, role: true, roleKeycloak: true, isActive: true,
   lieuId: true, keycloakSub: true, createdAt: true,
   lieu: { select: { id: true, enseigne: true } },
   _count: { select: { lieuxCommercial: true } },
@@ -34,7 +34,11 @@ utilisateursRouter.get(
   })
 );
 
-// Régie ne gère que l'accès (rôle, lieu du partenaire, actif) : nom, prénom et téléphone viennent de Keycloak à la connexion
+// Régie ne gère que le lieu d'un partenaire et l'activation : identité et rôle viennent de Keycloak à la connexion.
+// Le rôle ne se règle ici que sans Keycloak (développement, tests).
+const roleLocal = () => {
+  if (!authDesactivee()) throw new HttpError(400, "ROLE_KEYCLOAK", "Le rôle se gère dans Keycloak, pas dans la Régie");
+};
 const base = {
   role: z.enum(UserRole),
   lieuId: z.number().int().positive().nullable().optional(),
@@ -48,12 +52,14 @@ utilisateursRouter.post(
   exiger("ADMIN"),
   asynchrone(async (req, res) => {
     const data = z
-      .object({ email: z.email().transform((e) => e.toLowerCase()), ...base })
+      .object({ email: z.email().transform((e) => e.toLowerCase()), ...base, role: base.role.optional() })
       .refine(partenaireAvecLieu, MSG_PARTENAIRE)
       .parse(req.body);
+    if (data.role) roleLocal();
     const u = await prisma.user.create({
       // L'e-mail tient lieu de nom jusqu'à la première connexion, qui reprend celui de Keycloak
-      data: { ...data, nom: data.email, prenom: "", lieuId: data.role === "PARTENAIRE" ? data.lieuId : null },
+      // Le lieu est gardé : il ne sert que si Keycloak donne le rôle partenaire à la connexion
+      data: { ...data, role: data.role ?? "COMMERCIAL", nom: data.email, prenom: "", lieuId: data.lieuId ?? null },
       select,
     });
     res.status(201).json(u);
@@ -70,10 +76,12 @@ utilisateursRouter.patch(
       .object({ ...base, role: base.role.optional(), isActive: z.boolean().optional() })
       .parse(req.body);
 
+    if (patch.role !== undefined) roleLocal();
     const avant = await prisma.user.findUniqueOrThrow({ where: { id } });
     const role = patch.role ?? avant.role;
     const lieuId = patch.lieuId === undefined ? avant.lieuId : patch.lieuId;
-    if (!partenaireAvecLieu({ role, lieuId })) throw new HttpError(400, "VALIDATION", MSG_PARTENAIRE.message);
+    // Un partenaire (rôle venu de Keycloak) sans lieu reste désactivable ; on refuse seulement de lui retirer son lieu
+    if (patch.lieuId !== undefined && !partenaireAvecLieu({ role, lieuId })) throw new HttpError(400, "VALIDATION", MSG_PARTENAIRE.message);
 
     // Éviter de se retirer soi-même l'accès admin
     if (id === req.utilisateur?.id && (role !== "ADMIN" || patch.isActive === false)) {
@@ -82,7 +90,7 @@ utilisateursRouter.patch(
 
     const u = await prisma.user.update({
       where: { id },
-      data: { ...patch, lieuId: role === "PARTENAIRE" ? lieuId : null },
+      data: { ...patch, lieuId },
       select,
     });
     res.json(u);
