@@ -33,6 +33,26 @@ export function idPlateforme(reponse: unknown): number | null {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+// Champs possibles du téléphone dans la fiche Hub (le nom exact n'est pas documenté) ; réglable si besoin
+const CHAMPS_TELEPHONE = () =>
+  (process.env.KONITYS_CHAMPS_TELEPHONE || "telephone,tel,phone,phone_number,mobile,portable,telephone_portable,telephone_mobile")
+    .split(/[,;\s]+/)
+    .filter(Boolean);
+
+/**
+ * Téléphone de la fiche Hub (/api/users/me), pour les alertes SMS : Keycloak et le Hub ont les mêmes utilisateurs,
+ * le Hub est la source. Null s'il n'y en a pas (le numéro déjà connu est alors gardé).
+ */
+export function telephoneHub(reponse: unknown): string | null {
+  const r = reponse as { data?: { data?: Record<string, unknown> } & Record<string, unknown> } & Record<string, unknown>;
+  const d = (r?.data?.data ?? r?.data ?? r) as Record<string, unknown> | undefined;
+  for (const champ of CHAMPS_TELEPHONE()) {
+    const v = d?.[champ];
+    if (typeof v === "string" && v.replace(/\D/g, "").length >= 6) return v.trim();
+  }
+  return null;
+}
+
 /** URL de la photo d'après la réponse de /api/users/me de la plateforme (photo_nom), ou null */
 export function urlPhotoKonitys(reponse: unknown, base = PLATEFORME_KONITYS): string | null {
   const r = reponse as { data?: { data?: { photo_nom?: unknown }; photo_nom?: unknown }; photo_nom?: unknown } | null;
@@ -48,9 +68,15 @@ function releverPhoto(userId: number, autorisation: string) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const moi = await r.json();
       const plateformeUserId = idPlateforme(moi);
+      const telephone = telephoneHub(moi);
       await prisma.user.update({
         where: { id: userId },
-        data: { photoUrl: urlPhotoKonitys(moi), photoVerifieeLe: new Date(), ...(plateformeUserId ? { plateformeUserId } : {}) },
+        data: {
+          photoUrl: urlPhotoKonitys(moi),
+          photoVerifieeLe: new Date(),
+          ...(plateformeUserId ? { plateformeUserId } : {}),
+          ...(telephone ? { telephone } : {}),
+        },
       });
     })
     .catch(async (err) => {

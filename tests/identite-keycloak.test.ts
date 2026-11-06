@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { identiteKeycloak, idPlateforme, roleKeycloak, urlPhotoKonitys } from "../src/middleware/utilisateur.js";
+import { identiteKeycloak, idPlateforme, roleKeycloak, telephoneHub, urlPhotoKonitys } from "../src/middleware/utilisateur.js";
 import { corpsNotification, idHub } from "../src/lib/notificationsPlateforme.js";
 
 describe("identité recopiée de Keycloak", () => {
@@ -70,5 +70,19 @@ describe("rôle tenu dans Keycloak", () => {
   it("rend null sans rôle de la Régie", () => {
     expect(roleKeycloak({ sub: "s", realm_access: { roles: ["offline_access", "uma_authorization"] } })).toBeNull();
     expect(roleKeycloak(undefined)).toBeNull();
+  });
+});
+
+describe("téléphone de la fiche Hub", () => {
+  it("lit le téléphone sous ses noms courants, quelle que soit l'enveloppe", () => {
+    expect(telephoneHub({ data: { telephone: "06 12 34 56 78" } })).toBe("06 12 34 56 78");
+    expect(telephoneHub({ data: { data: { mobile: "+33612345678" } } })).toBe("+33612345678");
+    expect(telephoneHub({ phone: "0612345678" })).toBe("0612345678");
+  });
+
+  it("rend null sans numéro exploitable", () => {
+    expect(telephoneHub({ data: { telephone: "" } })).toBeNull();
+    expect(telephoneHub({ data: { telephone: "n/a" } })).toBeNull();
+    expect(telephoneHub(null)).toBeNull();
   });
 });
