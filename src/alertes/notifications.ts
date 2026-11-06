@@ -28,7 +28,10 @@ const CANAUX: Record<NiveauAlerte, ("EMAIL" | "SMS")[]> = {
 const TECHNIQUES: TypeAlerte[] = ["BORNE_MUETTE", "ZERO_VENTE", "TAUX_REFUS", "CONSOMMABLES", "BORNE_NON_AFFECTEE"];
 const COMMERCIALES: TypeAlerte[] = ["BAISSE_CA", "ZERO_VENTE", "PIC_SUSPECT", "VENTE_HORS_HORAIRES"];
 
-/** Qui prévenir : admins ; techniciens pour les alertes techniques ; commercial du lieu pour les alertes de vente. */
+/**
+ * Qui prévenir : admins ; techniciens pour les alertes techniques ; commercial du lieu pour les alertes de vente.
+ * Par e-mail pour tous ; par SMS (alertes critiques) seulement ceux qui ont « SMS des alertes » coché.
+ */
 async function destinataires(a: Pick<Alerte, "type" | "lieuId">) {
   const roles: UserRole[] = ["ADMIN", ...(TECHNIQUES.includes(a.type) ? (["TECHNICIEN"] as const) : [])];
   const users = await prisma.user.findMany({ where: { isActive: true, role: { in: roles } } });
@@ -58,7 +61,8 @@ export async function notifierAlertes(alertes: Alerte[]) {
         const erreur = await envoyerEmail(u.email, sujet, html).catch((e: Error) => e.message);
         await prisma.notificationAlerte.create({ data: { alerteId: a.id, canal: "EMAIL", destinataire: u.email, envoyeLe: erreur ? null : new Date(), erreur } });
       }
-      if (canaux.includes("SMS") && u.telephone) {
+      // SMS : seulement aux personnes désignées (page Utilisateurs) et qui ont un numéro
+      if (canaux.includes("SMS") && u.alertesSms && u.telephone) {
         const erreur = await envoyerSms(u.telephone, `Régie Selfizee — ${LIBELLES[a.type]} : ${a.message}`).catch((e: Error) => e.message);
         await prisma.notificationAlerte.create({ data: { alerteId: a.id, canal: "SMS", destinataire: u.telephone, envoyeLe: erreur ? null : new Date(), erreur } });
       }

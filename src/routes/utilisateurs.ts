@@ -16,7 +16,7 @@ utilisateursRouter.get(
 );
 
 const select = {
-  id: true, email: true, nom: true, prenom: true, telephone: true, role: true, roleKeycloak: true, isActive: true,
+  id: true, email: true, nom: true, prenom: true, telephone: true, role: true, roleKeycloak: true, alertesSms: true, isActive: true,
   lieuId: true, keycloakSub: true, createdAt: true,
   lieu: { select: { id: true, enseigne: true } },
   _count: { select: { lieuxCommercial: true } },
@@ -73,7 +73,7 @@ utilisateursRouter.patch(
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const id = Number(req.params.id);
     const patch = z
-      .object({ ...base, role: base.role.optional(), isActive: z.boolean().optional() })
+      .object({ ...base, role: base.role.optional(), isActive: z.boolean().optional(), alertesSms: z.boolean().optional() })
       .parse(req.body);
 
     if (patch.role !== undefined) roleLocal();
