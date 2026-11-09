@@ -5,7 +5,8 @@ import type { NextFunction, Request, Response } from "express";
 import { APP_KEY } from "../permissions/schema.js";
 
 const CACHE_TTL_MS = 30_000;
-const GATEWAY_URL = () => (process.env.GATEWAY_URL || process.env.KONITYS_GATEWAY_URL || "").trim().replace(/\/+$/, "");
+// Même passerelle que la photo, l'ID Hub et les notifications : une seule variable, KONITYS_GATEWAY_URL
+const GATEWAY_URL = () => (process.env.KONITYS_GATEWAY_URL || "").trim().replace(/\/+$/, "");
 // Sans Keycloak (développement, tests) : tout est autorisé et l'utilisateur voit tout
 const sansKeycloak = () => !process.env.KEYCLOAK_URL && process.env.NODE_ENV !== "production";
 
