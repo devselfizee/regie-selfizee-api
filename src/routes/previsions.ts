@@ -10,6 +10,20 @@ export const previsionsRouter = Router();
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
+/**
+ * Part HT du CA TTC des 90 derniers jours (TVA réelle des ventes) : les prévisions sont calculées en TTC,
+ * l'écran les passe en HT avec ce ratio quand on bascule sur HT (retour de Sébastien). 1/1,2 sans historique.
+ */
+async function partHt(lieuIds: number[]): Promise<number> {
+  if (!lieuIds.length) return 1 / 1.2;
+  const s = await prisma.aggJour.aggregate({
+    where: { lieuId: { in: lieuIds }, jour: { gte: new Date(aujourdhui().getTime() - 90 * 86_400_000) } },
+    _sum: { caTtcCents: true, caHtCents: true },
+  });
+  const ttc = s._sum.caTtcCents ?? 0;
+  return ttc > 0 ? (s._sum.caHtCents ?? 0) / ttc : 1 / 1.2;
+}
+
 // GET /api/previsions/lieux/:id — mois en cours jour par jour, et période de commission en cours
 previsionsRouter.get(
   "/lieux/:id",
@@ -24,8 +38,8 @@ previsionsRouter.get(
       res.json({ mois: null, commission: null, premiereVente: premiere ? ymd(premiere) : null });
       return;
     }
-    const [mois, commission] = await Promise.all([previsionMois(lieuId), voitCommission ? previsionCommission(lieuId) : null]);
-    res.json({ mois, commission });
+    const [mois, commission, ratioHt] = await Promise.all([previsionMois(lieuId), voitCommission ? previsionCommission(lieuId) : null, partHt([lieuId])]);
+    res.json({ mois, commission, ratioHt });
   })
 );
 
@@ -50,7 +64,7 @@ previsionsRouter.get(
       ids.length
         ? (await prisma.aggJour.aggregate({ where: { lieuId: { in: ids }, jour: { gte: a, lte: b } }, _sum: { caTtcCents: true } }))._sum.caTtcCents ?? 0
         : 0;
-    const [n1Cents, precedentCents] = await Promise.all([ca(n1.du, n1.au), ca(prec.du, prec.au)]);
+    const [n1Cents, precedentCents, ratioHt] = await Promise.all([ca(n1.du, n1.au), ca(prec.du, prec.au), partHt(ids)]);
 
     const tous = [...previsions.values()];
     const somme = (f: (x: (typeof tous)[number]) => number) => tous.reduce((s, x) => s + f(x), 0);
@@ -73,6 +87,7 @@ previsionsRouter.get(
       hauteCents: Math.round(total + ecart),
       n1Cents,
       precedentCents,
+      ratioHt,
       lieuxPeuFiables: tous.filter((x) => !x.fiable).length,
       jours,
       lieux: lieux

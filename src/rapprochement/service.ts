@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../lib/http.js";
 import { localParis } from "../alertes/ouverture.js";
 import { chargerRegles } from "../alertes/regles.js";
-import { lever } from "../alertes/evaluation.js";
+import { jourMessage, lever } from "../alertes/evaluation.js";
 import { notifierAlertes } from "../alertes/notifications.js";
 import { apparier, type VenteAApparier } from "./moteur.js";
 import type { LigneReleve } from "./csv.js";
@@ -275,7 +275,7 @@ export async function alerterEcarts(r: Rapport, maintenant = new Date()) {
         niveau: reg.niveau,
         borneId: p.borne.id,
         lieuId,
-        message: `Relevé ${r.releve.fournisseur} du ${r.releve.periodeDebut} au ${r.releve.periodeFin}, ${p.borne.identifiant} : ${details.join(", ")}`,
+        message: `Relevé ${r.releve.fournisseur} du ${jourMessage(new Date(`${r.releve.periodeDebut}T00:00:00Z`))} au ${jourMessage(new Date(`${r.releve.periodeFin}T00:00:00Z`))}, ${p.borne.identifiant} : ${details.join(", ")}`,
         valeurs: { releveId: r.releve.id, terminal: p.terminal, totalCents: total, seuilEuros: reg.parametres.seuilEuros },
       },
       maintenant

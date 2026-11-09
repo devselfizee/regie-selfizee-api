@@ -5,6 +5,7 @@ import { ingestionRouter } from "./routes/ingestion.js";
 import { importsRouter } from "./routes/imports.js";
 import { referentielRouter } from "./routes/referentiel.js";
 import { lieuxRouter } from "./routes/lieux.js";
+import { accesLieuRouter } from "./routes/accesLieu.js";
 import { affectationsRouter, bornesRouter } from "./routes/bornes.js";
 import { statsRouter } from "./routes/stats.js";
 import { exportRouter } from "./routes/exports.js";
@@ -107,6 +108,8 @@ export function creerApp() {
   app.use("/api/utilisateurs", utilisateursRouter);
   app.use("/api/referentiel", referentielRouter);
   app.use("/api/lieux", lieuxRouter);
+  // Accès au lieu : localisation des clés (texte, photos), disponibilité des contacts
+  app.use("/api/lieux", accesLieuRouter);
   app.use("/api/lieux", evenementsLieuRouter);
   app.use("/api/lieux", configEvenementRouter);
   app.use("/api/lieux", cadresEvenementRouter);

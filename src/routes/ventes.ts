@@ -94,20 +94,20 @@ ventesRouter.get(
     if (!f.du || !f.au) throw new HttpError(400, "PERIODE_REQUISE", "du et au sont requis");
     const where = whereListe(f, true);
     const [ventes, remboursements, nonAbouties, sansAction] = await Promise.all([
-      prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, VENDUE] }, _count: true, _sum: { montantTtcCents: true } }),
-      prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, { statut: "REMBOURSEE" }] }, _sum: { montantTtcCents: true } }),
+      prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, VENDUE] }, _count: true, _sum: { montantTtcCents: true, montantHtCents: true } }),
+      prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, { statut: "REMBOURSEE" }] }, _sum: { montantTtcCents: true, montantHtCents: true } }),
       prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, TYPES.non_abouties] }, _count: true }),
       prisma.transaction.groupBy({ by: ["jourLocal"], where: { AND: [where, SANS_ACTION] }, _count: true }),
     ]);
-    const jours = new Map<string, { jour: string; nbVentes: number; encaisseTtcCents: number; rembourseTtcCents: number; nbNonAbouties: number; nbSansAction: number }>();
+    const jours = new Map<string, { jour: string; nbVentes: number; encaisseTtcCents: number; encaisseHtCents: number; rembourseTtcCents: number; rembourseHtCents: number; nbNonAbouties: number; nbSansAction: number }>();
     const ligne = (d: Date) => {
       const jour = d.toISOString().slice(0, 10);
-      const l = jours.get(jour) ?? { jour, nbVentes: 0, encaisseTtcCents: 0, rembourseTtcCents: 0, nbNonAbouties: 0, nbSansAction: 0 };
+      const l = jours.get(jour) ?? { jour, nbVentes: 0, encaisseTtcCents: 0, encaisseHtCents: 0, rembourseTtcCents: 0, rembourseHtCents: 0, nbNonAbouties: 0, nbSansAction: 0 };
       jours.set(jour, l);
       return l;
     };
-    for (const v of ventes) Object.assign(ligne(v.jourLocal), { nbVentes: v._count, encaisseTtcCents: v._sum.montantTtcCents ?? 0 });
-    for (const r of remboursements) ligne(r.jourLocal).rembourseTtcCents = r._sum.montantTtcCents ?? 0;
+    for (const v of ventes) Object.assign(ligne(v.jourLocal), { nbVentes: v._count, encaisseTtcCents: v._sum.montantTtcCents ?? 0, encaisseHtCents: v._sum.montantHtCents ?? 0 });
+    for (const r of remboursements) Object.assign(ligne(r.jourLocal), { rembourseTtcCents: r._sum.montantTtcCents ?? 0, rembourseHtCents: r._sum.montantHtCents ?? 0 });
     for (const x of nonAbouties) ligne(x.jourLocal).nbNonAbouties = x._count;
     for (const x of sansAction) ligne(x.jourLocal).nbSansAction = x._count;
     res.json([...jours.values()].sort((a, b) => a.jour.localeCompare(b.jour)));
@@ -135,11 +135,11 @@ ventesRouter.get(
           borne: { select: { id: true, identifiant: true } },
           lieu: { select: { id: true, enseigne: true } },
           typeModule: { select: { libelle: true } },
-          derivees: { where: { statut: "REMBOURSEE" }, select: { montantTtcCents: true } },
+          derivees: { where: { statut: "REMBOURSEE" }, select: { montantTtcCents: true, montantHtCents: true } },
         },
       }),
-      prisma.transaction.aggregate({ where: { AND: [where, VENDUE] }, _sum: { montantTtcCents: true }, _count: true }),
-      prisma.transaction.aggregate({ where: { AND: [where, { statut: "REMBOURSEE" }] }, _sum: { montantTtcCents: true } }),
+      prisma.transaction.aggregate({ where: { AND: [where, VENDUE] }, _sum: { montantTtcCents: true, montantHtCents: true }, _count: true }),
+      prisma.transaction.aggregate({ where: { AND: [where, { statut: "REMBOURSEE" }] }, _sum: { montantTtcCents: true, montantHtCents: true } }),
       prisma.carteTest.findMany({ select: { derniersChiffres: true, nom: true } }),
     ]);
     const nomCarte = new Map(cartesTest.map((c) => [c.derniersChiffres, c.nom]));
@@ -152,6 +152,8 @@ ventesRouter.get(
         nbVentes: encaisse._count,
         encaisseTtcCents: (encaisse._sum.montantTtcCents ?? 0) - (rembourse._sum.montantTtcCents ?? 0),
         rembourseTtcCents: rembourse._sum.montantTtcCents ?? 0,
+        encaisseHtCents: (encaisse._sum.montantHtCents ?? 0) - (rembourse._sum.montantHtCents ?? 0),
+        rembourseHtCents: rembourse._sum.montantHtCents ?? 0,
       },
       lignes: ventes.map(({ derivees, ...v }) => ({
         ...v,
@@ -159,6 +161,7 @@ ventesRouter.get(
         importId: v.importId.toString(),
         transactionOrigineId: v.transactionOrigineId?.toString() ?? null,
         rembourseCents: derivees.reduce((s, r) => s + r.montantTtcCents, 0),
+        rembourseHtCents: derivees.reduce((s, r) => s + r.montantHtCents, 0),
         photoUrl: urlPhoto(v.pikcloudUuid),
         carteTest: v.test && v.carteFin ? (nomCarte.get(v.carteFin) ?? "Carte de test") : null,
       })),

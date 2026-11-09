@@ -56,6 +56,8 @@ model User {
   cartesTest       CarteTest[]
   lotsCodesRemise  LotCodesRemise[]
 
+  photosCles LieuPhotoCles[] @relation("PhotosClesAuteur")
+
   @@map("users")
 }
 
@@ -177,13 +179,18 @@ model Lieu {
   origineLeadId    Int?      @map("origine_lead_id")
 
   // Le lieu change lui-même le papier de la borne (sinon : Selfizee ou le technicien)
-  papierSurPlace Boolean  @default(false) @map("papier_sur_place")
+  papierSurPlace        Boolean         @default(false) @map("papier_sur_place")
   // Infos du lieu pour la borne, reprises par tous ses événements (nom affiché, ville, avis et réseaux,
   // assistance) ; null tant qu'elles n'ont pas été enregistrées (src/config-evenement/reglages.ts)
-  infosBorne     Json?    @map("infos_borne")
-  notes          String?
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  infosBorne            Json?           @map("infos_borne")
+  notes                 String?
+  // Accès (retour de Sébastien) : où trouver les clés, et quand joindre les contacts (boîtes de nuit : le soir).
+  // HTML simple (gras, italique, listes), nettoyé à l'enregistrement (src/lib/texteRiche.ts)
+  localisationCles      String?         @map("localisation_cles")
+  disponibiliteContacts String?         @map("disponibilite_contacts")
+  photosCles            LieuPhotoCles[]
+  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   typeLieu        RefValeur  @relation("LieuType", fields: [typeLieuId], references: [id])
   sousType        RefValeur? @relation("LieuSousType", fields: [sousTypeId], references: [id])
@@ -1441,6 +1448,25 @@ model EmplacementConcurrent {
 
 // Photos d'exemple d'un événement pour les cases des cadres de la borne (kit nightlife) : série des cadres
 // ou de l'accueil, copiées dans le zip (src/config-evenement/illustrations.ts)
+// Photos de la localisation des clés d'un lieu (boîte à clés, tiroir…) : JPEG réduit et sa vignette
+model LieuPhotoCles {
+  id        Int      @id @default(autoincrement())
+  lieuId    Int      @map("lieu_id")
+  legende   String?
+  largeur   Int
+  hauteur   Int
+  image     Bytes
+  vignette  Bytes
+  creeParId Int?     @map("cree_par_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  lieu    Lieu  @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  creePar User? @relation("PhotosClesAuteur", fields: [creeParId], references: [id], onDelete: SetNull)
+
+  @@index([lieuId])
+  @@map("lieu_photos_cles")
+}
+
 model IllustrationEvenement {
   id                Int      @id @default(autoincrement())
   configEvenementId Int      @map("config_evenement_id")

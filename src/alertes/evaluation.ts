@@ -7,8 +7,14 @@ const HEURE = 3_600_000;
 const JOUR = 86_400_000;
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 const eur = (c: number) => `${(c / 100).toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €`;
-const dateHeure = (d: Date) =>
-  new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(d);
+// Dates des messages : jour de la semaine, sans l'année (retour de Sébastien) — « vendredi 06/11 », « vendredi 06/11 à 21:31 »
+const fmtJour = new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC", weekday: "long", day: "2-digit", month: "2-digit" });
+const fmtInstant = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "2-digit", month: "2-digit" });
+const fmtHeure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" });
+/** Jour « métier » (minuit UTC) : « vendredi 06/11 » */
+export const jourMessage = (jour: Date) => fmtJour.format(jour);
+/** Instant : « vendredi 06/11 à 21:31 » (heure de Paris) */
+export const dateHeure = (d: Date) => `${fmtInstant.format(d)} à ${fmtHeure.format(d)}`;
 
 export interface NouvelleAlerte {
   type: TypeAlerte;
@@ -253,7 +259,7 @@ export async function evaluerAlertes(maintenant = new Date()) {
           await lever(
             {
               type: "PIC_SUSPECT", niveau: rPic.niveau, lieuId: lieu.id,
-              message: `${nom} : ${eur(caHier)} le ${ymd(hier).split("-").reverse().join("/")}, soit ${(caHier / moyR).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} fois la moyenne (${eur(moyR)}) — à vérifier (doublon, fraude, événement ?)`,
+              message: `${nom} : ${eur(caHier)} le ${jourMessage(hier)}, soit ${(caHier / moyR).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} fois la moyenne (${eur(moyR)}) — à vérifier (doublon, fraude, événement ?)`,
               valeurs: { caCents: caHier, moyenneCents: Math.round(moyR) },
             },
             maintenant
@@ -266,7 +272,8 @@ export async function evaluerAlertes(maintenant = new Date()) {
     const rHors = regle("VENTE_HORS_HORAIRES", lieu.id);
     if (rHors.actif && lieu.horaires.length) {
       const ventes = await prisma.transaction.findMany({
-        where: { lieuId: lieu.id, statut: "ACCEPTEE", test: false, jourLocal: hier },
+        // Ventes payées seulement, comme la courbe et la liste : une séance gratuite (photo validée sans paiement) n'en est pas une
+        where: { lieuId: lieu.id, statut: "ACCEPTEE", montantTtcCents: { gt: 0 }, moyenPaiement: { not: "AUCUN" }, test: false, jourLocal: hier },
         select: { horodatage: true },
       });
       const hors = ventes.filter((v) => !ouvertA(o, v.horodatage));
@@ -275,9 +282,9 @@ export async function evaluerAlertes(maintenant = new Date()) {
           await lever(
             {
               type: "VENTE_HORS_HORAIRES", niveau: rHors.niveau, lieuId: lieu.id,
-              message: `${nom} : ${hors.length} ventes le ${ymd(hier).split("-").reverse().join("/")} en dehors des horaires de la fiche (${hors
+              message: `${nom} : ${hors.length} ventes le ${jourMessage(hier)} en dehors des horaires de la fiche (${hors
                 .slice(0, 3)
-                .map((v) => dateHeure(v.horodatage).slice(-5))
+                .map((v) => fmtHeure.format(v.horodatage))
                 .join(", ")}${hors.length > 3 ? "…" : ""}) — fiche à corriger ou usage anormal`,
               valeurs: { nombre: hors.length, jourFerme: !jourOuvert(o, hier) },
             },
