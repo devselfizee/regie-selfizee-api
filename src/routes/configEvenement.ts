@@ -8,6 +8,7 @@ import { avecGrilleDuLieu, avecInfosDuLieu, controler, infosLieuSchema, reglages
 import { grilleEffective } from "../tarifs/grille.js";
 import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
 import { genererZip } from "../config-evenement/zip.js";
+import { empreinteZip, rangerZip } from "../config-evenement/zipBorne.js";
 import { illustrationsAExporter } from "../config-evenement/illustrations.js";
 import { chemins, cible, creerEvenement, evenementDe, infosLieuDe } from "../config-evenement/acces.js";
 import { requirePerm, requireAnyPerm } from "../middleware/permissions.js";
@@ -281,7 +282,16 @@ configEvenementRouter.get(
   })
 );
 
-// POST …/publier — fige le config.json (nouvelle version) si aucun contrôle ne bloque
+/** Le zip de l'événement pour ces réglages et ce config.json (cadres, aperçus, photos d'exemple, kit). */
+async function zipDe(evenementId: number, config: Awaited<ReturnType<typeof configDe>>, reglages: Reglages, maintenant: Date) {
+  return genererZip({
+    config, modele: lireModele(), reglages, cadres: await cadresDe(evenementId, true),
+    illustrations: await illustrationsAExporter(reglages, evenementId),
+    maintenant,
+  });
+}
+
+// POST …/publier — fige le config.json (nouvelle version) et le zip chargé par la borne, si aucun contrôle ne bloque
 configEvenementRouter.post(
   chemins("/publier"),
   modifier,
@@ -298,16 +308,25 @@ configEvenementRouter.post(
     }
     const maintenant = new Date();
     const config = await configDe(charge, maintenant, reglages);
-    await prisma.$transaction([
-      prisma.configEvenement.update({
-        where: { id: e.id },
+    // Zip figé avec la version : la borne charge exactement ce qui a été publié (/ingest/v1/evenements)
+    const zip = await zipDe(e.id, config, reglages, maintenant);
+    const publie = await prisma.$transaction(async (db) => {
+      // Seulement si personne n'a publié entre-temps : la version doit être celle du zip rangé
+      const maj = await db.configEvenement.updateMany({
+        where: { id: e.id, version: e.version },
         // updatedAt posé à la date de publication : « modifié depuis » repart de zéro
-        data: { version: { increment: 1 }, publieeLe: maintenant, configPubliee: config as Prisma.InputJsonValue, updatedAt: maintenant },
-      }),
-      prisma.auditLog.create({
+        data: { version: e.version + 1, publieeLe: maintenant, configPubliee: config as Prisma.InputJsonValue, updatedAt: maintenant, ...empreinteZip(e.code, e.version + 1, zip) },
+      });
+      if (!maj.count) return false;
+      await db.auditLog.create({
         data: { userId: req.utilisateur?.id ?? null, entite: "config_evenement", entiteId: String(e.id), action: "PUBLICATION", apres: { code: e.code, version: e.version + 1 } },
-      }),
-    ]);
+      });
+      return true;
+    });
+    if (!publie) throw new HttpError(409, "PUBLICATION_CONCURRENTE", "L'événement vient d'être publié par quelqu'un d'autre : rechargez la fiche.");
+    // Rangé après l'enregistrement de la version : une publication concurrente perdante n'écrase rien. Jusqu'à la
+    // fin de l'écriture (quelques instants), la borne lit « obsolete » et redemandera.
+    await rangerZip(e.code, e.version + 1, zip);
     res.json(reponse(await charger(lieuId, eid)));
   })
 );
@@ -324,11 +343,7 @@ configEvenementRouter.get(
     if (!e) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
     const reglages = reglagesEffectifs(e.reglages, charge);
     const config = await configDe(charge, e.updatedAt, reglages);
-    const zip = await genererZip({
-      config, modele: lireModele(), reglages, cadres: await cadresDe(e.id, true),
-      illustrations: await illustrationsAExporter(reglages, e.id),
-      maintenant: e.updatedAt,
-    });
+    const zip = await zipDe(e.id, config, reglages, e.updatedAt);
     res.setHeader("Content-Disposition", `attachment; filename="evenement-${e.code}.zip"`);
     res.type("application/zip").send(zip);
   })

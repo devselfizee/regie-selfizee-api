@@ -346,6 +346,39 @@ S'il reste **moins** d'impressions que demandé, la Régie accorde ce qu'il rest
 
 Chaque utilisation est enregistrée (borne, lieu, date, impressions) et visible dans la Régie. La vente elle-même continue d'arriver par `/transactions` : une impression remisée est une vente au montant remisé, une impression offerte une séance à 0 €. **Point ouvert** : la façon de signaler dans la vente qu'un code a servi (motif de gratuité dédié, ou champ `code_remise`) reste à décider ensemble.
 
+## 4 quater. Zip de l'événement (comme getEvent et e/zip/download du booth)
+
+Même déroulé que le booth : la borne demande l'état de son événement, puis télécharge le zip à l'URL reçue. Le zip (config.json, cadres, aperçus, photos d'exemple, éléments du kit) est **figé à chaque publication** de l'événement dans la Régie : il ne change qu'à la publication suivante, qui incrémente `version`.
+
+**État** — `POST /ingest/v1/evenements/statut`, même authentification que les ventes
+
+```json
+{ "borne_id": "S513", "code": "RA7K" }
+```
+
+Réponse `200`, zip prêt :
+
+```json
+{
+  "status": "complete",
+  "code": "RA7K",
+  "version": 4,
+  "publieLe": "2026-11-09T10:12:00.000Z",
+  "taille": 18342211,
+  "sha256": "9f2c…",
+  "url": "https://<api>/ingest/v1/evenements/RA7K/zip?v=4&exp=1794222000&sig=…",
+  "expireLe": "2026-11-09T10:27:00.000Z"
+}
+```
+
+Autres valeurs de `status` (réponse `200` aussi) : `incomplete` (événement jamais publié), `obsolete` (publié avant que la Régie fige les zips : le republier ; `version` et `message` sont fournis), `unknown` (code inconnu, ou événement d'un autre lieu que celui où la borne est installée dans la Régie).
+
+Conseils pour la borne : ne télécharger que si `version` diffère de celle qu'elle a déjà ; vérifier le fichier reçu avec `sha256` (ou `taille`) avant de remplacer l'ancien ; garder l'ancien zip si le téléchargement échoue.
+
+**Téléchargement** — `GET` sur `url`, sans en-tête d'authentification : l'URL est signée et vaut **15 minutes**. Réponse `200` `application/zip` (`Content-Disposition: attachment; filename="RA7K.zip"`, `Content-Length`) ; reprise d'un téléchargement interrompu avec l'en-tête `Range`. URL fausse, expirée ou version plus gardée : `404` → redemander l'état.
+
+Différences avec le booth : la demande d'état exige la clé de la borne, et la borne doit être affectée au lieu de l'événement ; le paramètre du booth (base64 que tout le monde peut fabriquer, sans expiration) est remplacé par une signature HMAC qui expire.
+
 ## 5. Codes de réponse HTTP et comportement attendu
 
 | Code | Signification | Que doit faire la borne |

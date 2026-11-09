@@ -506,6 +506,7 @@ enum ImportType {
   PARCOURS // parcours invité (avenant du 26/10/2026)
   CODES // codes de remise saisis sur la borne (journal des refus)
   MEDIAS // médias des séances envoyés par PikCloud (webhook de synchro, 04/11/2026)
+  CONFIG // zip de l'événement demandé par la borne (journal des refus)
 }
 
 enum ImportStatut {
@@ -1179,6 +1180,10 @@ model ConfigEvenement {
   version           Int       @default(0)
   publieeLe         DateTime? @map("publiee_le") @db.Timestamptz(3)
   configPubliee     Json?     @map("config_publiee")
+  // Zip publié, chargé par la borne (/ingest/v1/evenements) : figé à la publication, rangé dans le stockage
+  zipChemin         String?   @map("zip_chemin")
+  zipTaille         Int?      @map("zip_taille")
+  zipSha256         String?   @map("zip_sha256") @db.Char(64)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
