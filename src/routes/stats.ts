@@ -479,12 +479,18 @@ statsRouter.get(
   })
 );
 
-// GET /api/stats/parcours?du=&au=&<filtres> — entonnoir du parcours invité (avenant du 26/10/2026)
+/** soirs=5,6 : seulement les soirées de ces jours (ISO, 1 = lundi) */
+const optionsParcours = (q: Record<string, unknown>) => {
+  const s = typeof q.soirs === "string" && /^[1-7](,[1-7])*$/.test(q.soirs) ? q.soirs.split(",").map(Number) : undefined;
+  return { soirs: s };
+};
+
+// GET /api/stats/parcours?du=&au=&soirs=&<filtres> — entonnoir du parcours invité (avenant du 26/10/2026)
 statsRouter.get(
   "/parcours",
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const f = filtresAutorises(req);
-    res.json({ periode: periode(f), ...(await entonnoir(f)) });
+    res.json({ periode: periode(f), ...(await entonnoir(f, optionsParcours(req.query))) });
   })
 );
 
@@ -495,7 +501,7 @@ statsRouter.get(
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
     const f: Filtres = { ...lireFiltres(req.query), lieuId: [lieuId] };
-    const [e, apercus] = await Promise.all([entonnoir(f), apercusCadres(lieuId, f)]);
+    const [e, apercus] = await Promise.all([entonnoir(f, optionsParcours(req.query)), apercusCadres(lieuId, f)]);
     res.json({ periode: periode(f), ...e, apercus });
   })
 );
