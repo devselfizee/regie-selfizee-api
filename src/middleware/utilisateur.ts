@@ -3,7 +3,7 @@ import type { User } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../lib/http.js";
 import type { AuthRequest } from "./auth.js";
-import { peutVoirTout } from "./permissions.js";
+import { peutVoirTout, profilsDuJeton } from "./permissions.js";
 
 export interface UtilisateurRequest extends AuthRequest {
   /**
@@ -15,7 +15,7 @@ export interface UtilisateurRequest extends AuthRequest {
 
 export const authDesactivee = () => !process.env.KEYCLOAK_URL && process.env.NODE_ENV !== "production";
 
-const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true } as const;
+const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true, profilsHub: true, adminPlateforme: true } as const;
 
 // Photo du compte sur la plateforme Konitys (celle de l'en-tête), relevée au plus toutes les 12 h
 const GATEWAY_KONITYS = (process.env.KONITYS_GATEWAY_URL || "https://plateform-gateway.orkessi.com").replace(/\/+$/, "");
@@ -165,6 +165,11 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     if (autorisation?.startsWith("Bearer ") && (!u.photoVerifieeLe || Date.now() - u.photoVerifieeLe.getTime() > (u.plateformeUserId ? PHOTO_VALIDE_MS : 10 * 60_000))) {
       u = { ...u, photoVerifieeLe: new Date() };
       releverPhoto(u.id, autorisation);
+    }
+    // Profils Konitys et statut admin, pour la page Utilisateurs (affichage seulement), écrits s'ils ont changé
+    const p = await profilsDuJeton(req);
+    if (p && (p.admin !== u.adminPlateforme || p.profils.join(",") !== u.profilsHub.join(","))) {
+      await prisma.user.update({ where: { id: u.id }, data: { profilsHub: p.profils, adminPlateforme: p.admin, profilsRelevesLe: new Date() } });
     }
     // Périmètre des données : décidé une fois par requête, en mode fermé (gateway muet → ses lieux seulement)
     req.utilisateur = { ...u, voitTousLieux: await peutVoirTout(req, "lieux.view_any") };

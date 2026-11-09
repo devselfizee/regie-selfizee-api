@@ -161,6 +161,31 @@ export async function estAdminPlateforme(req: Request): Promise<boolean> {
   return !!(await getMe(tokenOf(req)))?.is_admin;
 }
 
+/** Profils et statut admin de l'utilisateur connecté, d'après /me ; null si le gateway n'a pas répondu (rien à relever) */
+export async function profilsDuJeton(req: Request): Promise<{ profils: number[]; admin: boolean } | null> {
+  if (sansKeycloak()) return null;
+  const me = await getMe(tokenOf(req));
+  if (!me) return null;
+  return { profils: [...new Set((me.profiles ?? []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b), admin: !!me.is_admin };
+}
+
+/** Libellés des profils de l'Admin Panel (id → nom), lus avec le jeton de l'admin qui consulte ; vide si indisponible */
+export async function libellesProfils(req: Request): Promise<Record<number, string>> {
+  const gateway = GATEWAY_URL();
+  const token = tokenOf(req);
+  if (!gateway || !token) return {};
+  try {
+    const r = await fetch(`${gateway}/api/permissions/profiles`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return {};
+    const corps = (await r.json()) as { data?: unknown } | unknown[];
+    const liste = (Array.isArray(corps) ? corps : Array.isArray((corps as { data?: unknown }).data) ? (corps as { data: unknown[] }).data : []) as Record<string, unknown>[];
+    const nom = (p: Record<string, unknown>) => [p.libelle, p.label, p.nom, p.name, p.titre].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+    return Object.fromEntries(liste.filter((p) => Number.isInteger(Number(p.id)) && nom(p)).map((p) => [Number(p.id), nom(p)!]));
+  } catch {
+    return {};
+  }
+}
+
 export function invalidatePermsCache() {
   cache.clear();
 }

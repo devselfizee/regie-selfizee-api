@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
-import { requirePerm } from "../middleware/permissions.js";
+import { requirePerm, libellesProfils } from "../middleware/permissions.js";
 
 export const utilisateursRouter = Router();
 
@@ -17,7 +17,7 @@ utilisateursRouter.get(
 
 const select = {
   id: true, email: true, nom: true, prenom: true, telephone: true, alertesSms: true, alertesEmail: true, isActive: true,
-  lieuId: true, keycloakSub: true, createdAt: true,
+  lieuId: true, keycloakSub: true, createdAt: true, profilsHub: true, adminPlateforme: true, profilsRelevesLe: true,
   lieu: { select: { id: true, enseigne: true } },
   _count: { select: { lieuxCommercial: true } },
 } as const;
@@ -26,10 +26,19 @@ const select = {
 utilisateursRouter.get(
   "/",
   requirePerm("utilisateurs.manage"),
-  asynchrone(async (_req, res) => {
-    const users = await prisma.user.findMany({ orderBy: [{ isActive: "desc" }, { nom: "asc" }], select });
+  asynchrone(async (req, res) => {
+    const [users, libelles] = await Promise.all([
+      prisma.user.findMany({ orderBy: [{ isActive: "desc" }, { nom: "asc" }], select }),
+      libellesProfils(req),
+    ]);
     res.json(
-      users.map(({ keycloakSub, _count, ...u }) => ({ ...u, dejaConnecte: Boolean(keycloakSub), nbLieux: _count.lieuxCommercial }))
+      users.map(({ keycloakSub, _count, profilsHub, ...u }) => ({
+        ...u,
+        dejaConnecte: Boolean(keycloakSub),
+        nbLieux: _count.lieuxCommercial,
+        // Profils de l'Admin Panel, par leur nom quand la liste est lisible, sinon par leur numéro
+        profils: profilsHub.map((id) => libelles[id] ?? `Profil n° ${id}`),
+      }))
     );
   })
 );
