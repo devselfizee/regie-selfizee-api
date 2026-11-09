@@ -60,17 +60,21 @@ Profils suggérés : « Régie – administrateur », « Régie – technicien �
 | `illustrations.edit` | ✓ |  |  |  |
 | `medias.view` | ✓ |  | ✓ | ✓ |
 | `medias.manage` | ✓ |  |  |  |
+| `souvenir.contacts_view` | ✓ |  | ✓ | ✓ |
 | `commissions.view` | ✓ |  |  | ✓ ² |
 | `commissions.edit` | ✓ |  |  |  |
 | `paiements.view` | ✓ |  |  |  |
+| `paiements.rembourser` | ✓ |  |  |  |
 | `rapprochement.view` | ✓ |  |  |  |
 | `rapprochement.edit` | ✓ |  |  |  |
 | `rentabilite.view` | ✓ |  |  |  |
+| `rentabilite.edit` | ✓ |  |  |  |
 | `codes_remise.view` | ✓ |  |  |  |
 | `codes_remise.edit` | ✓ |  |  |  |
 | `prospects.view` | ✓ |  | ✓ |  |
 | `prospects.edit` | ✓ |  | ✓ |  |
 | `concurrents.edit` | ✓ |  | ✓ |  |
+| `concurrents.delete` | ✓ |  |  |  |
 | `marketing.edit` | ✓ |  | ✓ |  |
 | `utilisateurs.manage` | ✓ |  |  |  |
 | `referentiel.edit` | ✓ |  |  |  |
