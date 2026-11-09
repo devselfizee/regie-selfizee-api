@@ -38,6 +38,7 @@ import { commentairesRouter, suiviLieuRouter } from "./routes/suivi.js";
 import { tarifsLieuRouter, tarifsRouter } from "./routes/tarifs.js";
 import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
 import { reponseErreur } from "./lib/http.js";
+import { buildPermissionsSchema } from "./permissions/schema.js";
 
 // BigInt (ids des transactions, lots…) sérialisé en chaîne dans les réponses JSON
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
@@ -50,6 +51,12 @@ export function creerApp() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // Droits Konitys : schéma public lu par le gateway (Admin Panel → Profils & Droits → Rafraîchir), sans jeton.
+  // Les deux chemins essayés par le gateway, déclarés avant l'authentification de /api.
+  app.get(["/adminpanel/permissions-schema", "/api/adminpanel/permissions-schema"], cors(), (_req, res) => {
+    res.json(buildPermissionsSchema());
   });
 
   // Ingestion bornes : authentification par clé borne, pas de CORS (machine à machine)
