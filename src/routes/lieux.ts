@@ -4,10 +4,11 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { departement } from "../lib/departement.js";
 import { asynchrone } from "../lib/http.js";
-import { exiger, perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { geocoder } from "../lib/geocodage.js";
 import { zoneScolaire } from "../calendrier/calendrier.js";
+import { requirePerm, userCan, estAdminPlateforme } from "../middleware/permissions.js";
 
 export const lieuxRouter = Router();
 
@@ -163,7 +164,7 @@ lieuxRouter.get(
     });
     const caParLieu = new Map(ca.map((c) => [c.lieuId, c._sum]));
 
-    const voitCa = req.utilisateur?.role !== "TECHNICIEN";
+    const voitCa = await userCan(req, "ventes.view");
     const dept = typeof req.query.departement === "string" ? req.query.departement.toUpperCase() : null;
     res.json(
       lieux
@@ -225,10 +226,10 @@ lieuxRouter.get(
 // ─── Écriture ───────────────────────────────────────────────
 
 // POST /api/lieux
-// Un commercial qui crée un lieu sans choisir de commercial responsable en devient le responsable.
-// (Il voit et modifie tous les lieux : à la modification, le commercial responsable choisi est gardé.)
-const commercialImpose = (req: UtilisateurRequest, champs: { commercialId?: number | null }) => {
-  if (req.utilisateur?.role === "COMMERCIAL" && !champs.commercialId) champs.commercialId = req.utilisateur.id;
+// Qui crée un lieu sans choisir de commercial responsable en devient le responsable, sauf un admin de la plateforme.
+// (À la modification, le commercial responsable choisi est gardé.)
+const commercialImpose = async (req: UtilisateurRequest, champs: { commercialId?: number | null }) => {
+  if (!champs.commercialId && req.utilisateur && !(await estAdminPlateforme(req))) champs.commercialId = req.utilisateur.id;
 };
 
 type Champs = ReturnType<typeof donneesLieu>["champs"];
@@ -260,10 +261,10 @@ async function positionner(champs: Champs, avant?: Avant) {
 
 lieuxRouter.post(
   "/",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("lieux.create"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(req.body));
-    commercialImpose(req, champs);
+    await commercialImpose(req, champs);
     await positionner(champs);
     const lieu = await prisma.lieu.create({
       data: {
@@ -283,7 +284,7 @@ lieuxRouter.post(
 // PUT /api/lieux/:id — les sous-listes fournies remplacent les existantes
 lieuxRouter.put(
   "/:id",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("lieux.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
@@ -323,7 +324,7 @@ lieuxRouter.put(
 // POST /api/lieux/geocoder — place sur la carte les lieux qui n'ont pas encore de coordonnées
 lieuxRouter.post(
   "/geocoder",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (_req, res) => {
     const lieux = await prisma.lieu.findMany({
       where: { OR: [{ latitude: null }, { longitude: null }] },

@@ -2,14 +2,17 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { MAX_PAR_SERIE, preparerIllustration } from "../config-evenement/illustrations.js";
+import { requirePerm, requireAnyPerm } from "../middleware/permissions.js";
 
 // Bibliothèque des séries d'illustrations « type » (mémo ILLUSTRATIONS-ADMIN-WEB § 3a) : séries communes
 // gérées par Selfizee (mariage, corporate…), choisies dans les fiches événement et copiées dans le zip.
 // Festif et chic restent les séries embarquées dans le logiciel de la borne. Réservé aux admins.
 export const illustrationsSeriesRouter = Router();
-const admin = exiger("ADMIN");
+// La bibliothèque se consulte depuis la fiche événement ; elle se gère dans Paramètres
+const voir = requireAnyPerm("evenements.view", "illustrations.edit");
+const modifier = requirePerm("illustrations.edit");
 
 const enDataUrl = (b: Uint8Array) => `data:image/jpeg;base64,${Buffer.from(b).toString("base64")}`;
 const nomSchema = z.string().trim().min(1).max(80);
@@ -24,7 +27,7 @@ async function serie(id: number) {
 // GET /api/illustrations-series — les séries, avec leur nombre de photos par forme et un aperçu
 illustrationsSeriesRouter.get(
   "/",
-  admin,
+  voir,
   asynchrone(async (_req, res) => {
     const series = await prisma.illustrationSerie.findMany({
       orderBy: { nom: "asc" },
@@ -44,7 +47,7 @@ illustrationsSeriesRouter.get(
 // POST /api/illustrations-series { nom } — nouvelle série (vide)
 illustrationsSeriesRouter.post(
   "/",
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { nom } = z.object({ nom: nomSchema }).parse(req.body);
     const s = await prisma.illustrationSerie.create({ data: { nom } });
@@ -56,7 +59,7 @@ illustrationsSeriesRouter.post(
 // PATCH /api/illustrations-series/:sid { nom?, actif? } — renommer, retirer des choix (sans la supprimer)
 illustrationsSeriesRouter.patch(
   "/:sid",
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const id = idParam(req.params.sid);
     const saisie = z.object({ nom: nomSchema.optional(), actif: z.boolean().optional() }).parse(req.body);
@@ -71,7 +74,7 @@ illustrationsSeriesRouter.patch(
 // choisissaient exportent la série festive du logiciel
 illustrationsSeriesRouter.delete(
   "/:sid",
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const id = idParam(req.params.sid);
     const avant = await serie(id);
@@ -84,7 +87,7 @@ illustrationsSeriesRouter.delete(
 // GET /api/illustrations-series/:sid/images — les photos de la série (vignettes)
 illustrationsSeriesRouter.get(
   "/:sid/images",
-  admin,
+  voir,
   asynchrone(async (req, res) => {
     const id = idParam(req.params.sid);
     await serie(id);
@@ -100,7 +103,7 @@ illustrationsSeriesRouter.get(
 // POST /api/illustrations-series/:sid/images { image (data URL) } — ajoute une photo, réduite et rangée par forme
 illustrationsSeriesRouter.post(
   "/:sid/images",
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const id = idParam(req.params.sid);
     const { image } = z.object({ image: z.string().regex(/^data:image\/(jpeg|png|webp|bmp);base64,[A-Za-z0-9+/=]+$/, "Image JPEG, PNG, WebP ou BMP attendue") }).parse(req.body);
@@ -125,7 +128,7 @@ illustrationsSeriesRouter.post(
 // DELETE /api/illustrations-series/:sid/images/:iid — retire une photo de la série
 illustrationsSeriesRouter.delete(
   "/:sid/images/:iid",
-  admin,
+  modifier,
   asynchrone(async (req, res) => {
     const id = idParam(req.params.sid);
     const iid = idParam(req.params.iid);

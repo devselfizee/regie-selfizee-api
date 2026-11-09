@@ -3,10 +3,11 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { geocoder } from "../lib/geocodage.js";
 import { categorieGoogle, devinerCategorie } from "../concurrents/categorie.js";
 import { chercherLieuGoogle, googlePlacesConfigure } from "../lib/googlePlaces.js";
+import { requirePerm, estAdminPlateforme } from "../middleware/permissions.js";
 
 // Concurrents (demande de Sébastien, 03/11/2026) : la liste des concurrents (cabine ou borne), leurs emplacements
 // connus (carte des prospects) et un import en masse de ces emplacements.
@@ -62,7 +63,7 @@ concurrentsRouter.get(
 
 concurrentsRouter.post(
   "/",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("concurrents.edit"),
   asynchrone(async (req, res) => {
     const d = corps.parse(req.body);
     const c = await prisma.concurrent.create({ data: d }).catch((e) => {
@@ -74,7 +75,7 @@ concurrentsRouter.post(
 
 concurrentsRouter.put(
   "/:id",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("concurrents.edit"),
   asynchrone(async (req, res) => {
     const d = corps.parse(req.body);
     const c = await prisma.concurrent.update({ where: { id: Number(req.params.id) }, data: d }).catch((e) => {
@@ -87,7 +88,7 @@ concurrentsRouter.put(
 // DELETE /api/concurrents/:id — ses emplacements avec ; les prospects gardent « concurrent en place » sans le nom choisi
 concurrentsRouter.delete(
   "/:id",
-  exiger("ADMIN"),
+  requirePerm("concurrents.delete"),
   asynchrone(async (req, res) => {
     await prisma.concurrent.delete({ where: { id: Number(req.params.id) } });
     res.status(204).end();
@@ -108,7 +109,7 @@ const ligneImport = z.object({
 // Les lignes sans position sont placées d'après leur adresse (Base Adresse Nationale : France seulement).
 concurrentsRouter.post(
   "/:id/emplacements/import",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("concurrents.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const concurrentId = Number(req.params.id);
     const d = z.object({ lignes: z.array(ligneImport).min(1).max(5000), remplacer: z.boolean().default(false), source: z.string().trim().max(200).optional() }).parse(req.body);
@@ -142,7 +143,7 @@ concurrentsRouter.post(
 // (les emplacements importés avant la catégorie, ou ceux qu'aucune règle ne reconnaissait encore)
 concurrentsRouter.post(
   "/emplacements/categoriser",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("concurrents.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const types = await typesLieuParCode();
     const sans = await prisma.emplacementConcurrent.findMany({ where: { typeLieuId: null }, select: { id: true, nom: true } });
@@ -171,7 +172,7 @@ concurrentsRouter.get(
 // jamais une catégorie corrigée à la main.
 concurrentsRouter.post(
   "/emplacements/google",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("concurrents.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     if (!googlePlacesConfigure()) throw new HttpError(400, "GOOGLE_NON_CONFIGURE", "Clé Google Places absente (GOOGLE_PLACES_API_KEY)");
     const d = z.object({ lot: z.number().int().min(1).max(50).default(20) }).parse(req.body ?? {});
@@ -216,7 +217,7 @@ concurrentsRouter.post(
 // PATCH /api/concurrents/emplacements/:id { typeLieuId } — catégorie corrigée à la main (null = à catégoriser)
 concurrentsRouter.patch(
   "/emplacements/:id",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("concurrents.edit"),
   asynchrone(async (req, res) => {
     const d = z.object({ typeLieuId: z.number().int().nullable() }).parse(req.body);
     if (d.typeLieuId !== null && !(await prisma.refValeur.findFirst({ where: { id: d.typeLieuId, categorie: "TYPE_LIEU" } })))
@@ -229,7 +230,7 @@ concurrentsRouter.patch(
 // DELETE /api/concurrents/emplacements/:id
 concurrentsRouter.delete(
   "/emplacements/:id",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("concurrents.edit"),
   asynchrone(async (req, res) => {
     await prisma.emplacementConcurrent.delete({ where: { id: Number(req.params.id) } });
     res.status(204).end();
@@ -246,8 +247,9 @@ const CODES_PAYS: Record<string, string> = {
 // sans catégorie (obligatoire s'il y en a). Un emplacement déjà transformé est ignoré.
 concurrentsRouter.post(
   "/emplacements/prospects",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("prospects.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
+    const adminPlateforme = await estAdminPlateforme(req);
     const d = z.object({ ids: z.array(z.number().int()).min(1).max(500), typeLieuId: z.number().int().nullable().optional() }).parse(req.body);
     if (d.typeLieuId != null && !(await prisma.refValeur.findFirst({ where: { id: d.typeLieuId, categorie: "TYPE_LIEU" } })))
       throw new HttpError(400, "TYPE_LIEU_INCONNU", "Type de lieu inconnu");
@@ -271,8 +273,8 @@ concurrentsRouter.post(
             typeLieuId: (e.typeLieuId ?? d.typeLieuId)!,
             concurrentEnPlace: true,
             concurrentId: e.concurrentId,
-            // Un commercial reste responsable des prospects qu'il crée
-            commercialId: req.utilisateur?.role === "COMMERCIAL" ? req.utilisateur.id : null,
+            // Celui qui crée le prospect en devient le commercial responsable, sauf un admin de la plateforme
+            commercialId: adminPlateforme ? null : (req.utilisateur?.id ?? null),
           },
         });
         await db.emplacementConcurrent.update({ where: { id: e.id }, data: { lieuId: l.id } });

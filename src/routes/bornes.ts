@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { genererCle } from "../lib/cleBorne.js";
 import { reattribuerTransactions } from "../ingestion/reattribution.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 export const bornesRouter = Router();
 export const affectationsRouter = Router();
@@ -131,6 +132,7 @@ async function changerModule(db: Prisma.TransactionClient, borneId: number, modu
 // POST /api/bornes — crée la borne et renvoie sa clé API (affichée une seule fois)
 bornesRouter.post(
   "/",
+  requirePerm("bornes.edit"),
   asynchrone(async (req, res) => {
     const { module, ...data } = borneSchema.parse(req.body);
     const cle = genererCle();
@@ -150,6 +152,7 @@ bornesRouter.post(
 // PUT /api/bornes/:id
 bornesRouter.put(
   "/:id",
+  requirePerm("bornes.edit"),
   asynchrone(async (req, res) => {
     const { module, ...data } = borneSchema.parse(req.body);
     const borneId = Number(req.params.id);
@@ -164,6 +167,7 @@ bornesRouter.put(
 // PUT /api/bornes/:id/module { typeId, numeroSerie?, identifiantPrestataire? } — module de paiement et TID
 bornesRouter.put(
   "/:id/module",
+  requirePerm("bornes.edit"),
   asynchrone(async (req, res) => {
     const module = moduleSchema.parse(req.body);
     const borneId = Number(req.params.id);
@@ -175,6 +179,7 @@ bornesRouter.put(
 // POST /api/bornes/:id/cle — régénère la clé (l'ancienne cesse de fonctionner)
 bornesRouter.post(
   "/:id/cle",
+  requirePerm("bornes.edit"),
   asynchrone(async (req, res) => {
     const cle = genererCle();
     const borne = await prisma.borne.update({
@@ -193,6 +198,7 @@ const instant = z.iso.datetime({ offset: true }).transform((v) => new Date(v));
 // Si la borne a une affectation ouverte commencée avant, elle est clôturée à `debut`.
 affectationsRouter.post(
   "/",
+  requirePerm("bornes.edit"),
   asynchrone(async (req, res) => {
     const { borneId, lieuId, debut, fin, emplacementNotes } = z
       .object({
@@ -222,6 +228,7 @@ affectationsRouter.post(
 // PATCH /api/affectations/:id — corriger les dates (ex. retrait de la borne : fin = maintenant)
 affectationsRouter.patch(
   "/:id",
+  requirePerm("bornes.edit"),
   asynchrone(async (req, res) => {
     const patch = z
       .object({ debut: instant.optional(), fin: instant.nullable().optional(), emplacementNotes: z.string().nullable().optional() })
@@ -244,6 +251,7 @@ affectationsRouter.patch(
 // DELETE /api/affectations/:id — affectation saisie par erreur
 affectationsRouter.delete(
   "/:id",
+  requirePerm("bornes.edit"),
   asynchrone(async (req, res) => {
     const id = Number(req.params.id);
     const [, a] = await prisma.$transaction([

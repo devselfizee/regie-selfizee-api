@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone } from "../lib/http.js";
 import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { aujourdhui, moisDe, previsionCommission, previsionMois, prevoirLieux, resume } from "../previsions/service.js";
+import { userCan } from "../middleware/permissions.js";
 
 // Prévisions de CA (CDC V3 « pilotage »)
 export const previsionsRouter = Router();
@@ -16,7 +17,7 @@ previsionsRouter.get(
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
     // Commission : mêmes droits que la fiche commissions (le commercial ne la voit pas)
-    const voitCommission = ["ADMIN", "PARTENAIRE"].includes(req.utilisateur!.role);
+    const voitCommission = await userCan(req, "commissions.view");
     // Pas de projection avant une semaine d'activité (retour de Sébastien) : trop peu de jours pour prévoir
     const premiere = (await prisma.aggJour.aggregate({ where: { lieuId, nbAcceptees: { gt: 0 } }, _min: { jour: true } }))._min.jour;
     if (!premiere || aujourdhui().getTime() - premiere.getTime() < 7 * 86_400_000) {

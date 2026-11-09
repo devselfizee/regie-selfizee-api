@@ -1,5 +1,4 @@
 import { Router } from "express";
-import type { UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
@@ -8,28 +7,32 @@ import { envoyerNotificationPlateforme, idHub } from "../lib/notificationsPlatef
 import { verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { LIBELLES } from "../alertes/notifications.js";
 import { titreLotCodes } from "../codes/codes.js";
+import { requirePerm, userCan } from "../middleware/permissions.js";
 
 // Suivi de la fiche lieu (demande de Sébastien) : commentaires de l'équipe avec mentions,
 // et une timeline qui les mêle à l'histoire du lieu. Interne : jamais visible du partenaire.
 
-const EQUIPE: UserRole[] = ["ADMIN", "COMMERCIAL", "TECHNICIEN"];
 const APP_URL = () => (process.env.APP_URL ?? "").replace(/\/+$/, "");
 const echapper = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const nomComplet = (u: { prenom: string; nom: string }) => `${u.prenom} ${u.nom}`.trim();
 
 async function lieuDuSuivi(req: UtilisateurRequest) {
+  // Droit suivi.view vérifié sur la route ; ici, le périmètre des lieux
   const u = req.utilisateur;
-  if (!u || !EQUIPE.includes(u.role)) throw new HttpError(403, "INTERDIT", "Le suivi est réservé à l'équipe Selfizee");
+  if (!u) throw new HttpError(401, "NON_AUTHENTIFIE");
   const lieuId = Number(req.params.id);
   await verifierAccesLieu(u, lieuId);
   return lieuId;
 }
 
-/** Membres de l'équipe qui voient ce lieu : eux seuls peuvent être mentionnés */
-async function mentionnables(lieuId: number) {
-  const lieu = await prisma.lieu.findUnique({ where: { id: lieuId }, select: { commercialId: true } });
+/**
+ * Qui peut être mentionné : l'équipe Selfizee, c'est-à-dire les comptes actifs qui ne sont pas rattachés à un lieu
+ * (un compte rattaché à un lieu est un partenaire, qui ne voit pas le suivi). Les droits de chacun sont dans
+ * l'Admin Panel : la Régie ne peut pas les lire pour un autre que l'utilisateur connecté.
+ */
+async function mentionnables(_lieuId: number) {
   return prisma.user.findMany({
-    where: { isActive: true, OR: [{ role: { in: ["ADMIN", "TECHNICIEN"] } }, { role: "COMMERCIAL", id: lieu?.commercialId ?? -1 }] },
+    where: { isActive: true, lieuId: null, email: { not: "dev@local" } },
     orderBy: [{ prenom: "asc" }, { nom: "asc" }],
     select: { id: true, prenom: true, nom: true, email: true, role: true },
   });
@@ -86,6 +89,7 @@ export const suiviLieuRouter = Router();
 // GET /api/lieux/:id/mentionnables — qui peut être mentionné sur ce lieu
 suiviLieuRouter.get(
   "/:id/mentionnables",
+  requirePerm("suivi.view"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = await lieuDuSuivi(req);
     res.json((await mentionnables(lieuId)).map(({ email: _e, ...u }) => u));
@@ -95,6 +99,7 @@ suiviLieuRouter.get(
 // POST /api/lieux/:id/commentaires { texte, mentionIds }
 suiviLieuRouter.post(
   "/:id/commentaires",
+  requirePerm("suivi.comment"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = await lieuDuSuivi(req);
     const c = commentaireSchema.parse(req.body);
@@ -114,9 +119,11 @@ suiviLieuRouter.post(
 // Marque comme lues les mentions de l'utilisateur sur ce lieu.
 suiviLieuRouter.get(
   "/:id/timeline",
+  requirePerm("suivi.view"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = await lieuDuSuivi(req);
-    const admin = req.utilisateur!.role === "ADMIN";
+    // Éléments réservés : contrats et reversements (commissions), lots de codes de remise
+    const [voitCommissions, voitCodes] = await Promise.all([userCan(req, "commissions.view"), userCan(req, "codes_remise.view")]);
     const [lieu, commentaires, affectations, alertes, evenements, journaux, contrats, reversements, lotsCodes, codesSupprimes] = await Promise.all([
       prisma.lieu.findUnique({ where: { id: lieuId }, select: { createdAt: true, dateSignature: true, dateInstallation: true } }),
       prisma.commentaireLieu.findMany({ where: { lieuId }, select: selectCommentaire }),
@@ -130,16 +137,16 @@ suiviLieuRouter.get(
         where: { entite: { in: ["lieu", "config_evenement"] }, entiteId: String(lieuId) },
         select: { id: true, action: true, entite: true, createdAt: true, user: { select: { prenom: true, nom: true, photoUrl: true } } },
       }),
-      admin ? prisma.contratCommission.findMany({ where: { lieuId }, select: { id: true, version: true, dateEffet: true, dateFin: true, modele: true, motifAvenant: true } }) : [],
-      admin ? prisma.reversement.findMany({ where: { lieuId, payeLe: { not: null } }, select: { id: true, periodeDebut: true, periodeFin: true, payeLe: true, montantAReverserCents: true } }) : [],
+      voitCommissions ? prisma.contratCommission.findMany({ where: { lieuId }, select: { id: true, version: true, dateEffet: true, dateFin: true, modele: true, motifAvenant: true } }) : [],
+      voitCommissions ? prisma.reversement.findMany({ where: { lieuId, payeLe: { not: null } }, select: { id: true, periodeDebut: true, periodeFin: true, payeLe: true, montantAReverserCents: true } }) : [],
       // Codes de remise donnés au lieu (page réservée aux admins), et ceux supprimés depuis
-      admin
+      voitCodes
         ? prisma.lotCodesRemise.findMany({
             where: { lieuId },
             select: { id: true, type: true, quantite: true, pourcentage: true, libelle: true, nbCodes: true, expireLe: true, seulementLieu: true, createdAt: true, creePar: { select: { prenom: true, nom: true, photoUrl: true } } },
           })
         : [],
-      admin
+      voitCodes
         ? prisma.auditLog.findMany({
             where: { entite: "lot_codes_remise", action: "SUPPRESSION_CODES", avant: { path: ["lieuId"], equals: lieuId } },
             select: { id: true, entiteId: true, avant: true, createdAt: true, user: { select: { prenom: true, nom: true, photoUrl: true } } },
@@ -273,6 +280,7 @@ commentairesRouter.get(
 // PUT /api/commentaires/:id { texte, mentionIds } — les nouvelles mentions sont prévenues
 commentairesRouter.put(
   "/:id",
+  requirePerm("suivi.comment"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const ancien = await commentaireModifiable(req);
     const c = commentaireSchema.parse(req.body);
@@ -293,6 +301,7 @@ commentairesRouter.put(
 // DELETE /api/commentaires/:id
 commentairesRouter.delete(
   "/:id",
+  requirePerm("suivi.comment"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const c = await commentaireModifiable(req);
     await prisma.commentaireLieu.delete({ where: { id: c.id } });

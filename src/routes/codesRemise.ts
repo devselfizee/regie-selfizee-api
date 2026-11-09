@@ -7,6 +7,7 @@ import { jourEtHeureLocaux } from "../lib/temps.js";
 import { envoyerClasseur, type Colonne } from "../lib/excel.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { creerCodes, libelleRemise } from "../codes/codes.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 // Codes de remise (demande de Sébastien, 02/11/2026) : génération par lots, liste, détail des utilisations, export.
 export const codesRemiseRouter = Router();
@@ -187,6 +188,7 @@ const corpsLot = z
 // POST /api/codes-remise/lots — génère un lot de codes (1 à 1000) aux mêmes conditions
 codesRemiseRouter.post(
   "/lots",
+  requirePerm("codes_remise.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const d = corpsLot.parse(req.body);
     if (new Date(`${d.expireLe}T00:00:00Z`) < aujourdhui()) throw new HttpError(400, "DATE_PASSEE", "La date de fin de validité est passée");
@@ -213,6 +215,7 @@ codesRemiseRouter.post(
 // Un code déjà utilisé reste (son historique compte) : on le désactive à la place. Les lots vidés disparaissent.
 codesRemiseRouter.post(
   "/supprimer",
+  requirePerm("codes_remise.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { ids } = z.object({ ids: z.array(z.number().int().positive()).min(1).max(5000) }).parse(req.body);
     const codes = await prisma.codeRemise.findMany({
@@ -256,6 +259,7 @@ codesRemiseRouter.post(
 // POST /api/codes-remise/:id/desactiver { actif: false | true } — retirer un code (perdu, diffusé par erreur) ou le remettre
 codesRemiseRouter.post(
   "/:id/desactiver",
+  requirePerm("codes_remise.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { actif } = z.object({ actif: z.boolean() }).parse(req.body);
     const c = await prisma.codeRemise.update({ where: { id: Number(req.params.id) }, data: { desactiveLe: actif ? null : new Date() } });

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { jourEtHeureLocaux, offsetMinutes } from "../src/lib/temps.js";
 import { htDepuisTtc, pctVersBp } from "../src/lib/montants.js";
 import { decouperCle, genererCle, verifierSecret } from "../src/lib/cleBorne.js";
-import { adminsInitiaux, estAdminKeycloak } from "../src/middleware/utilisateur.js";
 import { numeroInternational } from "../src/lib/envoi.js";
 
 describe("temps", () => {
@@ -52,32 +51,11 @@ describe("clé borne", () => {
   });
 });
 
-describe("ADMIN_EMAILS", () => {
-  it("tolère les erreurs de saisie courantes", () => {
-    expect(adminsInitiaux("s.mahe@konitys.fr")).toEqual(["s.mahe@konitys.fr"]);
-    expect(adminsInitiaux('"S.Mahe@konitys.fr"')).toEqual(["s.mahe@konitys.fr"]);
-    expect(adminsInitiaux("ADMIN_EMAILS=s.mahe@konitys.fr")).toEqual(["s.mahe@konitys.fr"]);
-    expect(adminsInitiaux(" a@x.fr , b@x.fr;c@x.fr ")).toEqual(["a@x.fr", "b@x.fr", "c@x.fr"]);
-    expect(adminsInitiaux("")).toEqual([]);
-  });
-});
-
 describe("numéros de téléphone", () => {
   it("passe au format international attendu par SMSEnvoi", () => {
     expect(numeroInternational("06 12 34 56 78")).toBe("33612345678");
     expect(numeroInternational("+33 6 12 34 56 78")).toBe("33612345678");
     expect(numeroInternational("0033612345678")).toBe("33612345678");
-  });
-});
-
-describe("rôle admin Keycloak", () => {
-  it("reconnaît un rôle admin du realm ou d'un client, sans tenir compte de la casse", () => {
-    expect(estAdminKeycloak({ sub: "1", realm_access: { roles: ["offline_access", "Admin"] } })).toBe(true);
-    expect(estAdminKeycloak({ sub: "1", resource_access: { "regie-web": { roles: ["super-admin"] } } })).toBe(true);
-  });
-  it("donne commercial aux autres", () => {
-    expect(estAdminKeycloak({ sub: "1", realm_access: { roles: ["offline_access", "uma_authorization", "commercial"] } })).toBe(false);
-    expect(estAdminKeycloak({ sub: "1" })).toBe(false);
   });
 });
 

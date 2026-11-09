@@ -9,6 +9,7 @@ import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { ajouterAuxAgregats } from "../ingestion/agregats.js";
 import { sha256Payload } from "../ingestion/journal.js";
 import { urlPhoto } from "../lib/photos.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 // Recherche de ventes et remboursements (admin). La borne ne rembourse jamais :
 // un remboursement est saisi ici, rattaché à la vente d'origine (avenant synchro, § 3.7).
@@ -227,6 +228,7 @@ ventesRouter.get(
 // POST /api/ventes/:id/remboursement { montantCents?, motif } — total par défaut, partiel possible
 ventesRouter.post(
   "/:id/remboursement",
+  requirePerm("paiements.rembourser"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const corps = z.object({ montantCents: z.number().int().positive().optional(), motif: z.string().trim().min(1).max(200) }).parse(req.body);
     const origine = await prisma.transaction.findUnique({

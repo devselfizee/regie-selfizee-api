@@ -6,7 +6,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
-import { exiger, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { localParis } from "../alertes/ouverture.js";
 import { aujourdhui } from "../previsions/service.js";
 import { debutsEquipement } from "../stats/historique.js";
@@ -15,6 +15,7 @@ import { libelleTemps } from "../calendrier/meteo.js";
 import { impact, type VentesJour } from "../evenements/impact.js";
 import { conditionsLieu, et } from "../stats/filtres.js";
 import { filtresAutorises } from "./stats.js";
+import { requirePerm, userCan } from "../middleware/permissions.js";
 
 // Calendrier, météo et journal d'événements (CDC V3 et §8)
 const JOUR = 86_400_000;
@@ -113,7 +114,6 @@ const evenementSchema = z
   })
   .refine((e) => !e.fin || e.fin >= e.debut, { message: "La fin précède le début", path: ["fin"] });
 
-const ecrire = exiger("ADMIN", "COMMERCIAL", "TECHNICIEN");
 
 /** Ventes par jour d'un lieu (CA TTC et nombre de ventes acceptées). */
 async function ventesParJour(lieuId: number, du: Date) {
@@ -136,7 +136,7 @@ evenementsLieuRouter.get(
       prisma.evenementLieu.findMany({ where: { lieuId }, include: { type: { select: { id: true, code: true, libelle: true } } }, orderBy: { debut: "desc" } }),
     ]);
     if (!lieu) throw new HttpError(404, "INTROUVABLE");
-    const voitVentes = req.utilisateur!.role !== "TECHNICIEN";
+    const voitVentes = await userCan(req, "ventes.view");
     const hier = new Date(aujourdhui().getTime() - JOUR);
     const plusAncien = evenements.reduce((m, e) => (e.debut < m ? e.debut : m), hier);
     const [ventes, debuts] = voitVentes && evenements.length
@@ -162,7 +162,7 @@ evenementsLieuRouter.get(
 // POST /api/lieux/:id/evenements { typeId, libelle, debut, fin? }
 evenementsLieuRouter.post(
   "/:id/evenements",
-  ecrire,
+  requirePerm("contexte.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
@@ -192,7 +192,7 @@ async function evenementAccessible(req: UtilisateurRequest) {
 // PUT /api/evenements/:id
 evenementsRouter.put(
   "/:id",
-  ecrire,
+  requirePerm("contexte.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const ancien = await evenementAccessible(req);
     const e = evenementSchema.parse(req.body);
@@ -209,7 +209,7 @@ evenementsRouter.put(
 // DELETE /api/evenements/:id
 evenementsRouter.delete(
   "/:id",
-  ecrire,
+  requirePerm("contexte.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const e = await evenementAccessible(req);
     await prisma.evenementLieu.delete({ where: { id: e.id } });

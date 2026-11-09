@@ -3,35 +3,36 @@ import { AlerteStatut, NiveauAlerte, Prisma, type TypeAlerte } from "@prisma/cli
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { evaluerAlertes } from "../alertes/evaluation.js";
 import { envoyerRecapitulatif, LIBELLES, notifierAlertes } from "../alertes/notifications.js";
 import { chargerRegles, REGLES_DEFAUT, TYPES_REGLES, type TypeRegle } from "../alertes/regles.js";
+import { requirePerm, requireAnyPerm, userCan } from "../middleware/permissions.js";
 
 export const alertesRouter = Router();
 
 const TECHNIQUES: TypeAlerte[] = ["BORNE_MUETTE", "ZERO_VENTE", "TAUX_REFUS", "CONSOMMABLES", "BORNE_NON_AFFECTEE"];
 const COMMERCIALES: TypeAlerte[] = ["BAISSE_CA", "ZERO_VENTE", "PIC_SUSPECT", "VENTE_HORS_HORAIRES", "TAUX_REFUS"];
 
-/** Alertes visibles selon le rôle : technicien = techniques, commercial = de vente (tous les lieux). */
-function perimetre(req: UtilisateurRequest): Prisma.AlerteWhereInput {
-  const u = req.utilisateur!;
-  if (u.role === "ADMIN") return {};
-  if (u.role === "TECHNICIEN") return { type: { in: TECHNIQUES } };
-  if (u.role === "COMMERCIAL") return { type: { in: COMMERCIALES } };
+/** Alertes visibles selon les droits : techniques (alertes.techniques_view) et/ou de vente (alertes.ventes_view). */
+async function perimetre(req: UtilisateurRequest): Promise<Prisma.AlerteWhereInput> {
+  const [techniques, ventes] = await Promise.all([userCan(req, "alertes.techniques_view"), userCan(req, "alertes.ventes_view")]);
+  if (techniques && ventes) return {};
+  if (techniques) return { type: { in: TECHNIQUES } };
+  if (ventes) return { type: { in: COMMERCIALES } };
   throw new HttpError(403, "INTERDIT");
 }
 
 // GET /api/alertes?statut=NOUVELLE,PRISE_EN_CHARGE&niveau=&type=&lieuId=
 alertesRouter.get(
   "/",
-  exiger("ADMIN", "TECHNICIEN", "COMMERCIAL"),
+  requireAnyPerm("alertes.techniques_view", "alertes.ventes_view"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const statuts = req.query.statut ? (String(req.query.statut).split(",") as AlerteStatut[]) : undefined;
     const alertes = await prisma.alerte.findMany({
       where: {
         AND: [
-          perimetre(req),
+          await perimetre(req),
           statuts ? { statut: { in: statuts } } : {},
           req.query.niveau ? { niveau: req.query.niveau as NiveauAlerte } : {},
           req.query.type ? { type: req.query.type as TypeAlerte } : {},
@@ -54,8 +55,9 @@ alertesRouter.get(
 alertesRouter.get(
   "/compteur",
   asynchrone<UtilisateurRequest>(async (req, res) => {
-    if (req.utilisateur?.role === "PARTENAIRE") return res.json({ nouvelles: 0, critiques: 0 });
-    const where = { AND: [perimetre(req), { statut: "NOUVELLE" as const }] };
+    // Sans droit sur les alertes (partenaire…) : pas de badge
+    if (!(await userCan(req, "alertes.techniques_view")) && !(await userCan(req, "alertes.ventes_view"))) return res.json({ nouvelles: 0, critiques: 0 });
+    const where = { AND: [await perimetre(req), { statut: "NOUVELLE" as const }] };
     const [nouvelles, critiques] = await Promise.all([
       prisma.alerte.count({ where }),
       prisma.alerte.count({ where: { AND: [...where.AND, { niveau: "CRITIQUE" as const }] } }),
@@ -67,7 +69,7 @@ alertesRouter.get(
 // PATCH /api/alertes/:id { statut?, commentaire?, assigneeId? }
 alertesRouter.patch(
   "/:id",
-  exiger("ADMIN", "TECHNICIEN", "COMMERCIAL"),
+  requirePerm("alertes.traiter"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const patch = z
       .object({
@@ -77,7 +79,7 @@ alertesRouter.patch(
       })
       .parse(req.body);
     const id = Number(req.params.id);
-    const alerte = await prisma.alerte.findFirst({ where: { AND: [{ id }, perimetre(req)] } });
+    const alerte = await prisma.alerte.findFirst({ where: { AND: [{ id }, await perimetre(req)] } });
     if (!alerte) throw new HttpError(404, "INTROUVABLE");
 
     const data: Prisma.AlerteUncheckedUpdateInput = { ...patch };
@@ -97,7 +99,7 @@ alertesRouter.patch(
 // GET /api/alertes/regles — règles en vigueur (globales), avec leurs valeurs par défaut
 alertesRouter.get(
   "/regles",
-  exiger("ADMIN"),
+  requirePerm("alertes.regles_edit"),
   asynchrone(async (_req, res) => {
     const regle = await chargerRegles();
     res.json(
@@ -114,7 +116,7 @@ alertesRouter.get(
 // PUT /api/alertes/regles/:type — règle globale { actif, niveau, parametres }
 alertesRouter.put(
   "/regles/:type",
-  exiger("ADMIN"),
+  requirePerm("alertes.regles_edit"),
   asynchrone(async (req, res) => {
     const type = req.params.type as TypeRegle;
     if (!TYPES_REGLES.includes(type)) throw new HttpError(404, "INTROUVABLE");
@@ -138,7 +140,7 @@ alertesRouter.put(
 // POST /api/alertes/evaluer — évaluer maintenant (sinon toutes les 15 min)
 alertesRouter.post(
   "/evaluer",
-  exiger("ADMIN"),
+  requirePerm("alertes.regles_edit"),
   asynchrone(async (_req, res) => {
     const { creees, resolues } = await evaluerAlertes();
     await notifierAlertes(creees);
@@ -149,7 +151,7 @@ alertesRouter.post(
 // POST /api/alertes/recapitulatif — envoyer le récapitulatif maintenant (test)
 alertesRouter.post(
   "/recapitulatif",
-  exiger("ADMIN"),
+  requirePerm("alertes.regles_edit"),
   asynchrone(async (_req, res) => {
     res.json(await envoyerRecapitulatif());
   })

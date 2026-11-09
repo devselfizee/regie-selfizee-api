@@ -101,6 +101,7 @@ const GROUPES: Groupe[] = [
     permissions: [
       { key: "medias.view", label: "Voir les photos et vidéos des séances" },
       { key: "medias.manage", label: "Relancer les téléchargements de médias" },
+      { key: "souvenir.contacts_view", label: "Voir et exporter les contacts laissés par les invités (page souvenir)", description: "Données personnelles : e-mails des invités." },
     ],
   },
   {
@@ -110,9 +111,11 @@ const GROUPES: Groupe[] = [
       { key: "commissions.view", label: "Voir les commissions et les contrats" },
       { key: "commissions.edit", label: "Gérer les contrats, reversements et relevés de commission" },
       { key: "paiements.view", label: "Voir le détail des paiements et des ventes" },
+      { key: "paiements.rembourser", label: "Enregistrer le remboursement d'une vente" },
       { key: "rapprochement.view", label: "Voir le rapprochement monétique" },
       { key: "rapprochement.edit", label: "Importer des relevés et rapprocher" },
       { key: "rentabilite.view", label: "Voir la rentabilité des bornes" },
+      { key: "rentabilite.edit", label: "Saisir le coût d'achat et l'amortissement des bornes" },
       { key: "codes_remise.view", label: "Voir les codes de remise" },
       { key: "codes_remise.edit", label: "Générer, désactiver et supprimer des codes de remise" },
     ],
@@ -124,6 +127,7 @@ const GROUPES: Groupe[] = [
       { key: "prospects.view", label: "Voir les prospects et les emplacements des concurrents" },
       { key: "prospects.edit", label: "Créer et modifier des prospects" },
       { key: "concurrents.edit", label: "Gérer les concurrents et leurs emplacements" },
+      { key: "concurrents.delete", label: "Supprimer un concurrent" },
       { key: "marketing.edit", label: "Modifier le calendrier marketing" },
     ],
   },
@@ -140,7 +144,7 @@ const GROUPES: Groupe[] = [
 ];
 
 export function buildPermissionsSchema() {
-  return { app: APP_KEY, label: "Régie Selfizee", version: 1, groups: GROUPES };
+  return { app: APP_KEY, label: "Régie Selfizee", version: 2, groups: GROUPES };
 }
 
 /** Toutes les clés du schéma (contrôle des fautes de frappe dans les tests) */

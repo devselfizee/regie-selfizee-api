@@ -9,6 +9,7 @@ import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison,
 import { joursOuverts } from "../alertes/ouverture.js";
 import { disponibilite } from "../stats/disponibilite.js";
 import { apercusCadres, entonnoir, photosPrisesParcours } from "../stats/parcours.js";
+import { userCan } from "../middleware/permissions.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
 export function filtresAutorises(req: UtilisateurRequest): Filtres {
@@ -294,7 +295,7 @@ statsRouter.get(
       serie({ ...f, ...n1 }, gran, 1),
       classement(f),
       parc(f),
-      req.utilisateur?.role === "ADMIN" ? commissionsPeriode(f) : Promise.resolve(null),
+      (await userCan(req, "ventes.marges_view")) ? commissionsPeriode(f) : Promise.resolve(null),
       parHeure(f),
       dernieresVentes(f),
     ]);

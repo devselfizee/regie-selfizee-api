@@ -2,8 +2,9 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { erreursGrille, GRILLE_DEFAUT, grilleBase, grilleEffective, grilleLieu, grilleSchema, type Grille } from "../tarifs/grille.js";
+import { requirePerm, requireAnyPerm } from "../middleware/permissions.js";
 
 // Tarifs en trois niveaux (demande de Sébastien, 28/10/2026) : base du parc → lieu → événement.
 
@@ -19,7 +20,7 @@ export const tarifsRouter = Router();
 // GET /api/tarifs/base — tarifs de base du parc (grille d'usine tant qu'ils ne sont pas saisis)
 tarifsRouter.get(
   "/base",
-  exiger("ADMIN", "COMMERCIAL"),
+  requireAnyPerm("lieux.tarifs_edit", "referentiel.edit"),
   asynchrone(async (_req, res) => {
     const g = await prisma.grilleTarifs.findFirst({ where: { lieuId: null }, include: { majPar: { select: { prenom: true, nom: true } } } });
     res.json({
@@ -35,7 +36,7 @@ tarifsRouter.get(
 // PUT /api/tarifs/base { grille } — admins
 tarifsRouter.put(
   "/base",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const grille = valider(z.object({ grille: z.unknown() }).parse(req.body).grille);
     const existante = await prisma.grilleTarifs.findFirst({ where: { lieuId: null } });
@@ -51,7 +52,7 @@ export const tarifsLieuRouter = Router();
 // GET /api/lieux/:id/tarifs — tarifs propres au lieu (ou null), tarifs de base, et ceux qui s'appliquent
 tarifsLieuRouter.get(
   "/:id/tarifs",
-  exiger("ADMIN", "COMMERCIAL"),
+  requireAnyPerm("lieux.tarifs_edit", "evenements.view"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
@@ -63,7 +64,7 @@ tarifsLieuRouter.get(
 // PUT /api/lieux/:id/tarifs { grille | null } — null : le lieu reprend les tarifs de base
 tarifsLieuRouter.put(
   "/:id/tarifs",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("lieux.tarifs_edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
