@@ -16,7 +16,7 @@ utilisateursRouter.get(
 );
 
 const select = {
-  id: true, email: true, nom: true, prenom: true, telephone: true, alertesSms: true, isActive: true,
+  id: true, email: true, nom: true, prenom: true, telephone: true, alertesSms: true, alertesEmail: true, isActive: true,
   lieuId: true, keycloakSub: true, createdAt: true,
   lieu: { select: { id: true, enseigne: true } },
   _count: { select: { lieuxCommercial: true } },
@@ -59,7 +59,7 @@ utilisateursRouter.patch(
   requirePerm("utilisateurs.manage"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const id = Number(req.params.id);
-    const patch = z.object({ ...base, isActive: z.boolean().optional(), alertesSms: z.boolean().optional() }).parse(req.body);
+    const patch = z.object({ ...base, isActive: z.boolean().optional(), alertesSms: z.boolean().optional(), alertesEmail: z.boolean().optional() }).parse(req.body);
     const avant = await prisma.user.findUniqueOrThrow({ where: { id } });
     const lieuId = patch.lieuId === undefined ? avant.lieuId : patch.lieuId;
 

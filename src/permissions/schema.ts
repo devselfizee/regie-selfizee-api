@@ -43,6 +43,7 @@ const GROUPES: Groupe[] = [
       { key: "lieux.create", label: "Créer un lieu" },
       { key: "lieux.edit", label: "Modifier un lieu", description: "Fiche, horaires, contacts, saisons et fermetures." },
       { key: "lieux.tarifs_edit", label: "Modifier le tarif d'un lieu" },
+      { key: "lieux.commercial_edit", label: "Choisir le commercial responsable d'un lieu", description: "Sans ce droit, celui qui crée un lieu en devient le responsable et ne peut pas le changer." },
       { key: "lieux.communication_edit", label: "Modifier la communication d'un lieu", description: "Nom affiché, avis, réseaux, assistance (repris par la borne)." },
     ],
   },
@@ -144,7 +145,7 @@ const GROUPES: Groupe[] = [
 ];
 
 export function buildPermissionsSchema() {
-  return { app: APP_KEY, label: "Régie Selfizee", version: 2, groups: GROUPES };
+  return { app: APP_KEY, label: "Régie Selfizee", version: 3, groups: GROUPES };
 }
 
 /** Toutes les clés du schéma (contrôle des fautes de frappe dans les tests) */

@@ -38,6 +38,7 @@ Profils suggérés : « Régie – administrateur », « Régie – technicien �
 | `lieux.create` | ✓ |  | ✓ |  |
 | `lieux.edit` | ✓ |  | ✓ |  |
 | `lieux.tarifs_edit` | ✓ |  | ✓ |  |
+| `lieux.commercial_edit` | ✓ |  |  |  |
 | `lieux.communication_edit` | ✓ |  |  |  |
 | `ventes.view` | ✓ |  | ✓ | ✓ |
 | `ventes.marges_view` | ✓ |  |  |  |
@@ -85,3 +86,8 @@ Profils suggérés : « Régie – administrateur », « Régie – technicien �
 ² Commissions de **son** lieu seulement (périmètre `lieux.view_own`).
 
 Un partenaire ne voit que son lieu, rattaché dans la page Utilisateurs de la Régie (donnée propre à la Régie).
+
+Destinataires des alertes : ils ne dépendent plus d'un rôle. Dans la page Utilisateurs de la Régie, deux cases par personne :
+« E-mails des alertes » (alertes Warning et Critique, et récapitulatif quotidien) et « SMS des alertes » (alertes critiques).
+À la bascule, les anciens admins et techniciens sont abonnés aux e-mails. Le commercial responsable d'un lieu reçoit en plus
+les e-mails des alertes de vente de ce lieu.

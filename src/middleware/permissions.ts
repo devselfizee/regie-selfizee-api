@@ -26,6 +26,19 @@ export interface DroitsMoi {
 
 const cache = new Map<string, { at: number; data: DroitsMoi }>(); // jeton → droits
 
+/**
+ * Sans Keycloak (développement, tests) : droits simulés par l'en-tête X-Dev-Droits
+ * (« * » = admin, sinon les clés accordées, séparées par des virgules), contrôle d'accès actif.
+ * Sans l'en-tête, tout est autorisé et l'utilisateur voit tout. Ignoré avec Keycloak.
+ */
+function moiSimule(req: Request): DroitsMoi | undefined {
+  const h = req.header("x-dev-droits");
+  if (h === undefined) return undefined;
+  if (h.trim() === "*") return { is_admin: true };
+  const cles = h.split(",").map((k) => k.trim()).filter(Boolean);
+  return { apps: { [APP_KEY]: Object.fromEntries(cles.map((k) => [k, true])) }, enforcement: { globally_enabled: true } };
+}
+
 async function chargerMoi(token: string): Promise<DroitsMoi | null> {
   const gateway = GATEWAY_URL();
   if (!token || !gateway) return null;
@@ -78,7 +91,11 @@ const email = (req: Request) => (req as Request & { utilisateur?: { email?: stri
 /** Middleware : requirePerm('lieux.create') — clé sans le préfixe de l'app */
 export function requirePerm(permKey: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    if (sansKeycloak()) return next();
+    if (sansKeycloak()) {
+      const s = moiSimule(req);
+      if (!s || canForApp(s, APP_KEY, permKey)) return next();
+      return res.status(403).json(REFUS);
+    }
     const token = tokenOf(req);
     const me = await getMe(token);
     if (me === null && token) return next(); // gateway injoignable → fail-open
@@ -91,7 +108,11 @@ export function requirePerm(permKey: string) {
 /** Middleware : requireAnyPerm('alertes.techniques_view', 'alertes.ventes_view') */
 export function requireAnyPerm(...permKeys: string[]) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    if (sansKeycloak()) return next();
+    if (sansKeycloak()) {
+      const s = moiSimule(req);
+      if (!s || permKeys.some((k) => canForApp(s, APP_KEY, k))) return next();
+      return res.status(403).json(REFUS);
+    }
     const token = tokenOf(req);
     const me = await getMe(token);
     if (me === null && token) return next();
@@ -103,7 +124,10 @@ export function requireAnyPerm(...permKeys: string[]) {
 
 /** Vérification dans un handler, quand seul un paramètre ou une partie de la réponse est sensible */
 export async function userCan(req: Request, permKey: string): Promise<boolean> {
-  if (sansKeycloak()) return true;
+  if (sansKeycloak()) {
+    const s = moiSimule(req);
+    return !s || canForApp(s, APP_KEY, permKey);
+  }
   const token = tokenOf(req);
   const me = await getMe(token);
   if (me === null && token) return true;
@@ -112,7 +136,10 @@ export async function userCan(req: Request, permKey: string): Promise<boolean> {
 
 /** Périmètre (3.8) : vrai seulement si le gateway a répondu ET (admin OU droit accordé). Jamais de fail-open. */
 export async function peutVoirTout(req: Request, permKey: string): Promise<boolean> {
-  if (sansKeycloak()) return true;
+  if (sansKeycloak()) {
+    const s = moiSimule(req);
+    return !s || droitPerimetre(s, permKey);
+  }
   const me = await getMe(tokenOf(req));
   return droitPerimetre(me, permKey);
 }
@@ -126,7 +153,10 @@ export function droitPerimetre(me: DroitsMoi | null, permKey: string): boolean {
 
 /** Admin de la plateforme (jeton Keycloak) : sert à des choix par défaut, jamais à autoriser */
 export async function estAdminPlateforme(req: Request): Promise<boolean> {
-  if (sansKeycloak()) return true;
+  if (sansKeycloak()) {
+    const s = moiSimule(req);
+    return s ? !!s.is_admin : true;
+  }
   return !!(await getMe(tokenOf(req)))?.is_admin;
 }
 

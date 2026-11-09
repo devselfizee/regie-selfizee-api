@@ -229,6 +229,8 @@ lieuxRouter.get(
 // Qui crée un lieu sans choisir de commercial responsable en devient le responsable, sauf un admin de la plateforme.
 // (À la modification, le commercial responsable choisi est gardé.)
 const commercialImpose = async (req: UtilisateurRequest, champs: { commercialId?: number | null }) => {
+  // Sans le droit de choisir le commercial responsable, le champ envoyé est ignoré
+  if (champs.commercialId !== undefined && !(await userCan(req, "lieux.commercial_edit"))) delete champs.commercialId;
   if (!champs.commercialId && req.utilisateur && !(await estAdminPlateforme(req))) champs.commercialId = req.utilisateur.id;
 };
 
@@ -289,6 +291,8 @@ lieuxRouter.put(
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
     const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(req.body));
+    // Le commercial responsable ne change qu'avec le droit de le choisir
+    if (champs.commercialId !== undefined && !(await userCan(req, "lieux.commercial_edit"))) delete champs.commercialId;
     await positionner(
       champs,
       await prisma.lieu.findUniqueOrThrow({
