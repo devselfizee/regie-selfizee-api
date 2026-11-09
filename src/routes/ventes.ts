@@ -9,7 +9,8 @@ import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { ajouterAuxAgregats } from "../ingestion/agregats.js";
 import { sha256Payload } from "../ingestion/journal.js";
 import { urlPhoto } from "../lib/photos.js";
-import { requirePerm } from "../middleware/permissions.js";
+import { apercusSeances } from "../lib/apercusMedias.js";
+import { requirePerm, userCan } from "../middleware/permissions.js";
 
 // Recherche de ventes et remboursements (admin). La borne ne rembourse jamais :
 // un remboursement est saisi ici, rattaché à la vente d'origine (avenant synchro, § 3.7).
@@ -143,6 +144,8 @@ ventesRouter.get(
       prisma.carteTest.findMany({ select: { derniersChiffres: true, nom: true } }),
     ]);
     const nomCarte = new Map(cartesTest.map((c) => [c.derniersChiffres, c.nom]));
+    // Aperçu de la photo d'après la table medias (photo_uuid), pour qui voit les médias : ce sont des photos de personnes
+    const apercus = (await userCan(req, "medias.view")) ? await apercusSeances(ventes.map((v) => v.pikcloudUuid)) : new Map();
     res.json({
       total,
       page: f.page,
@@ -162,7 +165,7 @@ ventesRouter.get(
         transactionOrigineId: v.transactionOrigineId?.toString() ?? null,
         rembourseCents: derivees.reduce((s, r) => s + r.montantTtcCents, 0),
         rembourseHtCents: derivees.reduce((s, r) => s + r.montantHtCents, 0),
-        photoUrl: urlPhoto(v.pikcloudUuid),
+        photoUrl: (v.pikcloudUuid && apercus.get(v.pikcloudUuid)?.vignette) || urlPhoto(v.pikcloudUuid),
         carteTest: v.test && v.carteFin ? (nomCarte.get(v.carteFin) ?? "Carte de test") : null,
       })),
     });
@@ -205,6 +208,8 @@ ventesRouter.get(
         : Promise.resolve([]),
     ]);
     const photoUuid = v.pikcloudUuid ?? parcours?.photoUuid ?? null;
+    // Média de la séance (table medias) : vignette tout de suite, fichier en grand lu par l'écran avec le jeton
+    const media = photoUuid && (await userCan(req, "medias.view")) ? ((await apercusSeances([photoUuid])).get(photoUuid) ?? null) : null;
     res.json({
       ...v,
       id: v.id.toString(),
@@ -222,7 +227,8 @@ ventesRouter.get(
       seance: { code: seance, paiements: paiementsSeance.map((p) => ({ ...p, id: p.id.toString() })) },
       parcours,
       photoUuid,
-      photoUrl: urlPhoto(photoUuid),
+      photoUrl: media?.vignette ?? urlPhoto(photoUuid),
+      media,
       carteTest: v.test ? (carteTest?.nom ?? "Carte de test") : null,
     });
   })
