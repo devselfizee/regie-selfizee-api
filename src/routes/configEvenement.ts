@@ -3,20 +3,25 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { avecGrilleDuLieu, avecInfosDuLieu, controler, infosLieuSchema, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
 import { grilleEffective } from "../tarifs/grille.js";
 import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
 import { genererZip } from "../config-evenement/zip.js";
 import { illustrationsAExporter } from "../config-evenement/illustrations.js";
 import { chemins, cible, creerEvenement, evenementDe, infosLieuDe } from "../config-evenement/acces.js";
+import { requirePerm, requireAnyPerm } from "../middleware/permissions.js";
 
 // Fiche événement d'un lieu (CDC page souvenir § 13) : la configuration de la borne, réservée aux admins.
 // Montée sous /api/lieux, à côté des routes de la fiche lieu. Un lieu a son événement habituel et des
 // événements ponctuels (Halloween, une soirée…), chacun avec son code, ses cadres et ses tarifs ; on passe
 // de l'un à l'autre en tapant le code sur la borne. Chaque route existe pour les deux (acces.ts).
 export const configEvenementRouter = Router();
-const admin = exiger("ADMIN");
+const voir = requirePerm("evenements.view");
+const modifier = requirePerm("evenements.edit");
+// Infos du lieu reprises par la borne (nom affiché, avis, réseaux, assistance) : onglet Communication du lieu
+const voirInfos = requireAnyPerm("evenements.view", "lieux.communication_edit");
+const modifierInfos = requirePerm("lieux.communication_edit");
 
 const hhmm = (d: Date) => d.toISOString().slice(11, 16);
 
@@ -91,7 +96,7 @@ async function infosEtHoraires(lieuId: number) {
 // GET /api/lieux/:id/infos-borne — nom affiché, ville, avis et réseaux, assistance (repris par chaque événement)
 configEvenementRouter.get(
   "/:id/infos-borne",
-  admin,
+  voirInfos,
   asynchrone(async (req, res) => {
     res.json(await infosEtHoraires(Number(req.params.id)));
   })
@@ -100,7 +105,7 @@ configEvenementRouter.get(
 // PUT /api/lieux/:id/infos-borne { infos } — les enregistre ; les événements du lieu les reprennent
 configEvenementRouter.put(
   "/:id/infos-borne",
-  admin,
+  modifierInfos,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     const infos = infosLieuSchema.parse(z.object({ infos: z.unknown() }).parse(req.body).infos);
@@ -121,7 +126,7 @@ configEvenementRouter.put(
 // GET /api/lieux/:id/evenements-ponctuels — la liste, du plus récent au plus ancien
 configEvenementRouter.get(
   "/:id/evenements-ponctuels",
-  admin,
+  voir,
   asynchrone(async (req, res) => {
     const lieuId = Number(req.params.id);
     const liste = await prisma.configEvenement.findMany({
@@ -147,7 +152,7 @@ configEvenementRouter.get(
 // (on ajoute ceux qu'on personnalise ; « Dupliquer » sert à repartir d'un événement avec ses formats)
 configEvenementRouter.post(
   "/:id/evenements-ponctuels",
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     const saisie = z.object({ nom: nomSchema, dateDebut: z.iso.date(), dateFin: z.iso.date() }).parse(req.body);
@@ -173,7 +178,7 @@ configEvenementRouter.post(
 // son propre code et mot de passe ; à publier comme un nouveau. L'événement copié ne change pas.
 configEvenementRouter.post(
   chemins("/dupliquer"),
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const saisie = z.object({ nom: nomSchema, dateDebut: z.iso.date(), dateFin: z.iso.date() }).parse(req.body);
@@ -209,7 +214,7 @@ configEvenementRouter.post(
 // DELETE /api/lieux/:id/evenements-ponctuels/:eid — supprime un événement ponctuel et ses cadres
 configEvenementRouter.delete(
   "/:id/evenements-ponctuels/:eid",
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const e = await evenementDe(lieuId, eid);
@@ -226,7 +231,7 @@ configEvenementRouter.delete(
 // GET …/evenement — réglages enregistrés, ou réglages par défaut tirés de la fiche (habituel pas encore enregistré)
 configEvenementRouter.get(
   chemins(),
-  admin,
+  voir,
   asynchrone(async (req, res) => {
     const { lieuId, eid } = cible(req);
     res.json(reponse(await charger(lieuId, eid)));
@@ -237,7 +242,7 @@ configEvenementRouter.get(
 // Les cadres des compositions retirées sont supprimés.
 configEvenementRouter.put(
   chemins(),
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const corps = z.object({ reglages: z.unknown(), nom: nomSchema.optional() }).parse(req.body);
@@ -258,7 +263,7 @@ configEvenementRouter.put(
 // GET …/config.json[?publiee=1] — le config.json des réglages enregistrés, ou celui publié
 configEvenementRouter.get(
   chemins("/config.json"),
-  admin,
+  voir,
   asynchrone(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const charge = await charger(lieuId, eid);
@@ -279,7 +284,7 @@ configEvenementRouter.get(
 // POST …/publier — fige le config.json (nouvelle version) si aucun contrôle ne bloque
 configEvenementRouter.post(
   chemins("/publier"),
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const charge = await charger(lieuId, eid);
@@ -311,7 +316,7 @@ configEvenementRouter.post(
 // recalculé à chaque appel : il suit les réglages et les cadres enregistrés
 configEvenementRouter.get(
   chemins("/zip"),
-  admin,
+  voir,
   asynchrone(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const charge = await charger(lieuId, eid);

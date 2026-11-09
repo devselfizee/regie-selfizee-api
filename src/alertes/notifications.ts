@@ -1,4 +1,4 @@
-import type { Alerte, NiveauAlerte, TypeAlerte, UserRole } from "@prisma/client";
+import type { Alerte, NiveauAlerte, TypeAlerte } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { envoyerEmail, envoyerSms } from "../lib/envoi.js";
 
@@ -25,21 +25,25 @@ const CANAUX: Record<NiveauAlerte, ("EMAIL" | "SMS")[]> = {
   CRITIQUE: ["EMAIL", "SMS"],
 };
 
-const TECHNIQUES: TypeAlerte[] = ["BORNE_MUETTE", "ZERO_VENTE", "TAUX_REFUS", "CONSOMMABLES", "BORNE_NON_AFFECTEE"];
 const COMMERCIALES: TypeAlerte[] = ["BAISSE_CA", "ZERO_VENTE", "PIC_SUSPECT", "VENTE_HORS_HORAIRES"];
 
 /**
- * Qui prévenir : admins ; techniciens pour les alertes techniques ; commercial du lieu pour les alertes de vente.
- * Par e-mail pour tous ; par SMS (alertes critiques) seulement ceux qui ont « SMS des alertes » coché.
+ * Qui prévenir (page Utilisateurs) : les abonnés aux e-mails des alertes, et pour une alerte de vente le commercial
+ * responsable du lieu (e-mail) ; les abonnés aux SMS pour les alertes critiques. Plus aucun choix par rôle.
  */
 async function destinataires(a: Pick<Alerte, "type" | "lieuId">) {
-  const roles: UserRole[] = ["ADMIN", ...(TECHNIQUES.includes(a.type) ? (["TECHNICIEN"] as const) : [])];
-  const users = await prisma.user.findMany({ where: { isActive: true, role: { in: roles } } });
+  const abonnes = await prisma.user.findMany({ where: { isActive: true, OR: [{ alertesEmail: true }, { alertesSms: true }] } });
+  const liste = abonnes.map((u) => ({ ...u, parEmail: u.alertesEmail }));
   if (a.lieuId && COMMERCIALES.includes(a.type)) {
     const lieu = await prisma.lieu.findUnique({ where: { id: a.lieuId }, include: { commercial: true } });
-    if (lieu?.commercial?.isActive && !users.some((u) => u.id === lieu.commercial!.id)) users.push(lieu.commercial);
+    const c = lieu?.commercial;
+    if (c?.isActive) {
+      const deja = liste.find((u) => u.id === c.id);
+      if (deja) deja.parEmail = true;
+      else liste.push({ ...c, parEmail: true });
+    }
   }
-  return users;
+  return liste;
 }
 
 const APP_URL = () => (process.env.APP_URL ?? "").replace(/\/+$/, "");
@@ -57,7 +61,7 @@ export async function notifierAlertes(alertes: Alerte[]) {
     }`;
 
     for (const u of await destinataires(a)) {
-      if (canaux.includes("EMAIL")) {
+      if (canaux.includes("EMAIL") && u.parEmail) {
         const erreur = await envoyerEmail(u.email, sujet, html).catch((e: Error) => e.message);
         await prisma.notificationAlerte.create({ data: { alerteId: a.id, canal: "EMAIL", destinataire: u.email, envoyeLe: erreur ? null : new Date(), erreur } });
       }
@@ -70,7 +74,7 @@ export async function notifierAlertes(alertes: Alerte[]) {
   }
 }
 
-/** Récapitulatif quotidien des alertes ouvertes, envoyé aux admins. */
+/** Récapitulatif quotidien des alertes ouvertes, envoyé aux abonnés aux e-mails des alertes. */
 export async function envoyerRecapitulatif(maintenant = new Date()) {
   const ouvertes = await prisma.alerte.findMany({
     where: { statut: { in: ["NOUVELLE", "PRISE_EN_CHARGE"] } },
@@ -86,7 +90,8 @@ export async function envoyerRecapitulatif(maintenant = new Date()) {
     : "<p>Aucune alerte ouverte. Tout va bien.</p>";
   const sujet = `Régie Selfizee — récapitulatif : ${ouvertes.length} alerte(s) ouverte(s)`;
 
-  const admins = await prisma.user.findMany({ where: { isActive: true, role: "ADMIN", email: { not: "dev@local" } } });
+  // Aux abonnés aux e-mails des alertes (page Utilisateurs)
+  const admins = await prisma.user.findMany({ where: { isActive: true, alertesEmail: true, email: { not: "dev@local" } } });
   for (const u of admins) {
     const erreur = await envoyerEmail(u.email, sujet, html).catch((e: Error) => e.message);
     await prisma.notificationAlerte.create({ data: { alerteId: null, canal: "EMAIL", destinataire: u.email, envoyeLe: erreur ? null : new Date(), erreur } });

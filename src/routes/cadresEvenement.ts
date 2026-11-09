@@ -2,16 +2,18 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { cadreSchema, verifierCadre } from "../config-evenement/cadres.js";
 import { reglagesSchema } from "../config-evenement/reglages.js";
 import { chemins, cible, evenementDe, toucher } from "../config-evenement/acces.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 // Cadres d'un événement de la borne (CDC page souvenir § 13.2) : un cadre dessiné au studio par composition
 // de l'écran de choix (un même gabarit du kit peut revenir plusieurs fois : 8 polas…). Réservé aux admins,
 // monté sous /api/lieux comme la fiche événement, pour l'événement habituel et les ponctuels.
 export const cadresEvenementRouter = Router();
-const admin = exiger("ADMIN");
+const voir = requirePerm("evenements.view");
+const modifier = requirePerm("evenements.edit");
 
 // Sans le canvas ni le rendu : la liste ne sert qu'aux vignettes de l'écran Gabarits
 const resume = { compositionId: true, gabarit: true, nom: true, formatId: true, gabaritStudioId: true, nbPoses: true, vignette: true, updatedAt: true } as const;
@@ -27,7 +29,7 @@ async function evenementEnregistre(lieuId: number, eid: number | null) {
 // GET …/cadres — les cadres de l'événement, sans leur contenu
 cadresEvenementRouter.get(
   chemins("/cadres"),
-  admin,
+  voir,
   asynchrone(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const e = await evenementDe(lieuId, eid);
@@ -38,7 +40,7 @@ cadresEvenementRouter.get(
 // GET …/cadres/:composition — le cadre à rouvrir dans le studio (canvas compris, sans le rendu)
 cadresEvenementRouter.get(
   chemins("/cadres/:composition"),
-  admin,
+  voir,
   asynchrone(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const compositionId = compositionParam.parse(req.params.composition);
@@ -57,7 +59,7 @@ cadresEvenementRouter.get(
 // PUT …/cadres/:composition — crée ou remplace le cadre d'une composition de l'événement
 cadresEvenementRouter.put(
   chemins("/cadres/:composition"),
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const compositionId = compositionParam.parse(req.params.composition);
@@ -93,7 +95,7 @@ cadresEvenementRouter.put(
 // voisin qui ne change que par quelques détails. Remplace le cadre de la cible s'il y en a un.
 cadresEvenementRouter.post(
   chemins("/cadres/:composition/dupliquer"),
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const source = compositionParam.parse(req.params.composition);
@@ -128,7 +130,7 @@ cadresEvenementRouter.post(
 // DELETE …/cadres/:composition — retire le cadre (la composition retombe sur celui du kit)
 cadresEvenementRouter.delete(
   chemins("/cadres/:composition"),
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const compositionId = compositionParam.parse(req.params.composition);

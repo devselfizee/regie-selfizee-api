@@ -5,19 +5,29 @@ import { prisma } from "../src/lib/prisma.js";
 import { genererCle } from "../src/lib/cleBorne.js";
 import { exemple, viderBase } from "./aide.js";
 
-// Sans Keycloak (tests), l'en-tête X-Dev-Utilisateur désigne l'utilisateur connecté.
+// Sans Keycloak (tests), X-Dev-Utilisateur désigne l'utilisateur connecté et X-Dev-Droits simule ses droits Konitys
+// (« * » = admin de la plateforme ; sinon les clés accordées, contrôle d'accès actif). Profils d'après
+// docs/droits-correspondance-roles.md, commercial limité à ses lieux (sans lieux.view_any).
 const app = creerApp();
-const en = (email: string) => ({
-  get: (url: string) => request(app).get(url).set("X-Dev-Utilisateur", email),
-  post: (url: string, body: object) => request(app).post(url).set("X-Dev-Utilisateur", email).send(body),
-  put: (url: string, body: object) => request(app).put(url).set("X-Dev-Utilisateur", email).send(body),
-  patch: (url: string, body: object) => request(app).patch(url).set("X-Dev-Utilisateur", email).send(body),
-});
+const DROITS = {
+  admin: "*",
+  commercial: "app.access,pages.lieux.view,lieux.view_own,lieux.create,lieux.edit,ventes.view,ventes.export",
+  technicien: "app.access,pages.lieux.view,pages.bornes.view,lieux.view_own,lieux.view_any,bornes.view,bornes.edit,imports.manage,supervision.view",
+  partenaire: "app.access,lieux.view_own,ventes.view,ventes.export",
+};
+const en = (email: string, droits = DROITS.admin) => {
+  const r = (req: request.Test) => req.set("X-Dev-Utilisateur", email).set("X-Dev-Droits", droits);
+  return {
+    get: (url: string) => r(request(app).get(url)),
+    post: (url: string, body: object) => r(request(app).post(url)).send(body),
+    put: (url: string, body: object) => r(request(app).put(url)).send(body),
+    patch: (url: string, body: object) => r(request(app).patch(url)).send(body),
+  };
+};
 const admin = en("admin@test.fr");
-const alice = en("alice@test.fr"); // commerciale du camping
-const bob = en("bob@test.fr"); // commercial du bar
-const tech = en("tech@test.fr");
-const part = en("camping@test.fr"); // partenaire : le camping
+const alice = en("alice@test.fr", DROITS.commercial); // commerciale du camping
+const tech = en("tech@test.fr", DROITS.technicien);
+const part = en("camping@test.fr", DROITS.partenaire); // partenaire : le camping
 
 let camping: number;
 let bar: number;
@@ -31,15 +41,15 @@ beforeEach(async () => {
   const type = await prisma.refValeur.create({ data: { categorie: "TYPE_LIEU", code: "CAMPING", libelle: "Camping" } });
   typeId = type.id;
   const [a, b] = await Promise.all([
-    prisma.user.create({ data: { email: "alice@test.fr", nom: "Martin", prenom: "Alice", role: "COMMERCIAL" } }),
-    prisma.user.create({ data: { email: "bob@test.fr", nom: "Durand", prenom: "Bob", role: "COMMERCIAL" } }),
-    prisma.user.create({ data: { email: "admin@test.fr", nom: "Admin", prenom: "", role: "ADMIN" } }),
-    prisma.user.create({ data: { email: "tech@test.fr", nom: "Tech", prenom: "", role: "TECHNICIEN" } }),
-    prisma.user.create({ data: { email: "inactif@test.fr", nom: "Ancien", prenom: "", role: "ADMIN", isActive: false } }),
+    prisma.user.create({ data: { email: "alice@test.fr", nom: "Martin", prenom: "Alice" } }),
+    prisma.user.create({ data: { email: "bob@test.fr", nom: "Durand", prenom: "Bob" } }),
+    prisma.user.create({ data: { email: "admin@test.fr", nom: "Admin", prenom: "" } }),
+    prisma.user.create({ data: { email: "tech@test.fr", nom: "Tech", prenom: "" } }),
+    prisma.user.create({ data: { email: "inactif@test.fr", nom: "Ancien", prenom: "", isActive: false } }),
   ]);
   camping = (await prisma.lieu.create({ data: { raisonSociale: "C", enseigne: "Camping", typeLieuId: typeId, commercialId: a.id } })).id;
   bar = (await prisma.lieu.create({ data: { raisonSociale: "B", enseigne: "Bar", typeLieuId: typeId, commercialId: b.id } })).id;
-  await prisma.user.create({ data: { email: "camping@test.fr", nom: "Gérant", prenom: "", role: "PARTENAIRE", lieuId: camping } });
+  await prisma.user.create({ data: { email: "camping@test.fr", nom: "Gérant", prenom: "", lieuId: camping } });
 
   // Des ventes au camping et au bar
   const gamme = await prisma.gamme.create({ data: { code: "MT", libelle: "Ma Trombine" } });
@@ -67,11 +77,11 @@ describe("accès", () => {
 
   it("renvoie l'utilisateur connecté", async () => {
     const moi = (await alice.get("/api/utilisateurs/moi").expect(200)).body;
-    expect(moi).toMatchObject({ email: "alice@test.fr", role: "COMMERCIAL" });
+    expect(moi).toMatchObject({ email: "alice@test.fr" });
   });
 });
 
-describe("commercial", () => {
+describe("commercial limité à ses lieux (lieux.view_own sans lieux.view_any)", () => {
   it("ne voit que ses lieux", async () => {
     const lieux = (await alice.get("/api/lieux").expect(200)).body;
     expect(lieux.map((l: { enseigne: string }) => l.enseigne)).toEqual(["Camping"]);
@@ -96,7 +106,7 @@ describe("commercial", () => {
     expect(csv).not.toContain(";Bar;");
   });
 
-  it("crée un lieu dont il devient le commercial, et ne peut pas l'attribuer à un autre", async () => {
+  it("crée un lieu dont il devient le commercial, sans pouvoir l'attribuer à un autre (lieux.commercial_edit)", async () => {
     const bobId = (await prisma.user.findUniqueOrThrow({ where: { email: "bob@test.fr" } })).id;
     const res = await alice.post("/api/lieux", { raisonSociale: "N", enseigne: "Nouveau", typeLieuId: typeId, commercialId: bobId }).expect(201);
     const lieu = await prisma.lieu.findUniqueOrThrow({ where: { id: res.body.id } });
@@ -112,7 +122,7 @@ describe("commercial", () => {
   });
 });
 
-describe("technicien", () => {
+describe("technicien (bornes, sans ventes.view)", () => {
   it("gère les bornes mais ne voit pas le chiffre d'affaires", async () => {
     await tech.get("/api/bornes").expect(200);
     await tech.get("/api/imports/erreurs").expect(200);
@@ -124,7 +134,7 @@ describe("technicien", () => {
   });
 });
 
-describe("partenaire", () => {
+describe("partenaire (son lieu, en lecture)", () => {
   it("ne voit que son lieu, en lecture", async () => {
     const lieux = (await part.get("/api/lieux").expect(200)).body;
     expect(lieux.map((l: { id: number }) => l.id)).toEqual([camping]);
@@ -137,22 +147,21 @@ describe("partenaire", () => {
 });
 
 describe("administration des utilisateurs", () => {
-  it("ajoute un utilisateur et change son rôle", async () => {
-    const u = (await admin.post("/api/utilisateurs", { email: "Zoe@Test.fr", nom: "Zoé", prenom: "", role: "TECHNICIEN" }).expect(201)).body;
+  it("ajoute un utilisateur, puis le désactive", async () => {
+    const u = (await admin.post("/api/utilisateurs", { email: "Zoe@Test.fr" }).expect(201)).body;
     expect(u.email).toBe("zoe@test.fr");
-    await en("zoe@test.fr").get("/api/bornes").expect(200);
+    await en("zoe@test.fr", DROITS.technicien).get("/api/bornes").expect(200);
     await admin.patch(`/api/utilisateurs/${u.id}`, { isActive: false }).expect(200);
-    await en("zoe@test.fr").get("/api/bornes").expect(403);
+    await en("zoe@test.fr", DROITS.technicien).get("/api/bornes").expect(403);
   });
 
-  it("exige un lieu pour un partenaire", async () => {
-    const res = await admin.post("/api/utilisateurs", { email: "p@test.fr", nom: "P", prenom: "", role: "PARTENAIRE" }).expect(400);
-    expect(res.body.error).toBe("VALIDATION");
+  it("refuse sans le droit utilisateurs.manage", async () => {
+    await alice.post("/api/utilisateurs", { email: "x@test.fr" }).expect(403);
   });
 
-  it("empêche un admin de se retirer ses propres droits", async () => {
+  it("empêche de désactiver son propre compte", async () => {
     const moi = await prisma.user.findUniqueOrThrow({ where: { email: "admin@test.fr" } });
-    const res = await admin.patch(`/api/utilisateurs/${moi.id}`, { role: "COMMERCIAL" }).expect(400);
+    const res = await admin.patch(`/api/utilisateurs/${moi.id}`, { isActive: false }).expect(400);
     expect(res.body.error).toBe("AUTO_RETRAIT");
   });
 });

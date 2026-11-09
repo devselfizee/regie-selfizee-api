@@ -5,6 +5,7 @@ import { asynchrone, HttpError } from "../lib/http.js";
 import { envoyerClasseur, euros } from "../lib/excel.js";
 import { interpreter, lireCsv, suggererColonnes } from "../rapprochement/csv.js";
 import { alerterEcarts, importerReleve, rapport, rapprocher, supprimerReleve } from "../rapprochement/service.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 // Rapprochement avec les relevés du prestataire monétique (CDC §4), réservé à l'admin.
 export const rapprochementRouter = Router();
@@ -14,6 +15,7 @@ const MAX_ERREURS = 50;
 // POST /api/rapprochement/apercu { contenu } — en-têtes, premières lignes et colonnes devinées
 rapprochementRouter.post(
   "/apercu",
+  requirePerm("rapprochement.edit"),
   asynchrone(async (req, res) => {
     const { contenu } = z.object({ contenu: z.string().min(1) }).parse(req.body);
     const csv = lireCsv(contenu);
@@ -46,6 +48,7 @@ const importSchema = z.object({
 // POST /api/rapprochement/releves — importe le relevé et le rapproche aussitôt
 rapprochementRouter.post(
   "/releves",
+  requirePerm("rapprochement.edit"),
   asynchrone(async (req, res) => {
     const b = importSchema.parse(req.body);
     const { lignes, erreurs } = interpreter(lireCsv(b.contenu), b.colonnes, b.montantEnCentimes);
@@ -97,6 +100,7 @@ rapprochementRouter.get(
 // POST /api/rapprochement/releves/:id/relancer — après réception de ventes en retard
 rapprochementRouter.post(
   "/releves/:id/relancer",
+  requirePerm("rapprochement.edit"),
   asynchrone(async (req, res) => {
     const id = Number(req.params.id);
     if (!(await prisma.releveMonetique.findUnique({ where: { id } }))) throw new HttpError(404, "INTROUVABLE");
@@ -108,6 +112,7 @@ rapprochementRouter.post(
 // DELETE /api/rapprochement/releves/:id — mauvais fichier ou mauvaises colonnes
 rapprochementRouter.delete(
   "/releves/:id",
+  requirePerm("rapprochement.edit"),
   asynchrone(async (req, res) => {
     await supprimerReleve(Number(req.params.id));
     res.status(204).end();

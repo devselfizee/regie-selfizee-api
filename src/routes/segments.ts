@@ -9,6 +9,7 @@ import {
 } from "../stats/segments.js";
 import { classement, filtresAutorises } from "./stats.js";
 import { margeLieu } from "../rentabilite/calcul.js";
+import { userCan } from "../middleware/permissions.js";
 
 // Analyse par segment (CDC §5.3) : « quels lieux valent le coup ? »
 export const segmentsRouter = Router();
@@ -117,7 +118,7 @@ segmentsRouter.get(
 
     // Indicateurs normalisés par lieu ; sans jour d'ouverture effectif, le lieu est écarté
     // Marge : réservée à l'admin (commissions, prix d'achat des bornes)
-    const voitMarge = req.utilisateur?.role === "ADMIN";
+    const voitMarge = await userCan(req, "ventes.marges_view");
     const exclus: string[] = [];
     const marges = new Map<number, number>();
     if (voitMarge) {

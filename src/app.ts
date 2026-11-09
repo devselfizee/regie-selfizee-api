@@ -36,7 +36,8 @@ import { illustrationsEvenementRouter } from "./routes/illustrationsEvenement.js
 import { illustrationsSeriesRouter } from "./routes/illustrationsSeries.js";
 import { commentairesRouter, suiviLieuRouter } from "./routes/suivi.js";
 import { tarifsLieuRouter, tarifsRouter } from "./routes/tarifs.js";
-import { exiger, utilisateurCourant } from "./middleware/utilisateur.js";
+import { utilisateurCourant } from "./middleware/utilisateur.js";
+import { requirePerm } from "./middleware/permissions.js";
 import { reponseErreur } from "./lib/http.js";
 import { buildPermissionsSchema } from "./permissions/schema.js";
 
@@ -101,10 +102,8 @@ export function creerApp() {
     authMiddleware,
     utilisateurCourant
   );
-  // Droits par rôle (CDC §9.2). Les lieux, stats et exports filtrent en plus
-  // selon le périmètre de l'utilisateur (ses lieux pour un commercial).
-  const tech = exiger("ADMIN", "TECHNICIEN");
-  const ventes = exiger("ADMIN", "COMMERCIAL", "PARTENAIRE");
+  // Droits Konitys (docs/PERMISSIONS_APP_INTEGRATION.md) : lecture du domaine au montage, une clé par route d'écriture
+  // dans les routeurs. Les lieux, stats et exports filtrent en plus selon le périmètre (lieux.view_any / view_own).
   app.use("/api/utilisateurs", utilisateursRouter);
   app.use("/api/referentiel", referentielRouter);
   app.use("/api/lieux", lieuxRouter);
@@ -121,32 +120,32 @@ export function creerApp() {
   app.use("/api/lieux", souvenirLieuRouter);
   app.use("/api/medias", mediasRouter);
   app.use("/api/tarifs", tarifsRouter);
-  app.use("/api/commentaires", exiger("ADMIN", "COMMERCIAL", "TECHNICIEN"), commentairesRouter);
+  app.use("/api/commentaires", requirePerm("suivi.view"), commentairesRouter);
   app.use("/api/evenements", evenementsRouter);
-  app.use("/api/imports", tech, importsRouter);
-  app.use("/api/bornes", tech, bornesRouter);
-  app.use("/api/bornes", tech, coutsBornesRouter);
-  app.use("/api/couts", tech, coutsRouter);
-  app.use("/api/interventions", tech, interventionsRouter);
-  app.use("/api/rentabilite", exiger("ADMIN"), rentabiliteRouter);
-  app.use("/api/affectations", tech, affectationsRouter);
-  app.use("/api/stats/segments", ventes, segmentsRouter);
-  app.use("/api/stats/contexte", ventes, contexteRouter);
-  app.use("/api/stats", ventes, statsRouter);
-  app.use("/api/export", ventes, exportRouter);
-  app.use("/api/previsions", ventes, previsionsRouter);
-  app.use("/api/prospects", exiger("ADMIN", "COMMERCIAL"), prospectsRouter);
-  app.use("/api/ventes", exiger("ADMIN"), ventesRouter);
-  app.use("/api/cartes-test", exiger("ADMIN"), cartesTestRouter);
-  app.use("/api/codes-remise", exiger("ADMIN"), codesRemiseRouter);
-  app.use("/api/supervision", tech, supervisionRouter);
+  app.use("/api/imports", requirePerm("imports.manage"), importsRouter);
+  app.use("/api/bornes", requirePerm("bornes.view"), bornesRouter);
+  app.use("/api/bornes", requirePerm("bornes.view"), coutsBornesRouter);
+  app.use("/api/couts", requirePerm("bornes.view"), coutsRouter);
+  app.use("/api/interventions", requirePerm("bornes.view"), interventionsRouter);
+  app.use("/api/rentabilite", requirePerm("rentabilite.view"), rentabiliteRouter);
+  app.use("/api/affectations", requirePerm("bornes.view"), affectationsRouter);
+  app.use("/api/stats/segments", requirePerm("ventes.view"), segmentsRouter);
+  app.use("/api/stats/contexte", requirePerm("ventes.view"), contexteRouter);
+  app.use("/api/stats", requirePerm("ventes.view"), statsRouter);
+  app.use("/api/export", requirePerm("ventes.export"), exportRouter);
+  app.use("/api/previsions", requirePerm("ventes.view"), previsionsRouter);
+  app.use("/api/prospects", requirePerm("prospects.view"), prospectsRouter);
+  app.use("/api/ventes", requirePerm("paiements.view"), ventesRouter);
+  app.use("/api/cartes-test", requirePerm("cartes_test.edit"), cartesTestRouter);
+  app.use("/api/codes-remise", requirePerm("codes_remise.view"), codesRemiseRouter);
+  app.use("/api/supervision", requirePerm("supervision.view"), supervisionRouter);
   app.use("/api/calendrier-marketing", calendrierMarketingRouter);
-  app.use("/api/concurrents", exiger("ADMIN", "COMMERCIAL"), concurrentsRouter);
-  app.use("/api/demo", exiger("ADMIN"), demoRouter);
+  app.use("/api/concurrents", requirePerm("prospects.view"), concurrentsRouter);
+  app.use("/api/demo", requirePerm("demo.manage"), demoRouter);
   app.use("/api/commissions", commissionsRouter);
   app.use("/api/reversements", reversementsRouter);
   app.use("/api/alertes", alertesRouter);
-  app.use("/api/rapprochement", exiger("ADMIN"), rapprochementRouter);
+  app.use("/api/rapprochement", requirePerm("rapprochement.view"), rapprochementRouter);
 
   app.use((err: Error & { type?: string; status?: number }, _req: Request, res: Response, _next: NextFunction) => {
     if (err.type === "entity.parse.failed") {

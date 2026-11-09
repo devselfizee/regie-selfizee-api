@@ -5,12 +5,13 @@ import {
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { calculerPeriode, decrireContrat, type RegleContrat } from "../commissions/moteur.js";
 import { calculerReversements, commissionEnCours, regleDe, STATUTS_FIGES } from "../commissions/service.js";
 import { chargerReleve, destinatairesParDefaut, detailDe, genererPdfReleve, nomFichierReleve, type Releve } from "../commissions/releve.js";
 import { emailConfigure, envoyerEmail } from "../lib/envoi.js";
 import { envoyerClasseur, euros as eurosExcel } from "../lib/excel.js";
+import { requirePerm, userCan } from "../middleware/permissions.js";
 
 export const commissionsRouter = Router();
 export const reversementsRouter = Router();
@@ -75,7 +76,7 @@ function normaliser(c: z.infer<typeof contratSchema>) {
 // GET /api/commissions/lieux/:id — contrats (versions), commission en cours, reversements
 commissionsRouter.get(
   "/lieux/:id",
-  exiger("ADMIN", "PARTENAIRE"),
+  requirePerm("commissions.view"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
@@ -99,7 +100,7 @@ commissionsRouter.get(
 // POST /api/commissions/lieux/:id/contrats — premier contrat ou avenant (nouvelle version)
 commissionsRouter.post(
   "/lieux/:id/contrats",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     const { paliers, ...c } = normaliser(contratSchema.parse(req.body));
@@ -140,7 +141,7 @@ commissionsRouter.post(
 // DELETE /api/commissions/contrats/:id — annule la dernière version (saisie par erreur)
 commissionsRouter.delete(
   "/contrats/:id",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone(async (req, res) => {
     const c = await prisma.contratCommission.findUniqueOrThrow({ where: { id: Number(req.params.id) } });
     const plusRecente = await prisma.contratCommission.findFirst({ where: { lieuId: c.lieuId, version: { gt: c.version } } });
@@ -161,7 +162,7 @@ commissionsRouter.delete(
 // POST /api/commissions/simuler — commission pour quelques CA d'exemple (aperçu dans le formulaire)
 commissionsRouter.post(
   "/simuler",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone(async (req, res) => {
     const parse = contratSchema.safeParse(req.body);
     if (!parse.success) return res.json({ valide: false });
@@ -183,7 +184,7 @@ commissionsRouter.post(
 // GET /api/reversements?statut=&lieuId=&du=&au=
 reversementsRouter.get(
   "/",
-  exiger("ADMIN", "PARTENAIRE"),
+  requirePerm("commissions.view"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const p = perimetreLieux(req.utilisateur);
     const statuts = req.query.statut ? (String(req.query.statut).split(",") as ReversementStatut[]) : undefined;
@@ -206,7 +207,7 @@ reversementsRouter.get(
 // POST /api/reversements/calculer { lieuId? } — calcule les périodes terminées
 reversementsRouter.post(
   "/calculer",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone(async (req, res) => {
     const lieuId = req.body?.lieuId ? Number(req.body.lieuId) : undefined;
     res.json(await calculerReversements({ lieuId }));
@@ -216,7 +217,7 @@ reversementsRouter.post(
 // GET /api/reversements/export.csv — export comptable
 reversementsRouter.get(
   "/export.csv",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone(async (req, res) => {
     const statuts = (req.query.statut ? String(req.query.statut).split(",") : [...STATUTS_FIGES]) as ReversementStatut[];
     const lignes = await prisma.reversement.findMany({
@@ -248,7 +249,7 @@ reversementsRouter.get(
 // GET /api/reversements/export.xlsx — export comptable au format Excel
 reversementsRouter.get(
   "/export.xlsx",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone(async (req, res) => {
     const statuts = (req.query.statut ? String(req.query.statut).split(",") : [...STATUTS_FIGES]) as ReversementStatut[];
     const lignes = await prisma.reversement.findMany({
@@ -280,8 +281,9 @@ reversementsRouter.get(
 // GET /api/reversements/:id — détail (relevé)
 reversementsRouter.get(
   "/:id",
-  exiger("ADMIN", "PARTENAIRE"),
+  requirePerm("commissions.view"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
+    const gere = await userCan(req, "commissions.edit");
     const r = await chargerReleve(Number(req.params.id));
     await verifierAccesLieu(req.utilisateur, r.lieuId);
     const { contacts, ...lieu } = r.lieu;
@@ -289,8 +291,9 @@ reversementsRouter.get(
       ...r,
       lieu,
       // Destinataires proposés pour l'envoi par e-mail (admin seulement)
-      destinatairesParDefaut: req.utilisateur?.role === "ADMIN" ? destinatairesParDefaut(r) : undefined,
-      contactsEmail: req.utilisateur?.role === "ADMIN" ? contacts.filter((c) => c.email) : undefined,
+      // Envoi du relevé (destinataires, contacts du lieu) : seulement pour qui gère les commissions
+      destinatairesParDefaut: gere ? destinatairesParDefaut(r) : undefined,
+      contactsEmail: gere ? contacts.filter((c) => c.email) : undefined,
     });
   })
 );
@@ -298,7 +301,7 @@ reversementsRouter.get(
 // GET /api/reversements/:id/releve.pdf — relevé PDF (CDC §6)
 reversementsRouter.get(
   "/:id/releve.pdf",
-  exiger("ADMIN", "PARTENAIRE"),
+  requirePerm("commissions.view"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const r = await chargerReleve(Number(req.params.id));
     await verifierAccesLieu(req.utilisateur, r.lieuId);
@@ -340,7 +343,7 @@ async function envoyerReleve(r: Releve, destinataires: string[], message: string
 // POST /api/reversements/envoyer-valides — envoie les relevés validés jamais envoyés, aux contacts par défaut
 reversementsRouter.post(
   "/envoyer-valides",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     if (!emailConfigure()) throw new HttpError(503, "ENVOI_NON_CONFIGURE", "L'envoi d'e-mails n'est pas configuré (identifiants Mailjet)");
     const aEnvoyer = await prisma.reversement.findMany({
@@ -368,7 +371,7 @@ reversementsRouter.post(
 // POST /api/reversements/:id/envoyer { destinataires, message? } — envoi du relevé PDF par e-mail
 reversementsRouter.post(
   "/:id/envoyer",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { destinataires, message } = z
       .object({
@@ -390,7 +393,7 @@ reversementsRouter.post(
 // POST /api/reversements/:id/ajustements — correction manuelle tracée
 reversementsRouter.post(
   "/:id/ajustements",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { montantCents, motif } = z
       .object({ montantCents: z.number().int().refine((v) => v !== 0, "Montant non nul"), motif: z.string().trim().min(3, "Motif obligatoire") })
@@ -421,7 +424,7 @@ const TRANSITIONS: Partial<Record<ReversementStatut, ReversementStatut[]>> = {
 // PATCH /api/reversements/:id/statut { statut, numeroFacture? }
 reversementsRouter.patch(
   "/:id/statut",
-  exiger("ADMIN"),
+  requirePerm("commissions.edit"),
   asynchrone(async (req, res) => {
     const { statut, numeroFacture } = z
       .object({ statut: z.enum(ReversementStatut), numeroFacture: z.string().trim().nullable().optional() })

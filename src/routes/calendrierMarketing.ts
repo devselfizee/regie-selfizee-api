@@ -2,8 +2,9 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { occurrencesEntre } from "../calendrier/marketing.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 // Calendrier marketing (demande de Sébastien, 02/11/2026) : liste modifiable des temps forts commerciaux.
 export const calendrierMarketingRouter = Router();
@@ -35,7 +36,7 @@ const donnees = (d: z.infer<typeof corps>) => ({
 // POST /api/calendrier-marketing { nom, debut, fin?, annuel? }
 calendrierMarketingRouter.post(
   "/",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("marketing.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
     res.status(201).json(await prisma.evenementMarketing.create({ data: donnees(corps.parse(req.body)) }));
   })
@@ -44,7 +45,7 @@ calendrierMarketingRouter.post(
 // PUT /api/calendrier-marketing/:id
 calendrierMarketingRouter.put(
   "/:id",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("marketing.edit"),
   asynchrone(async (req, res) => {
     const id = Number(req.params.id);
     if (!(await prisma.evenementMarketing.findUnique({ where: { id } }))) throw new HttpError(404, "INTROUVABLE");
@@ -55,7 +56,7 @@ calendrierMarketingRouter.put(
 // DELETE /api/calendrier-marketing/:id
 calendrierMarketingRouter.delete(
   "/:id",
-  exiger("ADMIN", "COMMERCIAL"),
+  requirePerm("marketing.edit"),
   asynchrone(async (req, res) => {
     await prisma.evenementMarketing.delete({ where: { id: Number(req.params.id) } });
     res.status(204).end();

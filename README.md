@@ -125,16 +125,11 @@ Seuils et niveaux réglables (page Paramètres → Règles d'alerte). Une anomal
 
 ## Utilisateurs et droits
 
-Tout compte du realm Keycloak `konitys` entre dans la Régie : son compte est créé à sa première connexion, **ADMIN** si son jeton porte un rôle admin (realm ou client, noms dans `KEYCLOAK_ROLES_ADMIN`, défaut `admin`, `administrateur`, `super-admin`…) ou si son e-mail est dans `ADMIN_EMAILS`, **COMMERCIAL** sinon. Un rôle admin dans Keycloak fait aussi passer ADMIN un compte existant. Un admin change ensuite le rôle, ou désactive le compte, dans la page **Utilisateurs** ; une personne ajoutée d'avance dans cette page est rattachée par e-mail à sa première connexion, avec le rôle choisi.
+Tout compte du realm Keycloak `konitys` entre dans la Régie : son compte est créé à sa première connexion (identité reprise de Keycloak). **Ce qu'il peut faire vient des droits Konitys** : la Régie déclare ses droits (schéma public `GET /adminpanel/permissions-schema`, clé d'app `regie`), l'admin les coche dans des profils (Admin Panel → Profils & Droits), et l'API les lit sur le gateway (`GET <GATEWAY_URL>/api/permissions/me`, cache 30 s) : `requirePerm('clé')` sur les routes. Les admins Keycloak passent partout. Voir `docs/PERMISSIONS_APP_INTEGRATION.md` et, pour passer des anciens rôles aux droits, `docs/droits-correspondance-roles.md`.
 
-| | Admin | Commercial | Technicien | Partenaire |
-|---|---|---|---|---|
-| Lieux | tous | ses lieux (création, modification) | lecture, sans CA | son lieu, lecture |
-| Stats et exports | tout | ses lieux | — | son lieu |
-| Bornes, affectations, clés, imports | ✓ | — | ✓ | — |
-| Listes administrables, utilisateurs | ✓ | — | — | — |
+Le périmètre des lieux (`lieux.view_any` : tous ; sinon les siens, son lieu pour un partenaire) est décidé en mode fermé : sans réponse du gateway, chacun ne voit que les siens. La page **Utilisateurs** ne gère plus que l'ajout, la désactivation, le lieu d'un partenaire et les SMS des alertes.
 
-En local sans Keycloak, l'API considère l'appelant comme admin ; l'en-tête `X-Dev-Utilisateur: <email>` permet de tester un autre rôle (ignoré en production).
+En local sans Keycloak, l'API considère l'appelant comme admin et tout est autorisé ; l'en-tête `X-Dev-Utilisateur: <email>` choisit l'utilisateur (ignoré en production).
 
 ## Phasage (CDC §9.3)
 

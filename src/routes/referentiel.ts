@@ -3,8 +3,8 @@ import { RefCategorie } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger } from "../middleware/utilisateur.js";
 import { antennesConfigure, synchroniserVillesPrincipales } from "../antennes/villes.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 export const referentielRouter = Router();
 
@@ -41,7 +41,7 @@ const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z0-9_]{2,64}$/, "C
 // POST /api/referentiel/valeurs — ajouter une valeur à une liste administrable
 referentielRouter.post(
   "/valeurs",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (req, res) => {
     const data = z
       .object({
@@ -60,7 +60,7 @@ referentielRouter.post(
 // POST /api/referentiel/valeurs/ordre { ids } — nouvel ordre d'affichage d'une liste (ou des sous-types d'un type)
 referentielRouter.post(
   "/valeurs/ordre",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (req, res) => {
     const { ids } = z.object({ ids: z.array(z.number().int()).min(1).max(500) }).parse(req.body);
     await refuserSourceExterne(ids);
@@ -72,7 +72,7 @@ referentielRouter.post(
 // PATCH /api/referentiel/valeurs/:id — renommer, réordonner, désactiver (jamais supprimer : historique)
 referentielRouter.patch(
   "/valeurs/:id",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (req, res) => {
     const data = z
       .object({
@@ -90,7 +90,7 @@ referentielRouter.patch(
 // POST /api/referentiel/gammes et /types-module — nouvelles gammes / modules sans développement
 referentielRouter.post(
   "/gammes",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (req, res) => {
     const data = z.object({ code: codeSchema, libelle: z.string().trim().min(1) }).parse(req.body);
     res.status(201).json(await prisma.gamme.create({ data }));
@@ -99,7 +99,7 @@ referentielRouter.post(
 
 referentielRouter.post(
   "/types-module",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (req, res) => {
     const data = z
       .object({
@@ -118,7 +118,7 @@ const patchSimple = z.object({ libelle: z.string().trim().min(1).optional(), act
 // PATCH /api/referentiel/gammes/:id et /types-module/:id — renommer, désactiver
 referentielRouter.patch(
   "/gammes/:id",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (req, res) => {
     res.json(await prisma.gamme.update({ where: { id: Number(req.params.id) }, data: patchSimple.parse(req.body) }));
   })
@@ -126,7 +126,7 @@ referentielRouter.patch(
 
 referentielRouter.patch(
   "/types-module/:id",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (req, res) => {
     res.json(await prisma.typeModulePaiement.update({ where: { id: Number(req.params.id) }, data: patchSimple.parse(req.body) }));
   })
@@ -135,7 +135,7 @@ referentielRouter.patch(
 // GET /api/referentiel/antennes — la synchronisation avec l'application Antennes est-elle configurée ?
 referentielRouter.get(
   "/antennes",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (_req, res) => {
     res.json({ configure: antennesConfigure() });
   })
@@ -144,7 +144,7 @@ referentielRouter.get(
 // POST /api/referentiel/antennes/synchroniser — aligne les villes principales sur l'application Antennes
 referentielRouter.post(
   "/antennes/synchroniser",
-  exiger("ADMIN"),
+  requirePerm("referentiel.edit"),
   asynchrone(async (_req, res) => {
     if (!antennesConfigure()) throw new HttpError(400, "NON_CONFIGURE", "ANTENNES_API_URL et ANTENNES_API_TOKEN ne sont pas configurés sur l'API");
     res.json(await synchroniserVillesPrincipales());

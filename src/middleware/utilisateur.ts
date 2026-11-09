@@ -1,25 +1,21 @@
 import type { NextFunction, Response } from "express";
-import type { User, UserRole } from "@prisma/client";
+import type { User } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../lib/http.js";
 import type { AuthRequest } from "./auth.js";
+import { peutVoirTout } from "./permissions.js";
 
 export interface UtilisateurRequest extends AuthRequest {
-  utilisateur?: Pick<User, "id" | "email" | "nom" | "prenom" | "role" | "lieuId">;
+  /**
+   * L'utilisateur de la Régie. Les droits viennent du gateway Konitys (requirePerm, userCan) ;
+   * `role` n'autorise plus rien (colonne gardée, plus mise à jour). `voitTousLieux` : droit lieux.view_any (mode fermé).
+   */
+  utilisateur?: Pick<User, "id" | "email" | "nom" | "prenom" | "role" | "lieuId"> & { voitTousLieux: boolean };
 }
 
 export const authDesactivee = () => !process.env.KEYCLOAK_URL && process.env.NODE_ENV !== "production";
 
-// Comptes créés automatiquement en ADMIN à leur première connexion (amorçage).
-// Tolérant aux erreurs de saisie courantes dans Coolify : guillemets, "ADMIN_EMAILS=" collé dans la valeur.
-export const adminsInitiaux = (brut = process.env.ADMIN_EMAILS ?? "") =>
-  brut
-    .replace(/^\s*ADMIN_EMAILS\s*=/i, "")
-    .split(/[,;\s]+/)
-    .map((e) => e.trim().replace(/^["']|["']$/g, "").toLowerCase())
-    .filter((e) => e.includes("@"));
-
-const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true, roleKeycloak: true } as const;
+const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, lieuId: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true } as const;
 
 // Photo du compte sur la plateforme Konitys (celle de l'en-tête), relevée au plus toutes les 12 h
 const GATEWAY_KONITYS = (process.env.KONITYS_GATEWAY_URL || "https://plateform-gateway.orkessi.com").replace(/\/+$/, "");
@@ -94,42 +90,10 @@ export function identiteKeycloak(jeton: AuthRequest["user"]): { nom?: string; pr
   );
 }
 
-// Noms de rôles Keycloak (realm ou client) qui donnent le rôle ADMIN ici, sans tenir compte de la casse
-export const rolesAdminKeycloak = (brut = process.env.KEYCLOAK_ROLES_ADMIN || "admin,administrateur,administrator,super-admin,super_admin,superadmin") =>
-  brut.split(/[,;\s]+/).map((r) => r.trim().toLowerCase()).filter(Boolean);
-
-const liste = (brut: string) => brut.split(/[,;]+/).map((r) => r.trim().toLowerCase()).filter(Boolean);
-
 /**
- * Rôles Keycloak (realm ou client, sans tenir compte de la casse) qui donnent chaque rôle de la Régie.
- * Keycloak est la source des rôles (retour de Sébastien) ; noms réglables par variable d'environnement.
- * Ordre de priorité : un compte qui a plusieurs rôles prend le plus large.
- */
-const ROLES_KEYCLOAK: [UserRole, () => string[]][] = [
-  ["ADMIN", () => rolesAdminKeycloak()],
-  ["TECHNICIEN", () => liste(process.env.KEYCLOAK_ROLES_TECHNICIEN || "technicien,installateur,regie-technicien")],
-  ["COMMERCIAL", () => liste(process.env.KEYCLOAK_ROLES_COMMERCIAL || "commercial,konitys commercial,konitys-commercial,konitys_commercial,regie-commercial")],
-  ["PARTENAIRE", () => liste(process.env.KEYCLOAK_ROLES_PARTENAIRE || "partenaire,regie-partenaire")],
-];
-
-/** Rôle de la Régie d'après les rôles du jeton Keycloak ; null si le jeton n'en porte aucun */
-export function roleKeycloak(jeton: AuthRequest["user"]): UserRole | null {
-  const roles = new Set([...(jeton?.realm_access?.roles ?? []), ...Object.values(jeton?.resource_access ?? {}).flatMap((c) => c.roles ?? [])].map((r) => r.toLowerCase()));
-  return ROLES_KEYCLOAK.find(([, noms]) => noms().some((n) => roles.has(n)))?.[0] ?? null;
-}
-
-/** Le jeton porte-t-il un rôle admin, au niveau du realm ou d'un client ? */
-export function estAdminKeycloak(jeton: AuthRequest["user"]): boolean {
-  const roles = [...(jeton?.realm_access?.roles ?? []), ...Object.values(jeton?.resource_access ?? {}).flatMap((c) => c.roles ?? [])];
-  const admins = rolesAdminKeycloak();
-  return roles.some((r) => admins.includes(r.toLowerCase()));
-}
-
-/**
- * Associe le compte Keycloak à un utilisateur de l'application.
- * Tout compte du realm entre : créé à sa première connexion, ADMIN s'il a un rôle admin
- * dans Keycloak (ou figure dans ADMIN_EMAILS), COMMERCIAL sinon. Un admin peut ensuite
- * changer son rôle ou le désactiver dans la page Utilisateurs.
+ * Associe le compte Keycloak à un utilisateur de l'application (créé à sa première connexion).
+ * Ce qu'il peut faire vient des droits Konitys (gateway, /api/permissions/me), pas d'un rôle de la Régie
+ * (docs/PERMISSIONS_APP_INTEGRATION.md). Un compte désactivé dans la page Utilisateurs n'entre plus.
  */
 export async function utilisateurCourant(req: UtilisateurRequest, res: Response, next: NextFunction) {
   try {
@@ -138,17 +102,18 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
       const email = req.header("X-Dev-Utilisateur")?.toLowerCase();
       if (!email) {
         // Utilisateur réel en base : les actions tracées (corrections, contrats) y font référence
-        req.utilisateur = await prisma.user.upsert({
+        const dev = await prisma.user.upsert({
           where: { email: "dev@local" },
           update: {},
           create: { email: "dev@local", nom: "Développeur", prenom: "", role: "ADMIN" },
           select: champs,
         });
+        req.utilisateur = { ...dev, voitTousLieux: true };
         return next();
       }
       const u = await prisma.user.findUnique({ where: { email }, select: champs });
       if (!u?.isActive) return res.status(403).json({ error: "ACCES_NON_ACCORDE" });
-      req.utilisateur = u;
+      req.utilisateur = { ...u, voitTousLieux: true };
       return next();
     }
 
@@ -159,8 +124,6 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     const email = (req.user?.email ?? (identifiant?.includes("@") ? identifiant : undefined))?.toLowerCase();
     if (!sub) return res.status(401).json({ error: "Token invalide" });
 
-    // Rôle tenu dans Keycloak ; ADMIN_EMAILS ne sert qu'à l'amorçage (premier admin)
-    const roleKc = roleKeycloak(req.user) ?? (email !== undefined && adminsInitiaux().includes(email) ? "ADMIN" : null);
     let u = await prisma.user.findUnique({ where: { keycloakSub: sub }, select: champs });
 
     // Première connexion : rattachement par e-mail à un utilisateur ajouté par un admin, sinon création
@@ -175,17 +138,10 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
             keycloakSub: sub,
             nom: req.user?.family_name ?? email,
             prenom: req.user?.given_name ?? "",
-            role: roleKc ?? "COMMERCIAL",
-            roleKeycloak: !!roleKc,
           },
           select: champs,
         });
       }
-    }
-
-    // Le rôle suit Keycloak à chaque connexion ; sans rôle de la Régie dans Keycloak, le compte garde le sien
-    if (u && (u.roleKeycloak !== !!roleKc || (roleKc && u.role !== roleKc))) {
-      u = await prisma.user.update({ where: { id: u.id }, data: { roleKeycloak: !!roleKc, ...(roleKc ? { role: roleKc } : {}) }, select: champs });
     }
 
     // Nom, prénom et téléphone suivent Keycloak à chaque connexion
@@ -210,32 +166,22 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
       u = { ...u, photoVerifieeLe: new Date() };
       releverPhoto(u.id, autorisation);
     }
-    req.utilisateur = u;
+    // Périmètre des données : décidé une fois par requête, en mode fermé (gateway muet → ses lieux seulement)
+    req.utilisateur = { ...u, voitTousLieux: await peutVoirTout(req, "lieux.view_any") };
     next();
   } catch (err) {
     next(err);
   }
 }
 
-/** Restreint une route à certains rôles. */
-export const exiger =
-  (...roles: UserRole[]) =>
-  (req: UtilisateurRequest, _res: Response, next: NextFunction) => {
-    if (!req.utilisateur || !roles.includes(req.utilisateur.role)) {
-      return next(new HttpError(403, "INTERDIT", "Action non autorisée pour votre rôle"));
-    }
-    next();
-  };
-
 /**
- * Périmètre des lieux visibles par l'utilisateur :
- * null = tous ; sinon une condition sur le commercial ou le lieu.
+ * Périmètre des lieux visibles par l'utilisateur (droits lieux.view_any / lieux.view_own, 3.8) :
+ * null = tous ; sinon « les siens » : son lieu s'il en a un (partenaire), sinon ceux dont il est le commercial.
  */
 export function perimetreLieux(u: UtilisateurRequest["utilisateur"]): { commercialId?: number; lieuId?: number } | null {
   if (!u) throw new HttpError(401, "NON_AUTHENTIFIE");
-  // Commerciaux : tous les lieux pour le moment (retour du 09/11/2026), comme les admins et techniciens
-  if (u.role === "ADMIN" || u.role === "TECHNICIEN" || u.role === "COMMERCIAL") return null;
-  return { lieuId: u.lieuId ?? -1 }; // PARTENAIRE
+  if (u.voitTousLieux) return null;
+  return u.lieuId ? { lieuId: u.lieuId } : { commercialId: u.id };
 }
 
 /** Vérifie que l'utilisateur peut voir ce lieu (404 sinon, pour ne pas révéler son existence). */

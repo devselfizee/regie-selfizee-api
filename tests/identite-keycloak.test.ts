@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { identiteKeycloak, idPlateforme, roleKeycloak, telephoneHub, urlPhotoKonitys } from "../src/middleware/utilisateur.js";
+import { identiteKeycloak, idPlateforme, telephoneHub, urlPhotoKonitys } from "../src/middleware/utilisateur.js";
 import { corpsNotification, idHub } from "../src/lib/notificationsPlateforme.js";
 
 describe("identité recopiée de Keycloak", () => {
@@ -59,19 +59,6 @@ describe("notifications de la plateforme", () => {
   });
 });
 
-describe("rôle tenu dans Keycloak", () => {
-  it("prend le rôle le plus large porté par le jeton (realm ou client)", () => {
-    expect(roleKeycloak({ sub: "s", realm_access: { roles: ["offline_access", "Commercial"] } })).toBe("COMMERCIAL");
-    expect(roleKeycloak({ sub: "s", realm_access: { roles: ["commercial"] }, resource_access: { regie: { roles: ["admin"] } } })).toBe("ADMIN");
-    expect(roleKeycloak({ sub: "s", resource_access: { regie: { roles: ["technicien", "partenaire"] } } })).toBe("TECHNICIEN");
-    expect(roleKeycloak({ sub: "s", realm_access: { roles: ["Konitys commercial"] } })).toBe("COMMERCIAL");
-  });
-
-  it("rend null sans rôle de la Régie", () => {
-    expect(roleKeycloak({ sub: "s", realm_access: { roles: ["offline_access", "uma_authorization"] } })).toBeNull();
-    expect(roleKeycloak(undefined)).toBeNull();
-  });
-});
 
 describe("téléphone de la fiche Hub", () => {
   it("lit le téléphone sous ses noms courants, quelle que soit l'enveloppe", () => {

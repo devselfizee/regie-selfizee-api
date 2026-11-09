@@ -2,15 +2,17 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { chemins, cible, evenementDe, toucher } from "../config-evenement/acces.js";
 import { CIBLES, MAX_PAR_SERIE, preparerIllustration } from "../config-evenement/illustrations.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 // Photos d'exemple d'un événement (illustrations des cases des cadres, kit nightlife) : série des cadres
 // (page de choix du format) et série de l'accueil. Réservé aux admins, monté sous /api/lieux comme la
 // fiche événement, pour l'événement habituel et les ponctuels. Copiées dans le zip (zip.ts).
 export const illustrationsEvenementRouter = Router();
-const admin = exiger("ADMIN");
+const voir = requirePerm("evenements.view");
+const modifier = requirePerm("evenements.edit");
 
 const enDataUrl = (b: Uint8Array) => `data:image/jpeg;base64,${Buffer.from(b).toString("base64")}`;
 const resume = { id: true, cible: true, forme: true, largeur: true, hauteur: true, vignette: true } as const;
@@ -25,7 +27,7 @@ async function evenementEnregistre(lieuId: number, eid: number | null) {
 // GET …/illustrations — les photos de l'événement (vignettes), série des cadres puis de l'accueil
 illustrationsEvenementRouter.get(
   chemins("/illustrations"),
-  admin,
+  voir,
   asynchrone(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const e = await evenementDe(lieuId, eid);
@@ -37,7 +39,7 @@ illustrationsEvenementRouter.get(
 // POST …/illustrations { cible, image (data URL) } — ajoute une photo : réduite (1200 px), rangée par forme
 illustrationsEvenementRouter.post(
   chemins("/illustrations"),
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const saisie = z
@@ -67,7 +69,7 @@ illustrationsEvenementRouter.post(
 // DELETE …/illustrations/:iid — retire une photo
 illustrationsEvenementRouter.delete(
   chemins("/illustrations/:iid"),
-  admin,
+  modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
     const iid = z.coerce.number().int().positive().parse(req.params.iid);

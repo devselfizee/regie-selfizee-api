@@ -4,11 +4,12 @@ import { TZDate } from "@date-fns/tz";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { EXTENSIONS_VIDEO, extensionDuChemin, lireBuffer, lireFlux, mimeDe } from "../lib/stockage.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
 import { declencherTelechargement } from "../synchro-pikcloud/telechargement.js";
 import { lienPageSouvenir } from "../config-evenement/generation.js";
+import { requirePerm, userCan } from "../middleware/permissions.js";
 
 // Galerie des médias reçus de PikCloud (docs/synchronisation-pikcloud.md) : les photos et vidéos des séances
 // d'un lieu, par événement. Ce sont des photos de personnes : admin, commercial sur ses lieux, partenaire sur
@@ -20,7 +21,7 @@ export const mediasLieuRouter = Router();
 /** Routes sous /api/medias/:uuid */
 export const mediasRouter = Router();
 
-const voitMedias = exiger("ADMIN", "COMMERCIAL", "PARTENAIRE");
+const voitMedias = requirePerm("medias.view");
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
 const filtresSchema = z.object({
@@ -144,7 +145,7 @@ mediasLieuRouter.get(
   })
 );
 
-const admin = exiger("ADMIN");
+const gerer = requirePerm("medias.manage");
 
 /** Condition « fichier à relancer » : annoncé (URL connue) et pas encore copié, ou abandonné après les tentatives. */
 const aRelancer: Prisma.MediaWhereInput = {
@@ -169,7 +170,7 @@ async function relancer(where: Prisma.MediaWhereInput): Promise<number> {
 // POST /api/lieux/:id/medias/relancer — relance tous les téléchargements en attente ou en erreur du lieu (admin)
 mediasLieuRouter.post(
   "/:id/medias/relancer",
-  admin,
+  gerer,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = lieuParam(req);
     await verifierAccesLieu(req.utilisateur, lieuId);
@@ -181,14 +182,14 @@ mediasLieuRouter.post(
 
 const uuidParam = z.uuid();
 
-/** Le média visé, si l'utilisateur voit son lieu ; sans lieu (événement inconnu), admin seulement. */
+/** Le média visé, si l'utilisateur voit son lieu ; sans lieu (événement inconnu), droit medias.manage seulement. */
 async function mediaAccessible(req: UtilisateurRequest) {
   const uuid = uuidParam.safeParse(req.params.uuid);
   if (!uuid.success) throw new HttpError(404, "INTROUVABLE");
   const m = await prisma.media.findUnique({ where: { uuid: uuid.data }, include: { evenement: selectionEvenement } });
   if (!m) throw new HttpError(404, "INTROUVABLE");
   if (m.lieuId === null) {
-    if (req.utilisateur?.role !== "ADMIN") throw new HttpError(404, "INTROUVABLE");
+    if (!(await userCan(req, "medias.manage"))) throw new HttpError(404, "INTROUVABLE");
   } else {
     await verifierAccesLieu(req.utilisateur, m.lieuId);
   }
@@ -230,7 +231,7 @@ mediasRouter.get(
 // POST /api/medias/:uuid/relancer — remet les fichiers du média en attente et réveille le worker (admin)
 mediasRouter.post(
   "/:uuid/relancer",
-  admin,
+  gerer,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const m = await mediaAccessible(req);
     const relances = await relancer({ id: m.id });

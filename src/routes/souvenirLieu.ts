@@ -4,9 +4,10 @@ import { TZDate } from "@date-fns/tz";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { exiger, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
 import { LOTS } from "../config-evenement/reglages.js";
+import { requirePerm } from "../middleware/permissions.js";
 
 // Page souvenir d'un lieu, dans la fiche lieu (CDC page souvenir § 9.1) : l'entonnoir de la soirée et les contacts
 // opt-in lieu. Seulement les contacts qui ont coché « Les bons plans de <lieu> » : ni les autres inscrits, ni
@@ -14,7 +15,9 @@ import { LOTS } from "../config-evenement/reglages.js";
 
 /** Routes sous /api/lieux/:id/souvenir */
 export const souvenirLieuRouter = Router();
-const voit = exiger("ADMIN", "COMMERCIAL", "PARTENAIRE");
+// Entonnoir de la page souvenir : des chiffres ; contacts des invités : données personnelles
+const voitResume = requirePerm("ventes.view");
+const voitContacts = requirePerm("souvenir.contacts_view");
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
 const periodeSchema = z.object({ du: z.string().regex(JOUR).optional(), au: z.string().regex(JOUR).optional(), evenement: z.coerce.number().int().positive().optional() });
@@ -36,7 +39,7 @@ async function cible(req: UtilisateurRequest) {
 // GET /api/lieux/:id/souvenir/resume?du=&au=&evenement= — entonnoir : séances → scans → inscriptions → opt-ins, lots, codes
 souvenirLieuRouter.get(
   "/:id/souvenir/resume",
-  voit,
+  voitResume,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, quand, evenement } = await cible(req);
     const parEvt = evenement ? { configEvenementId: evenement } : {};
@@ -107,7 +110,7 @@ async function contacts(lieuId: number, quand: Prisma.DateTimeFilter | undefined
 // GET /api/lieux/:id/souvenir/contacts?du=&au=&evenement= — les 200 contacts opt-in lieu les plus récents (et le total)
 souvenirLieuRouter.get(
   "/:id/souvenir/contacts",
-  voit,
+  voitContacts,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, quand, evenement } = await cible(req);
     res.json(await contacts(lieuId, quand, evenement, 200));
@@ -123,7 +126,7 @@ const paris = new Intl.DateTimeFormat("fr-FR", { timeZone: FUSEAU_METIER, dateSt
 // GET /api/lieux/:id/souvenir/contacts.csv?du=&au=&evenement= — export CSV des contacts opt-in lieu (CDC § 9.1)
 souvenirLieuRouter.get(
   "/:id/souvenir/contacts.csv",
-  voit,
+  voitContacts,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, quand, evenement } = await cible(req);
     const { contacts: lignes } = await contacts(lieuId, quand, evenement);

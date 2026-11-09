@@ -7,6 +7,7 @@ import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { lireFiltres, ymd } from "../stats/filtres.js";
 import { rentabiliteBorne, retourInvestissement } from "../rentabilite/calcul.js";
+import { requirePerm, estAdminPlateforme } from "../middleware/permissions.js";
 
 // Coûts, interventions SAV et rentabilité des bornes (CDC §5.3 et §8)
 export const coutsBornesRouter = Router(); // monté sous /api/bornes (admin, technicien)
@@ -38,6 +39,7 @@ coutsBornesRouter.get(
 // POST /api/bornes/:id/couts { date, categorie, montantCents, libelle? }
 coutsBornesRouter.post(
   "/:id/couts",
+  requirePerm("couts.edit"),
   asynchrone(async (req, res) => {
     const data = z
       .object({ date: jour, categorie: z.enum(CategorieCout), montantCents: montant.refine((v) => v > 0, "Montant nul"), libelle: z.string().trim().nullable().optional() })
@@ -49,6 +51,7 @@ coutsBornesRouter.post(
 // DELETE /api/couts/:id
 coutsRouter.delete(
   "/:id",
+  requirePerm("couts.edit"),
   asynchrone(async (req, res) => {
     await prisma.coutBorne.delete({ where: { id: Number(req.params.id) } });
     res.status(204).end();
@@ -84,7 +87,9 @@ coutsBornesRouter.get(
 // POST /api/bornes/:id/interventions
 coutsBornesRouter.post(
   "/:id/interventions",
+  requirePerm("interventions.edit"),
   asynchrone<UtilisateurRequest>(async (req, res) => {
+    const adminPlateforme = await estAdminPlateforme(req);
     const borneId = Number(req.params.id);
     const { coutCents, technicienId, ...data } = interventionSchema.parse(req.body);
     const intervention = await prisma.intervention.create({
@@ -92,7 +97,8 @@ coutsBornesRouter.post(
         ...data,
         borneId,
         // Par défaut : le technicien qui saisit
-        technicienId: technicienId ?? (req.utilisateur?.role === "TECHNICIEN" ? req.utilisateur.id : null),
+        // Sans technicien choisi : celui qui saisit, sauf un admin de la plateforme
+        technicienId: technicienId ?? (adminPlateforme ? null : (req.utilisateur?.id ?? null)),
         couts: coutCents
           ? { create: { borneId, date: jourEtHeureLocaux(data.date).jour, categorie: "INTERVENTION", montantCents: coutCents, libelle: data.motif } }
           : undefined,
@@ -105,6 +111,7 @@ coutsBornesRouter.post(
 // PATCH /api/interventions/:id
 interventionsRouter.patch(
   "/:id",
+  requirePerm("interventions.edit"),
   asynchrone(async (req, res) => {
     const id = Number(req.params.id);
     const { coutCents, ...patch } = interventionSchema.partial().parse(req.body);
@@ -127,6 +134,7 @@ interventionsRouter.patch(
 // DELETE /api/interventions/:id (et son coût)
 interventionsRouter.delete(
   "/:id",
+  requirePerm("interventions.edit"),
   asynchrone(async (req, res) => {
     const id = Number(req.params.id);
     await prisma.$transaction([prisma.coutBorne.deleteMany({ where: { interventionId: id } }), prisma.intervention.delete({ where: { id } })]);
@@ -139,6 +147,7 @@ interventionsRouter.delete(
 // PATCH /api/rentabilite/bornes/:id/achat { coutAchatCents, dureeAmortissementMois, dateMiseEnService }
 rentabiliteRouter.patch(
   "/bornes/:id/achat",
+  requirePerm("rentabilite.edit"),
   asynchrone(async (req, res) => {
     const data = z
       .object({
