@@ -233,8 +233,8 @@ export const exiger =
  */
 export function perimetreLieux(u: UtilisateurRequest["utilisateur"]): { commercialId?: number; lieuId?: number } | null {
   if (!u) throw new HttpError(401, "NON_AUTHENTIFIE");
-  if (u.role === "ADMIN" || u.role === "TECHNICIEN") return null;
-  if (u.role === "COMMERCIAL") return { commercialId: u.id };
+  // Commerciaux : tous les lieux pour le moment (retour du 09/11/2026), comme les admins et techniciens
+  if (u.role === "ADMIN" || u.role === "TECHNICIEN" || u.role === "COMMERCIAL") return null;
   return { lieuId: u.lieuId ?? -1 }; // PARTENAIRE
 }
 

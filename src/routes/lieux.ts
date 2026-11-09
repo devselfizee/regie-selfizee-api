@@ -225,9 +225,10 @@ lieuxRouter.get(
 // ─── Écriture ───────────────────────────────────────────────
 
 // POST /api/lieux
-// Un commercial ne peut créer / modifier que ses propres lieux : il en reste le commercial responsable.
+// Un commercial qui crée un lieu sans choisir de commercial responsable en devient le responsable.
+// (Il voit et modifie tous les lieux : à la modification, le commercial responsable choisi est gardé.)
 const commercialImpose = (req: UtilisateurRequest, champs: { commercialId?: number | null }) => {
-  if (req.utilisateur?.role === "COMMERCIAL") champs.commercialId = req.utilisateur.id;
+  if (req.utilisateur?.role === "COMMERCIAL" && !champs.commercialId) champs.commercialId = req.utilisateur.id;
 };
 
 type Champs = ReturnType<typeof donneesLieu>["champs"];
@@ -287,7 +288,6 @@ lieuxRouter.put(
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
     const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(req.body));
-    commercialImpose(req, champs);
     await positionner(
       champs,
       await prisma.lieu.findUniqueOrThrow({

@@ -13,12 +13,12 @@ export const alertesRouter = Router();
 const TECHNIQUES: TypeAlerte[] = ["BORNE_MUETTE", "ZERO_VENTE", "TAUX_REFUS", "CONSOMMABLES", "BORNE_NON_AFFECTEE"];
 const COMMERCIALES: TypeAlerte[] = ["BAISSE_CA", "ZERO_VENTE", "PIC_SUSPECT", "VENTE_HORS_HORAIRES", "TAUX_REFUS"];
 
-/** Alertes visibles selon le rôle : technicien = techniques, commercial = ses lieux. */
+/** Alertes visibles selon le rôle : technicien = techniques, commercial = de vente (tous les lieux). */
 function perimetre(req: UtilisateurRequest): Prisma.AlerteWhereInput {
   const u = req.utilisateur!;
   if (u.role === "ADMIN") return {};
   if (u.role === "TECHNICIEN") return { type: { in: TECHNIQUES } };
-  if (u.role === "COMMERCIAL") return { type: { in: COMMERCIALES }, lieu: { commercialId: u.id } };
+  if (u.role === "COMMERCIAL") return { type: { in: COMMERCIALES } };
   throw new HttpError(403, "INTERDIT");
 }
 
