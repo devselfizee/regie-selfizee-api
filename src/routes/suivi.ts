@@ -132,7 +132,10 @@ suiviLieuRouter.get(
         where: { lieuId },
         select: { id: true, type: true, niveau: true, statut: true, message: true, detecteeLe: true, resolueLe: true, commentaire: true, assignee: { select: { prenom: true, nom: true, photoUrl: true } } },
       }),
-      prisma.evenementLieu.findMany({ where: { lieuId }, select: { id: true, libelle: true, debut: true, fin: true, type: { select: { libelle: true } } } }),
+      prisma.evenementLieu.findMany({
+        where: { lieuId },
+        select: { id: true, libelle: true, debut: true, fin: true, type: { select: { libelle: true } }, creePar: { select: { prenom: true, nom: true, photoUrl: true } } },
+      }),
       prisma.auditLog.findMany({
         where: { entite: { in: ["lieu", "config_evenement"] }, entiteId: String(lieuId) },
         select: { id: true, action: true, entite: true, createdAt: true, user: { select: { prenom: true, nom: true, photoUrl: true } } },
@@ -218,7 +221,8 @@ suiviLieuRouter.get(
         });
       }
     }
-    for (const e of evenements) el.push({ cle: `e${e.id}`, type: "EVENEMENT", date: e.debut, titre: `${e.type.libelle} : ${e.libelle}` });
+    for (const e of evenements)
+      el.push({ cle: `e${e.id}`, type: "EVENEMENT", date: e.debut, titre: `${e.type.libelle} : ${e.libelle}`, auteur: auteur(e.creePar), auteurPhoto: photo(e.creePar) });
     for (const j of journaux)
       el.push({
         cle: `j${j.id}`,

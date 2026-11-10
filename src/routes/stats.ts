@@ -258,6 +258,15 @@ statsRouter.get(
       select: { id: true, codePostal: true, latitude: true, longitude: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true },
     });
     const parId = new Map(lieux.map((l) => [l.id, l]));
+    // Lieux équipés d'une borne pendant la période : sans borne ni vente, un lieu n'a rien à montrer (retour de Sébastien du 10/11)
+    const equipes = new Set(
+      (
+        await prisma.affectationBorne.findMany({
+          where: { lieuId: { in: lieux.map((l) => l.id) }, debut: { lte: f.au }, OR: [{ fin: null }, { fin: { gte: f.du } }] },
+          select: { lieuId: true },
+        })
+      ).map((a) => a.lieuId)
+    );
 
     res.json({
       periode: { du: ymd(f.du), au: ymd(f.au) },
@@ -272,6 +281,7 @@ statsRouter.get(
           // Moyennes par département sous la carte (retour de Sébastien)
           departement: departement(lieu.codePostal),
           joursOuverts: jo,
+          equipe: equipes.has(l.lieuId),
           caParJourOuvertCents: jo ? Math.round(l.caTtcCents / jo) : null,
           caPrecedentCents: precedent,
           evolution: precedent ? (l.caTtcCents - precedent) / precedent : null,

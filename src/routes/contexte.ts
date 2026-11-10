@@ -133,7 +133,11 @@ evenementsLieuRouter.get(
     await verifierAccesLieu(req.utilisateur, lieuId);
     const [lieu, evenements] = await Promise.all([
       prisma.lieu.findUnique({ where: { id: lieuId }, select: selectOuverture }),
-      prisma.evenementLieu.findMany({ where: { lieuId }, include: { type: { select: { id: true, code: true, libelle: true } } }, orderBy: { debut: "desc" } }),
+      prisma.evenementLieu.findMany({
+        where: { lieuId },
+        include: { type: { select: { id: true, code: true, libelle: true } }, creePar: { select: { prenom: true, nom: true, photoUrl: true } } },
+        orderBy: { debut: "desc" },
+      }),
     ]);
     if (!lieu) throw new HttpError(404, "INTROUVABLE");
     const voitVentes = await userCan(req, "ventes.view");
@@ -152,6 +156,7 @@ evenementsLieuRouter.get(
           libelle: e.libelle,
           debut: ymd(debut),
           fin: fin ? ymd(fin) : null,
+          auteur: e.creePar,
           impact: voitVentes ? impact(lieu, ventes, debuts.get(lieuId) ?? null, debut, fin, hier) : null,
         };
       })
@@ -169,7 +174,7 @@ evenementsLieuRouter.post(
     const e = evenementSchema.parse(req.body);
     await verifierType(e.typeId);
     const cree = await prisma.evenementLieu.create({
-      data: { lieuId, typeId: e.typeId, libelle: e.libelle, debut: minuitParis(e.debut), fin: e.fin ? minuitParis(e.fin) : null },
+      data: { lieuId, typeId: e.typeId, libelle: e.libelle, debut: minuitParis(e.debut), fin: e.fin ? minuitParis(e.fin) : null, creeParId: req.utilisateur!.id },
     });
     res.status(201).json(cree);
   })

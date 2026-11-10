@@ -70,8 +70,10 @@ export async function calculer(c: ContratAvecPaliers, p: Periode) {
  */
 export async function calculerReversements(options: { lieuId?: number; jusquA?: Date } = {}) {
   const jusquA = options.jusquA ?? veille(aujourdhui());
+  // « Aucune commission » : pas de reversement à calculer (retour de Sébastien du 10/11 : la liste en était surchargée).
+  // Leurs périodes encore ouvertes deviennent orphelines et sont supprimées plus bas.
   const contrats = await prisma.contratCommission.findMany({
-    where: options.lieuId ? { lieuId: options.lieuId } : {},
+    where: { modele: { not: "AUCUNE" }, ...(options.lieuId ? { lieuId: options.lieuId } : {}) },
     include: { paliers: true, lieu: { select: { saisons: { select: { debut: true, fin: true } } } } },
     orderBy: [{ lieuId: "asc" }, { dateEffet: "asc" }],
   });

@@ -195,6 +195,8 @@ reversementsRouter.get(
         ...(p?.lieuId !== undefined ? { lieuId: p.lieuId } : {}),
         ...(req.query.du ? { periodeDebut: { gte: new Date(`${req.query.du}T00:00:00Z`) } } : {}),
         ...(req.query.au ? { periodeFin: { lte: new Date(`${req.query.au}T00:00:00Z`) } } : {}),
+        // Seulement les lieux à qui on reverse une commission (retour de Sébastien du 10/11)
+        contrat: { modele: { not: "AUCUNE" } },
       },
       include: { lieu: { select: { id: true, enseigne: true, ville: true } } },
       orderBy: [{ periodeDebut: "desc" }, { lieu: { enseigne: "asc" } }],

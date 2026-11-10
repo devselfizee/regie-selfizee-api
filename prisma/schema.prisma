@@ -57,6 +57,7 @@ model User {
   lotsCodesRemise  LotCodesRemise[]
 
   photosCles LieuPhotoCles[] @relation("PhotosClesAuteur")
+  evenementsLieu EvenementLieu[] @relation("EvenementsLieuAuteur")
 
   @@map("users")
 }
@@ -1062,9 +1063,13 @@ model EvenementLieu {
   debut   DateTime  @db.Timestamptz(3)
   fin     DateTime? @db.Timestamptz(3)
   libelle String
+  // Qui l'a saisi (avatar dans le journal et le suivi du lieu) ; null avant le 10/11/2026
+  creeParId Int?     @map("cree_par_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  lieu Lieu      @relation(fields: [lieuId], references: [id], onDelete: Cascade)
-  type RefValeur @relation(fields: [typeId], references: [id])
+  lieu    Lieu      @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  type    RefValeur @relation(fields: [typeId], references: [id])
+  creePar User?     @relation("EvenementsLieuAuteur", fields: [creeParId], references: [id], onDelete: SetNull)
 
   @@index([lieuId, debut])
   @@map("evenements_lieu")
