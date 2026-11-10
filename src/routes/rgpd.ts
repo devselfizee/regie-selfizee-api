@@ -6,7 +6,7 @@ import { baseFichiers } from "../souvenir/base.js";
 import { jetonConfigure, lireJetonAcces } from "../rgpd/jeton.js";
 import { envoyerLienAcces, exporterCsv, modifierEnregistrement, rapport, supprimerEnregistrement, supprimerEvenement } from "../rgpd/donnees.js";
 
-// API publique de la plateforme RGPD (rgpd.selfizee.fr), montée sous /rgpd/v1 : même contrat que l'API RGPD du booth
+// API publique de la plateforme RGPD (rgpd.orkessi.com), montée sous /rgpd/v1 : même contrat que l'API RGPD du booth
 // (/api/rgpd/informations|inscription|suppression|edition), sans connexion. L'accès aux données est protégé par le
 // jeton chiffré du lien envoyé par mail (7 jours) ; la demande du lien répond pareil, adresse connue ou non.
 

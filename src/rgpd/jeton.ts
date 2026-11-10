@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
-// Jeton du lien d'accès aux données (plateforme RGPD, rgpd.selfizee.fr/e/inf/<jeton>), valable 7 jours.
+// Jeton du lien d'accès aux données (plateforme RGPD, rgpd.orkessi.com/e/inf/<jeton>), valable 7 jours.
 // Le booth écrivait l'adresse en triple base64 (lisible et fabricable par n'importe qui) ; ici l'adresse et la date
 // sont chiffrées et authentifiées (AES-256-GCM) : le jeton ne révèle rien, et toute modification le rend invalide.
 // Format : base64url( iv 12 octets | tag 16 octets | {"e":adresse,"t":secondes} chiffré ).

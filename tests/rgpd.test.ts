@@ -116,6 +116,16 @@ beforeEach(() => {
   b.envois = [];
 });
 
+describe("origines de la plateforme (CORS)", () => {
+  it("slash final retiré, valeur vide ou absente : toutes les origines", async () => {
+    const { originesRgpd } = await import("../src/app.js");
+    expect(originesRgpd("https://rgpd.orkessidev.com/ , https://rgpd.orkessi.com")).toEqual(["https://rgpd.orkessidev.com", "https://rgpd.orkessi.com"]);
+    expect(originesRgpd("")).toBe("*");
+    expect(originesRgpd(" , ")).toBe("*");
+    expect(originesRgpd(undefined)).toBe("*");
+  });
+});
+
 describe("jeton du lien d'accès", () => {
   it("chiffré (l'adresse n'y paraît pas), relu tel quel, refusé s'il est modifié, expiré après 7 jours", () => {
     expect(Buffer.from(jeton, "base64url").toString("latin1")).not.toContain("invite");

@@ -9,7 +9,7 @@ import { extensionDuChemin } from "../lib/stockage.js";
 import { ecrireJetonAcces, VALIDITE_JOURS } from "./jeton.js";
 import { lireModele, listeAdresses, rendreModele } from "./modeles.js";
 
-// Données personnelles tenues par la Régie pour une adresse e-mail, telles que la plateforme RGPD (rgpd.selfizee.fr)
+// Données personnelles tenues par la Régie pour une adresse e-mail, telles que la plateforme RGPD (rgpd.orkessi.com)
 // les montre, les exporte, les corrige et les efface. Contrat repris de l'API RGPD du booth (UserDataReport) : un
 // « événement » par code d'événement de la Régie, un « enregistrement » par inscription « Recevoir mes photos » de la
 // page souvenir (CDC page souvenir § 9.3), avec la photo de la séance.
@@ -20,7 +20,7 @@ const VALIDITE_PHOTOS_S = 2 * 3600;
 /** Au-delà, la liste est tronquée (une adresse n'a en pratique que quelques inscriptions). */
 const MAX_INSCRIPTIONS = 500;
 
-export const urlPlateforme = () => (process.env.RGPD_URL || "https://rgpd.selfizee.fr").replace(/\/+$/, "");
+export const urlPlateforme = () => (process.env.RGPD_URL || "https://rgpd.orkessi.com").replace(/\/+$/, "");
 
 /** « 04-11-2026 21:42 », comme le booth. */
 function dateAffichee(d: Date): string {

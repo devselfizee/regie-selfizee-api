@@ -1,4 +1,4 @@
-# Plateforme RGPD (rgpd.selfizee.fr) branchée sur la Régie
+# Plateforme RGPD (rgpd.orkessi.com, dev : rgpd.orkessidev.com) branchée sur la Régie
 
 La plateforme RGPD (`d:/reactApp/rgpd`, SPA React) montre, exporte, corrige et efface les données que **la Régie** tient
 pour une adresse e-mail. Contrat repris de l'API RGPD du booth (`Api\RgpdController`), sous `/rgpd/v1` : publique,
@@ -53,7 +53,7 @@ L'expéditeur est `SENDER_SELFIZEE`.
 ## Variables d'environnement
 
 - `RGPD_SECRET` : clé du lien (la changer invalide les liens en cours) ;
-- `RGPD_URL` : adresse de la plateforme (défaut `https://rgpd.selfizee.fr`) ;
-- `RGPD_CORS_ORIGIN` : origines autorisées (défaut `*`).
+- `RGPD_URL` : adresse de la plateforme (défaut `https://rgpd.orkessi.com` ; dev : `https://rgpd.orkessidev.com`) ;
+- `RGPD_CORS_ORIGIN` : origines autorisées, sans slash final (défaut `*`) : `https://rgpd.orkessi.com` en prod, `https://rgpd.orkessidev.com` en dev.
 
 Côté plateforme : `VITE_API_BASE_URL` = adresse de l'API Régie.

@@ -49,6 +49,15 @@ import { buildPermissionsSchema } from "./permissions/schema.js";
   return this.toString();
 };
 
+/**
+ * Origines autorisées de la plateforme RGPD (RGPD_CORS_ORIGIN, séparées par des virgules). Le navigateur envoie
+ * l'origine sans slash final : on le retire de la valeur saisie ; vide ou absente : toutes les origines.
+ */
+export function originesRgpd(valeur = process.env.RGPD_CORS_ORIGIN): string | string[] {
+  const o = (valeur ?? "").split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean);
+  return o.length ? o : "*";
+}
+
 export function creerApp() {
   const app = express();
   app.set("trust proxy", true); // derrière le reverse proxy Coolify
@@ -81,10 +90,10 @@ export function creerApp() {
   // Page souvenir (myevent.selfizee.fr) : séances et codes pour son serveur (secret partagé), visuels sur URL signée
   app.use("/souvenir/v1", express.json({ limit: "8kb" }), souvenirRouter);
 
-  // Plateforme RGPD (rgpd.selfizee.fr) : données d'une adresse sur le lien chiffré envoyé par mail, sans connexion
+  // Plateforme RGPD (rgpd.orkessi.com, dev : rgpd.orkessidev.com) : données d'une adresse sur le lien chiffré envoyé par mail, sans connexion
   app.use(
     "/rgpd/v1",
-    cors({ origin: process.env.RGPD_CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? "*" }),
+    cors({ origin: originesRgpd() }),
     express.json({ limit: "8kb" }),
     rgpdRouter
   );
