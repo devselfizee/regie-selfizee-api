@@ -277,7 +277,7 @@ export const EVENEMENTS_JOURNAL = [
   "reprint_open", "reprint_paid", "mine_requested", "mine_opened",
 ] as const;
 /** Événements venus des mails et des droits de l'invité (jamais postés par la page) */
-export type EvenementJournal = (typeof EVENEMENTS_JOURNAL)[number] | "review_click" | "social_click" | "data_deleted";
+export type EvenementJournal = (typeof EVENEMENTS_JOURNAL)[number] | "review_click" | "social_click" | "data_deleted" | "data_updated";
 /** Seuls détails gardés : jamais d'e-mail, de code ni d'IP. */
 const DETAILS_PERMIS = new Set(["lot", "optinLieu", "optinSelfizee", "differe", "copies", "montant", "index", "reseau", "photos"]);
 

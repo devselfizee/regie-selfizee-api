@@ -56,8 +56,9 @@ model User {
   cartesTest       CarteTest[]
   lotsCodesRemise  LotCodesRemise[]
 
-  photosCles LieuPhotoCles[] @relation("PhotosClesAuteur")
+  photosCles     LieuPhotoCles[] @relation("PhotosClesAuteur")
   evenementsLieu EvenementLieu[] @relation("EvenementsLieuAuteur")
+  modelesMail    ModeleMail[]
 
   @@map("users")
 }
@@ -1057,15 +1058,15 @@ model Intervention {
 
 // Affiché sur les courbes pour expliquer pics et creux
 model EvenementLieu {
-  id      Int       @id @default(autoincrement())
-  lieuId  Int       @map("lieu_id")
-  typeId  Int       @map("type_id") // RefValeur TYPE_EVENEMENT
-  debut   DateTime  @db.Timestamptz(3)
-  fin     DateTime? @db.Timestamptz(3)
-  libelle String
+  id        Int       @id @default(autoincrement())
+  lieuId    Int       @map("lieu_id")
+  typeId    Int       @map("type_id") // RefValeur TYPE_EVENEMENT
+  debut     DateTime  @db.Timestamptz(3)
+  fin       DateTime? @db.Timestamptz(3)
+  libelle   String
   // Qui l'a saisi (avatar dans le journal et le suivi du lieu) ; null avant le 10/11/2026
-  creeParId Int?     @map("cree_par_id")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  creeParId Int?      @map("cree_par_id")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   lieu    Lieu      @relation(fields: [lieuId], references: [id], onDelete: Cascade)
   type    RefValeur @relation(fields: [typeId], references: [id])
@@ -1710,4 +1711,21 @@ model SouvenirJournal {
   @@index([lieuId, evenement, createdAt])
   @@index([photoUuid, evenement])
   @@map("souvenir_journal")
+}
+
+// ─── Mails paramétrables (Paramètres → E-mails RGPD) ───
+// Sujet et corps (texte riche nettoyé) d'un mail envoyé par la Régie, avec des variables {{…}} remplacées à l'envoi.
+// Une ligne par modèle modifié : sans ligne, le texte par défaut du code (src/rgpd/modeles.ts) s'applique.
+model ModeleMail {
+  cle           String   @id @db.VarChar(40) // RGPD_ACCES, RGPD_NOTIFICATION
+  sujet         String   @db.VarChar(200)
+  corps         String
+  // Notifications internes : adresses séparées par des virgules (vide : pas d'envoi)
+  destinataires String?  @db.VarChar(500)
+  modifieParId  Int?     @map("modifie_par_id")
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  modifiePar User? @relation(fields: [modifieParId], references: [id], onDelete: SetNull)
+
+  @@map("modeles_mail")
 }

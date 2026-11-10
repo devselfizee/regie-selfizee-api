@@ -29,6 +29,8 @@ import { mesPhotosRouter } from "./routes/mesPhotos.js";
 import { synchroPikcloudRouter } from "./routes/synchroPikcloud.js";
 import { souvenirRouter } from "./routes/souvenir.js";
 import { webhookMailjetRouter } from "./routes/webhookMailjet.js";
+import { rgpdRouter } from "./routes/rgpd.js";
+import { modelesMailRouter } from "./routes/modelesMail.js";
 import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
 import { souvenirLieuRouter } from "./routes/souvenirLieu.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
@@ -78,6 +80,14 @@ export function creerApp() {
 
   // Page souvenir (myevent.selfizee.fr) : séances et codes pour son serveur (secret partagé), visuels sur URL signée
   app.use("/souvenir/v1", express.json({ limit: "8kb" }), souvenirRouter);
+
+  // Plateforme RGPD (rgpd.selfizee.fr) : données d'une adresse sur le lien chiffré envoyé par mail, sans connexion
+  app.use(
+    "/rgpd/v1",
+    cors({ origin: process.env.RGPD_CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? "*" }),
+    express.json({ limit: "8kb" }),
+    rgpdRouter
+  );
 
   // Webhook PikCloud : médias des séances, secret partagé X-Synchro-Token, pas de CORS (machine à machine)
   app.use("/webhooks/v1/pikcloud", express.json({ limit: "64kb" }), synchroPikcloudRouter);
@@ -148,6 +158,7 @@ export function creerApp() {
   app.use("/api/commissions", commissionsRouter);
   app.use("/api/reversements", reversementsRouter);
   app.use("/api/alertes", alertesRouter);
+  app.use("/api/modeles-mail", modelesMailRouter);
   app.use("/api/rapprochement", requirePerm("rapprochement.view"), rapprochementRouter);
 
   app.use((err: Error & { type?: string; status?: number }, _req: Request, res: Response, _next: NextFunction) => {
