@@ -8,7 +8,7 @@ import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../m
 import { conditionsLieu, conditionsVentes, et, lireFiltres, periodesComparaison, ymd, type Filtres } from "../stats/filtres.js";
 import { joursOuverts } from "../alertes/ouverture.js";
 import { disponibilite } from "../stats/disponibilite.js";
-import { apercusCadres, entonnoir, photosPrisesParcours } from "../stats/parcours.js";
+import { apercusCadres, entonnoir, parcoursParTranche, photosPrisesParcours } from "../stats/parcours.js";
 import { userCan } from "../middleware/permissions.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
@@ -501,6 +501,15 @@ statsRouter.get(
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const f = filtresAutorises(req);
     res.json({ periode: periode(f), ...(await entonnoir(f, optionsParcours(req.query))) });
+  })
+);
+
+// GET /api/stats/parcours/par-heure?du=&au=&soirs=&<filtres> — les mêmes indicateurs par tranche de 2 h (page « Par heure »)
+statsRouter.get(
+  "/parcours/par-heure",
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const f = filtresAutorises(req);
+    res.json({ periode: periode(f), ...(await parcoursParTranche(f, optionsParcours(req.query))) });
   })
 );
 

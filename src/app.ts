@@ -8,6 +8,9 @@ import { lieuxRouter } from "./routes/lieux.js";
 import { accesLieuRouter } from "./routes/accesLieu.js";
 import { affectationsRouter, bornesRouter } from "./routes/bornes.js";
 import { statsRouter } from "./routes/stats.js";
+import { analyseLieuxRouter } from "./routes/analyseLieux.js";
+import { analysePaiementsRouter } from "./routes/analysePaiements.js";
+import { ficheLieuStatsRouter } from "./routes/ficheLieuStats.js";
 import { exportRouter } from "./routes/exports.js";
 import { utilisateursRouter } from "./routes/utilisateurs.js";
 import { commissionsRouter, reversementsRouter } from "./routes/commissions.js";
@@ -153,6 +156,10 @@ export function creerApp() {
   app.use("/api/affectations", requirePerm("bornes.view"), affectationsRouter);
   app.use("/api/stats/segments", requirePerm("ventes.view"), segmentsRouter);
   app.use("/api/stats/contexte", requirePerm("ventes.view"), contexteRouter);
+  // Analyses des maquettes du 10/11 : avant /api/stats (les paiements ont leur propre droit)
+  app.use("/api/stats/lieux-analyse", requirePerm("ventes.view"), analyseLieuxRouter);
+  app.use("/api/stats/paiements-analyse", requirePerm("paiements.view"), analysePaiementsRouter);
+  app.use("/api/stats/fiche-lieu", requirePerm("ventes.view"), ficheLieuStatsRouter);
   app.use("/api/stats", requirePerm("ventes.view"), statsRouter);
   app.use("/api/export", requirePerm("ventes.export"), exportRouter);
   app.use("/api/previsions", requirePerm("ventes.view"), previsionsRouter);

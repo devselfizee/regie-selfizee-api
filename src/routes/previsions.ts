@@ -64,7 +64,16 @@ previsionsRouter.get(
       ids.length
         ? (await prisma.aggJour.aggregate({ where: { lieuId: { in: ids }, jour: { gte: a, lte: b } }, _sum: { caTtcCents: true } }))._sum.caTtcCents ?? 0
         : 0;
-    const [n1Cents, precedentCents, ratioHt] = await Promise.all([ca(n1.du, n1.au), ca(prec.du, prec.au), partHt(ids)]);
+    // Mois précédent lieu par lieu : « vs mois précédent » du détail par lieu (page Lieux, onglet Analyse)
+    const precedentParLieu = async () =>
+      new Map(
+        ids.length
+          ? (
+              await prisma.aggJour.groupBy({ by: ["lieuId"], where: { lieuId: { in: ids }, jour: { gte: prec.du, lte: prec.au } }, _sum: { caTtcCents: true } })
+            ).map((g) => [g.lieuId, g._sum.caTtcCents ?? 0])
+          : []
+      );
+    const [n1Cents, precedentCents, ratioHt, parLieu] = await Promise.all([ca(n1.du, n1.au), ca(prec.du, prec.au), partHt(ids), precedentParLieu()]);
 
     const tous = [...previsions.values()];
     const somme = (f: (x: (typeof tous)[number]) => number) => tous.reduce((s, x) => s + f(x), 0);
@@ -91,7 +100,7 @@ previsionsRouter.get(
       lieuxPeuFiables: tous.filter((x) => !x.fiable).length,
       jours,
       lieux: lieux
-        .map((l) => ({ id: l.id, enseigne: l.enseigne, ville: l.ville, ...resume(previsions.get(l.id)!) }))
+        .map((l) => ({ id: l.id, enseigne: l.enseigne, ville: l.ville, ...resume(previsions.get(l.id)!), precedentCents: parLieu.get(l.id) ?? 0 }))
         .sort((a, b) => b.totalCents - a.totalCents),
     });
   })
