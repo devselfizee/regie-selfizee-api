@@ -205,8 +205,6 @@ describe("lecture et export", () => {
       { label: "Prénom", value: "Léa", contactId: "prenom" },
       { label: "Recevoir les offres de La Ruche", value: "Oui", contactId: "optinLieu", options: ["Oui", "Non"] },
       { label: "Recevoir les actualités de Selfizee", value: "Non", contactId: "optinSelfizee", options: ["Oui", "Non"] },
-      { label: "Adresse IP (tronquée)", value: "90.12.34.0" },
-      { label: "Navigateur", value: "Safari" },
     ]);
     expect(r.events[1].records[0].photo).toBeNull(); // RHAL : aucun média reçu
     expect(JSON.stringify(r)).not.toContain("ami@exemple.fr");

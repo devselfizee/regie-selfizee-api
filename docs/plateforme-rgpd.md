@@ -7,7 +7,7 @@ sans connexion, protégée par le jeton du lien envoyé par mail.
 ## Données concernées
 
 Les inscriptions « Recevoir mes photos » de la page souvenir (`souvenir_inscriptions`) : adresse, prénom,
-consentements (lieu, Selfizee), IP tronquée, navigateur, lot de la carte à gratter, et la photo de la séance.
+consentements (lieu, Selfizee), lot de la carte à gratter, et la photo de la séance. L'IP tronquée et le navigateur, gardés en base, ne sont ni affichés ni exportés (effacés avec les données).
 
 - un **événement** = un code d'événement de la Régie (`id` = le code, `name` = « Lieu (Ville) — Événement ») ;
 - un **enregistrement** = une inscription (`id` = son uuid), avec la photo de la séance (URL signée, 2 h).

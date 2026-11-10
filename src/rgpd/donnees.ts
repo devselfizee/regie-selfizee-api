@@ -46,8 +46,6 @@ const selection = {
   prenom: true,
   optinLieu: true,
   optinSelfizee: true,
-  ipTronquee: true,
-  userAgent: true,
   lieuId: true,
   createdAt: true,
   evenement: { select: { nom: true } },
@@ -86,8 +84,6 @@ function champs(i: Inscription): Champ[] {
   if (i.carte?.reveleeLe && i.carte.lot !== "none") {
     c.push({ label: "Carte à gratter", value: `${LIBELLES_LOT[i.carte.lot] ?? i.carte.lot}${i.carte.codeRemise ? ` (code ${i.carte.codeRemise.code})` : ""}` });
   }
-  if (i.ipTronquee) c.push({ label: "Adresse IP (tronquée)", value: i.ipTronquee });
-  if (i.userAgent) c.push({ label: "Navigateur", value: i.userAgent });
   return c;
 }
 
