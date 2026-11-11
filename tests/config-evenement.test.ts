@@ -92,6 +92,18 @@ describe("contrôles avant publication", () => {
     expect(controler(sansQr, true).some((c) => c.message.includes("pas de collecte"))).toBe(true);
     expect(controler(laRuche(), true).some((c) => c.message.includes("15x20"))).toBe(true);
   });
+
+  it("compare début et fin avec leurs heures ; sans heure, une journée entière", () => {
+    const r = laRuche();
+    r.gabarits = { choisis: [{ id: "bandelette", gabarit: "bandelette" }], accueil: [] };
+    r.lieu = { ...r.lieu, dateDebut: "2026-11-12", dateFin: "2026-11-12", heureDebut: null, heureFin: null };
+    expect(erreurs(r)).not.toContain("La fin est avant le début.");
+    r.lieu = { ...r.lieu, heureDebut: "20:00", heureFin: "06:00" };
+    expect(erreurs(r)).toContain("La fin est avant le début.");
+    r.lieu = { ...r.lieu, dateFin: "2026-11-13" };
+    expect(erreurs(r)).not.toContain("La fin est avant le début.");
+    expect(() => reglagesSchema.parse({ ...r, lieu: { ...r.lieu, heureDebut: "25:00" } })).toThrow();
+  });
 });
 
 describe("réglages", () => {

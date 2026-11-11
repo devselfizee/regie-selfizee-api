@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { type UtilisateurRequest } from "../middleware/utilisateur.js";
-import { avecGrilleDuLieu, avecInfosDuLieu, controler, infosLieuSchema, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
+import { avecGrilleDuLieu, avecInfosDuLieu, controler, heureSchema, infosLieuSchema, instantsDe, reglagesParDefaut, reglagesSchema, type Reglages } from "../config-evenement/reglages.js";
 import { grilleEffective } from "../tarifs/grille.js";
 import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
 import { genererZip } from "../config-evenement/zip.js";
@@ -86,6 +86,21 @@ function reponse({ lieu, evenement: e, horaires, tarifsLieu, infosLieu }: Charge
 
 const nomSchema = z.string().trim().min(1).max(80);
 
+// Nom et programmation saisis à la création ou à la copie d'un événement ; heures facultatives (toute la journée)
+const saisieSchema = z.object({
+  nom: nomSchema,
+  dateDebut: z.iso.date(),
+  dateFin: z.iso.date(),
+  heureDebut: heureSchema.nullable().default(null),
+  heureFin: heureSchema.nullable().default(null),
+});
+function lireSaisie(corps: unknown) {
+  const saisie = saisieSchema.parse(corps);
+  const { debut, fin } = instantsDe(saisie);
+  if (fin <= debut) throw new HttpError(400, "DATES", "La fin est avant le début.");
+  return saisie;
+}
+
 // ─── Infos du lieu pour la borne ────────────────────────────
 
 /** Les infos du lieu et ses horaires (lus de la fiche du lieu, la borne se met en veille en dehors). */
@@ -140,6 +155,9 @@ configEvenementRouter.get(
           const r = reglagesSchema.parse(e.reglages);
           return {
             id: e.id, nom: e.nom, code: e.code, dateDebut: r.lieu.dateDebut, dateFin: r.lieu.dateFin,
+            heureDebut: r.lieu.heureDebut, heureFin: r.lieu.heureFin,
+            // Reprend les tarifs du lieu (chaîne d'héritage de l'onglet Configuration)
+            tarifsHerites: r.tarifs.herite,
             version: e.version, publieeLe: e.publieeLe, modifieDepuisPublication: e.publieeLe === null || e.updatedAt > e.publieeLe,
           };
         })
@@ -148,7 +166,7 @@ configEvenementRouter.get(
   })
 );
 
-// POST /api/lieux/:id/evenements-ponctuels { nom, dateDebut, dateFin } — crée un événement ponctuel : il
+// POST /api/lieux/:id/evenements-ponctuels { nom, dateDebut, dateFin, heureDebut?, heureFin? } — crée un événement ponctuel : il
 // reprend les réglages de l'événement habituel (ou ceux par défaut) et les tarifs du lieu, sans aucun format
 // (on ajoute ceux qu'on personnalise ; « Dupliquer » sert à repartir d'un événement avec ses formats)
 configEvenementRouter.post(
@@ -156,13 +174,12 @@ configEvenementRouter.post(
   modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
-    const saisie = z.object({ nom: nomSchema, dateDebut: z.iso.date(), dateFin: z.iso.date() }).parse(req.body);
-    if (saisie.dateFin < saisie.dateDebut) throw new HttpError(400, "DATES", "La date de fin est avant la date de début.");
+    const saisie = lireSaisie(req.body);
     const { lieu, evenement: habituel } = await charger(lieuId, null);
     const base = habituel ? reglagesSchema.parse(habituel.reglages) : reglagesParDefaut(lieu);
     const reglages: Reglages = {
       ...base,
-      lieu: { ...base.lieu, dateDebut: saisie.dateDebut, dateFin: saisie.dateFin },
+      lieu: { ...base.lieu, dateDebut: saisie.dateDebut, dateFin: saisie.dateFin, heureDebut: saisie.heureDebut, heureFin: saisie.heureFin },
       tarifs: { ...base.tarifs, herite: true },
       gabarits: { choisis: [], accueil: [] },
     };
@@ -174,7 +191,7 @@ configEvenementRouter.post(
   })
 );
 
-// POST …/dupliquer { nom, dateDebut, dateFin } — crée un événement ponctuel copié de celui-ci (l'habituel ou
+// POST …/dupliquer { nom, dateDebut, dateFin, heureDebut?, heureFin? } — crée un événement ponctuel copié de celui-ci (l'habituel ou
 // un ponctuel) : mêmes réglages (formats, tarifs, options, thème) et mêmes cadres, aux dates saisies, avec
 // son propre code et mot de passe ; à publier comme un nouveau. L'événement copié ne change pas.
 configEvenementRouter.post(
@@ -182,12 +199,14 @@ configEvenementRouter.post(
   modifier,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const { lieuId, eid } = cible(req);
-    const saisie = z.object({ nom: nomSchema, dateDebut: z.iso.date(), dateFin: z.iso.date() }).parse(req.body);
-    if (saisie.dateFin < saisie.dateDebut) throw new HttpError(400, "DATES", "La date de fin est avant la date de début.");
+    const saisie = lireSaisie(req.body);
     const source = await evenementDe(lieuId, eid);
     if (!source) throw new HttpError(400, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
     const base = reglagesSchema.parse(source.reglages);
-    const reglages: Reglages = { ...base, lieu: { ...base.lieu, dateDebut: saisie.dateDebut, dateFin: saisie.dateFin } };
+    const reglages: Reglages = {
+      ...base,
+      lieu: { ...base.lieu, dateDebut: saisie.dateDebut, dateFin: saisie.dateFin, heureDebut: saisie.heureDebut, heureFin: saisie.heureFin },
+    };
     const e = await creerEvenement({ lieuId, habituel: false, nom: saisie.nom, reglages });
     // Les cadres gardent leur composition : les réglages copiés pointent sur les mêmes identifiants
     const cadres = await prisma.cadreEvenement.findMany({

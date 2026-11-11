@@ -27,6 +27,14 @@ export const LOTS = ["free", "pct50", "pct30", "none"] as const;
 const texte = z.string().trim().max(200);
 const facultatif = (s: z.ZodType<string>) => s.nullable().optional().transform((v) => (v ? v : null));
 const jour = z.iso.date();
+/** Heure « HH:mm » (début et fin d'un événement programmé), maquettes du 10/11/2026 */
+export const heureSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Heure attendue au format HH:mm");
+
+/** Début et fin d'un événement en « AAAA-MM-JJTHH:mm » : sans heure, du début du premier jour à la fin du dernier. */
+export const instantsDe = (l: { dateDebut: string; dateFin: string; heureDebut?: string | null; heureFin?: string | null }) => ({
+  debut: `${l.dateDebut}T${l.heureDebut ?? "00:00"}`,
+  fin: `${l.dateFin}T${l.heureFin ?? "24:00"}`,
+});
 
 // Une composition de l'écran de choix : un gabarit du kit, avec son cadre au studio s'il y en a un.
 // Un même gabarit peut revenir plusieurs fois (8 polas, 2 bandelettes…), chacun son id.
@@ -43,6 +51,9 @@ export const reglagesSchema = z
       ville: facultatif(texte),
       dateDebut: jour,
       dateFin: jour,
+      // Heures de début et de fin (null : toute la journée), ajoutées le 11/11/2026
+      heureDebut: heureSchema.nullable().default(null),
+      heureFin: heureSchema.nullable().default(null),
       ton: z.enum(TONS).default("club"),
       illustrations: z.enum(ILLUSTRATIONS).default("festif"),
       illustrationsAccueil: z.enum(ILLUSTRATIONS_ACCUEIL).default("memes"),
@@ -129,6 +140,8 @@ export function reglagesParDefaut(lieu: { enseigne: string; ville: string | null
       ville: lieu.ville,
       dateDebut: debut.toISOString().slice(0, 10),
       dateFin: fin.toISOString().slice(0, 10),
+      heureDebut: null,
+      heureFin: null,
       ton: "club",
       illustrations: "festif",
       illustrationsAccueil: "memes",
@@ -168,7 +181,8 @@ export function controler(r: Reglages, aDesHoraires: boolean): Controle[] {
   const erreur = (message: string) => c.push({ niveau: "erreur", message });
   const avertir = (message: string) => c.push({ niveau: "avertissement", message });
 
-  if (r.lieu.dateFin < r.lieu.dateDebut) erreur("La date de fin est avant la date de début.");
+  const { debut, fin } = instantsDe(r.lieu);
+  if (fin <= debut) erreur("La fin est avant le début.");
 
   const choisis = r.gabarits.choisis;
   const ids = choisis.map((c) => c.id);
