@@ -50,11 +50,11 @@ export function cheminsDansLeZip(images: { cible: CibleIllustration; forme: stri
 }
 
 /**
- * Les images à copier dans le zip pour chaque série : photos de l'événement (« photos ») ou d'une série de
+ * Les images à copier dans le zip pour chaque série : photos de l'événement (« photos »), du client (« client ») ou d'une série de
  * la bibliothèque (« serie ») ; rien pour les séries du logiciel, la caméra ou les cases unies. Les photos
  * de l'événement passent avant une série (mémo) : un seul choix par série, donc pas de mélange.
  */
-export async function illustrationsAExporter(reglages: Reglages, evenementId: number) {
+export async function illustrationsAExporter(reglages: Reglages, evenementId: number, lieuId: number) {
   const l = reglages.lieu;
   const sources: [CibleIllustration, string, number | null][] = [
     ["cadres", l.illustrations, l.illustrationsSerieId],
@@ -64,6 +64,9 @@ export async function illustrationsAExporter(reglages: Reglages, evenementId: nu
   for (const [cible, choix, serieId] of sources) {
     if (choix === "photos") {
       const p = await prisma.illustrationEvenement.findMany({ where: { configEvenementId: evenementId, cible }, select: { forme: true, image: true }, orderBy: { id: "asc" } });
+      images.push(...p.map((i) => ({ cible, ...i })));
+    } else if (choix === "client") {
+      const p = await prisma.illustrationLieu.findMany({ where: { lieuId }, select: { forme: true, image: true }, orderBy: { id: "asc" } });
       images.push(...p.map((i) => ({ cible, ...i })));
     } else if (choix === "serie" && serieId) {
       const p = await prisma.illustrationSerieImage.findMany({ where: { serieId }, select: { forme: true, image: true }, orderBy: { id: "asc" } });

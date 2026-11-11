@@ -20,8 +20,9 @@ export const TONS = ["club", "bar", "famille", "pro"] as const;
 // (festif, chic), photos de l'événement (zip), caméra en direct, ou cases unies. L'accueil peut avoir sa
 // propre série (« memes » : celle des cadres). Mémo ILLUSTRATIONS-ADMIN-WEB du 05/11/2026.
 // « serie » : une série de la bibliothèque (illustrationsSerieId), copiée dans le zip comme les photos.
-export const ILLUSTRATIONS = ["festif", "chic", "serie", "photos", "camera", "aucune"] as const;
-export const ILLUSTRATIONS_ACCUEIL = ["memes", "festif", "chic", "serie", "photos"] as const;
+// « client » : les photos du client, enregistrées sur le lieu et reprises par tous ses événements (11/11/2026).
+export const ILLUSTRATIONS = ["festif", "chic", "serie", "client", "photos", "camera", "aucune"] as const;
+export const ILLUSTRATIONS_ACCUEIL = ["memes", "festif", "chic", "serie", "client", "photos"] as const;
 export const LOTS = ["free", "pct50", "pct30", "none"] as const;
 
 const texte = z.string().trim().max(200);

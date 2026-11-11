@@ -290,7 +290,7 @@ souvenirRouter.get(
   })
 );
 
-// GET /souvenir/v1/illustrations/:origine/:id?exp=&sig= — photo d'exemple de l'événement (e) ou d'une série (s)
+// GET /souvenir/v1/illustrations/:origine/:id?exp=&sig= — photo d'exemple de l'événement (e), d'une série (s) ou du client (l)
 souvenirRouter.get(
   "/illustrations/:origine/:id",
   asynchrone(async (req, res) => {
@@ -302,7 +302,9 @@ souvenirRouter.get(
         ? await prisma.illustrationEvenement.findUnique({ where: { id }, select: { image: true } })
         : req.params.origine === "s"
           ? await prisma.illustrationSerieImage.findUnique({ where: { id }, select: { image: true } })
-          : null;
+          : req.params.origine === "l"
+            ? await prisma.illustrationLieu.findUnique({ where: { id }, select: { image: true } })
+            : null;
     if (!i) throw new HttpError(404, "INTROUVABLE");
     entetes(res, "image/jpeg", req.query.exp);
     res.end(Buffer.from(i.image));

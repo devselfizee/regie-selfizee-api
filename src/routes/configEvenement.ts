@@ -302,10 +302,10 @@ configEvenementRouter.get(
 );
 
 /** Le zip de l'événement pour ces réglages et ce config.json (cadres, aperçus, photos d'exemple, kit). */
-async function zipDe(evenementId: number, config: Awaited<ReturnType<typeof configDe>>, reglages: Reglages, maintenant: Date) {
+async function zipDe(evenementId: number, lieuId: number, config: Awaited<ReturnType<typeof configDe>>, reglages: Reglages, maintenant: Date) {
   return genererZip({
     config, modele: lireModele(), reglages, cadres: await cadresDe(evenementId, true),
-    illustrations: await illustrationsAExporter(reglages, evenementId),
+    illustrations: await illustrationsAExporter(reglages, evenementId, lieuId),
     maintenant,
   });
 }
@@ -328,7 +328,7 @@ configEvenementRouter.post(
     const maintenant = new Date();
     const config = await configDe(charge, maintenant, reglages);
     // Zip figé avec la version : la borne charge exactement ce qui a été publié (/ingest/v1/evenements)
-    const zip = await zipDe(e.id, config, reglages, maintenant);
+    const zip = await zipDe(e.id, e.lieuId, config, reglages, maintenant);
     const publie = await prisma.$transaction(async (db) => {
       // Seulement si personne n'a publié entre-temps : la version doit être celle du zip rangé
       const maj = await db.configEvenement.updateMany({
@@ -362,7 +362,7 @@ configEvenementRouter.get(
     if (!e) throw new HttpError(404, "PAS_ENCORE_ENREGISTRE", "Enregistrez d'abord la fiche événement");
     const reglages = reglagesEffectifs(e.reglages, charge);
     const config = await configDe(charge, e.updatedAt, reglages);
-    const zip = await zipDe(e.id, config, reglages, e.updatedAt);
+    const zip = await zipDe(e.id, e.lieuId, config, reglages, e.updatedAt);
     res.setHeader("Content-Disposition", `attachment; filename="evenement-${e.code}.zip"`);
     res.type("application/zip").send(zip);
   })

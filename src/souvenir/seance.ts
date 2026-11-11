@@ -148,7 +148,7 @@ export async function lireSeanceSouvenir(j: JetonSouvenir, base: string, mainten
     },
     ton: r.lieu.ton,
     liens: { avisGoogle: r.lieu.avisGoogleUrl, instagram: r.lieu.instagram, tiktok: r.lieu.tiktok, hashtag: r.lieu.hashtag },
-    illustrations: await illustrationsDe(r, e.id, base, validiteS),
+    illustrations: await illustrationsDe(r, e.id, e.lieuId, base, validiteS),
   };
 
   const token = ecrireJeton(j.code, j.photoUuid);
@@ -174,11 +174,15 @@ export async function lireSeanceSouvenir(j: JetonSouvenir, base: string, mainten
 }
 
 /** Photos d'exemple choisies pour l'événement (les siennes ou une série de la bibliothèque), en URLs signées. */
-async function illustrationsDe(r: Reglages, evenementId: number, base: string, validiteS: number): Promise<string[]> {
+async function illustrationsDe(r: Reglages, evenementId: number, lieuId: number, base: string, validiteS: number): Promise<string[]> {
   const l = r.lieu;
   if (l.illustrations === "photos") {
     const p = await prisma.illustrationEvenement.findMany({ where: { configEvenementId: evenementId, cible: "cadres" }, select: { id: true }, orderBy: { id: "asc" }, take: ILLUSTRATIONS_MAX });
     return p.map((i) => urlSignee(base, `/illustrations/e/${i.id}`, validiteS));
+  }
+  if (l.illustrations === "client") {
+    const p = await prisma.illustrationLieu.findMany({ where: { lieuId }, select: { id: true }, orderBy: { id: "asc" }, take: ILLUSTRATIONS_MAX });
+    return p.map((i) => urlSignee(base, `/illustrations/l/${i.id}`, validiteS));
   }
   if (l.illustrations === "serie" && l.illustrationsSerieId) {
     const p = await prisma.illustrationSerieImage.findMany({ where: { serieId: l.illustrationsSerieId }, select: { id: true }, orderBy: { id: "asc" }, take: ILLUSTRATIONS_MAX });

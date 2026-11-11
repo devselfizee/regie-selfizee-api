@@ -13,7 +13,7 @@ import { genererZip } from "../src/config-evenement/zip.js";
 const base = vi.hoisted(() => {
   // Sans Keycloak : l'application prend l'utilisateur de développement (admin)
   delete process.env.KEYCLOAK_URL;
-  return { photos: [] as Record<string, unknown>[], series: [] as Record<string, unknown>[], images: [] as Record<string, unknown>[], suivant: 1, touche: 0 };
+  return { photos: [] as Record<string, unknown>[], series: [] as Record<string, unknown>[], images: [] as Record<string, unknown>[], client: [] as Record<string, unknown>[], suivant: 1, touche: 0 };
 });
 vi.mock("../src/lib/prisma.js", () => ({
   prisma: {
@@ -39,6 +39,9 @@ vi.mock("../src/lib/prisma.js", () => ({
         base.photos = base.photos.filter((p) => p.id !== where.id);
         return { count: avant - base.photos.length };
       },
+    },
+    illustrationLieu: {
+      findMany: async ({ where }: { where: { lieuId: number } }) => base.client.filter((p) => p.lieuId === where.lieuId),
     },
     illustrationSerie: {
       findMany: async () => base.series.map((x) => ({ ...x, images: base.images.filter((i) => i.serieId === x.id) })),
@@ -132,7 +135,7 @@ describe("config.json et zip", () => {
     const image = new Uint8Array([1]);
     base.photos = [{ id: 1, cible: "cadres", forme: "carre", image }, { id: 2, cible: "accueil", forme: "portrait", image }];
     base.images = [{ id: 3, serieId: 9, forme: "paysage", image }];
-    const resume = async (r: Reglages) => (await illustrationsAExporter(r, 70)).map((i) => `${i.cible}:${i.forme}`);
+    const resume = async (r: Reglages) => (await illustrationsAExporter(r, 70, 7)).map((i) => `${i.cible}:${i.forme}`);
     expect(await resume(avec("photos", "memes"))).toEqual(["cadres:carre"]);
     expect(await resume(avec("photos", "photos"))).toEqual(["cadres:carre", "accueil:portrait"]);
     expect(await resume(avec("festif", "memes"))).toEqual([]);
@@ -141,6 +144,11 @@ describe("config.json et zip", () => {
     serie.lieu.illustrationsAccueilSerieId = 9;
     expect(await resume(serie)).toEqual(["cadres:paysage", "accueil:paysage"]);
     expect(reglagesBorne(serie)).toMatchObject({ illustrationSet: "festif", welcomeIllustrationSet: "illustrations-accueil" });
+    // Photos du client : celles du lieu, reprises par tous ses événements
+    base.client = [{ id: 4, lieuId: 7, forme: "portrait", image }, { id: 5, lieuId: 8, forme: "carre", image }];
+    expect(await resume(avec("client", "client"))).toEqual(["cadres:portrait", "accueil:portrait"]);
+    expect(reglagesBorne(avec("client", "client"))).toMatchObject({ illustrationSet: "festif", welcomeIllustrationSet: "illustrations-accueil" });
+    base.client = [];
   });
 
   it("zip : les images retenues, rangées par série et par forme", async () => {
