@@ -1,9 +1,11 @@
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone } from "../lib/http.js";
 import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { aujourdhui, moisDe, previsionCommission, previsionMois, prevoirLieux, resume } from "../previsions/service.js";
 import { userCan } from "../middleware/permissions.js";
+import { conditionsLieu, et, lireFiltres } from "../stats/filtres.js";
 
 // Prévisions de CA (CDC V3 « pilotage »)
 export const previsionsRouter = Router();
@@ -43,15 +45,23 @@ previsionsRouter.get(
   })
 );
 
-// GET /api/previsions/global — mois en cours, tous les lieux actifs du périmètre
+// GET /api/previsions/global — mois en cours, lieux actifs du périmètre retenus par les filtres de lieu (parc, lieu…)
 previsionsRouter.get(
   "/global",
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const jour = aujourdhui();
     const { du, au } = moisDe(jour);
     const p = perimetreLieux(req.utilisateur);
+    // Filtres de lieu de la page : le parc Selfizee et le parc client donnaient la même prévision (retour de Sébastien du 12/11)
+    const retenus = (
+      await prisma.$queryRaw<{ id: number }[]>`SELECT l.id FROM lieux l WHERE ${et([Prisma.sql`l.statut = 'ACTIF'`, ...conditionsLieu(lireFiltres(req.query))])}`
+    ).map((l) => l.id);
     const lieux = await prisma.lieu.findMany({
-      where: { statut: "ACTIF", ...(p?.commercialId ? { commercialId: p.commercialId } : {}), ...(p?.lieuId !== undefined ? { id: p.lieuId } : {}) },
+      where: {
+        id: { in: retenus },
+        ...(p?.commercialId ? { commercialId: p.commercialId } : {}),
+        ...(p?.lieuId !== undefined ? { AND: [{ id: p.lieuId }] } : {}),
+      },
       select: { id: true, enseigne: true, ville: true, codePostal: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true },
     });
     const previsions = await prevoirLieux(lieux, du, au, jour);

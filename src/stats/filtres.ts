@@ -93,6 +93,8 @@ export function conditionsLieu(f: Filtres): Prisma.Sql[] {
   if (f.capaciteMin !== undefined) c.push(Prisma.sql`l.capacite_accueil >= ${f.capaciteMin}`);
   if (f.capaciteMax !== undefined) c.push(Prisma.sql`l.capacite_accueil <= ${f.capaciteMax}`);
   if (f.visibiliteMin !== undefined) c.push(Prisma.sql`l.visibilite >= ${f.visibiliteMin}`);
+  // Lieux de démonstration (« [DÉMO] … ») : hors des chiffres, sauf choisis nommément (retour de Sébastien du 12/11)
+  c.push(f.lieuId?.length ? Prisma.sql`(NOT l.demo OR l.id IN (${Prisma.join(f.lieuId)}))` : Prisma.sql`NOT l.demo`);
   return c;
 }
 

@@ -65,7 +65,8 @@ export async function previsionCommission(lieuId: number, jour = aujourdhui()) {
     where: { lieuId, dateEffet: { lte: jour }, OR: [{ dateFin: null }, { dateFin: { gt: jour } }] },
     include: { paliers: true, lieu: { select: { saisons: { select: { debut: true, fin: true } } } } },
   });
-  if (!c) return null;
+  // « Aucune commission » : rien à prévoir, la fiche n'affiche pas le bloc (retour de Sébastien du 12/11)
+  if (!c || c.modele === "AUCUNE") return null;
   const p = periodesDuContrat(c, jour, c.lieu.saisons).find((x) => x.debut <= jour && x.fin >= jour);
   if (!p) return null;
 
