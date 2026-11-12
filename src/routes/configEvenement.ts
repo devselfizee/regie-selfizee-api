@@ -145,19 +145,25 @@ configEvenementRouter.get(
   voir,
   asynchrone(async (req, res) => {
     const lieuId = Number(req.params.id);
-    const liste = await prisma.configEvenement.findMany({
-      where: { lieuId, habituel: false },
-      select: { id: true, nom: true, code: true, reglages: true, version: true, publieeLe: true, updatedAt: true },
-    });
+    const [liste, { grille }] = await Promise.all([
+      prisma.configEvenement.findMany({
+        where: { lieuId, habituel: false },
+        select: { id: true, nom: true, code: true, reglages: true, version: true, publieeLe: true, updatedAt: true },
+      }),
+      grilleEffective(lieuId),
+    ]);
     res.json(
       liste
         .map((e) => {
-          const r = reglagesSchema.parse(e.reglages);
+          const r = avecGrilleDuLieu(reglagesSchema.parse(e.reglages), grille);
+          const { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents } = r.tarifs;
           return {
             id: e.id, nom: e.nom, code: e.code, dateDebut: r.lieu.dateDebut, dateFin: r.lieu.dateFin,
             heureDebut: r.lieu.heureDebut, heureFin: r.lieu.heureFin,
             // Reprend les tarifs du lieu (chaîne d'héritage de l'onglet Configuration)
             tarifsHerites: r.tarifs.herite,
+            // Tarifs pratiqués par l'événement (ceux du lieu s'il en hérite), affichés dans la liste
+            tarifs: { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents },
             version: e.version, publieeLe: e.publieeLe, modifieDepuisPublication: e.publieeLe === null || e.updatedAt > e.publieeLe,
           };
         })
@@ -228,6 +234,55 @@ configEvenementRouter.post(
       },
     });
     res.status(201).json({ id: e.id, nom: e.nom, code: e.code, cadres: cadres.length });
+  })
+);
+
+// POST /api/lieux/:id/evenements-ponctuels/:eid/devenir-defaut { supprimer? } — l'événement par défaut reprend le
+// contenu de cet événement (réglages, cadres, photos d'exemple) et garde son code : les bornes réglées sur le par
+// défaut n'ont rien à retaper ; il passe « modifié depuis la publication », à publier. Avec `supprimer`, l'événement
+// d'origine est supprimé ensuite (son code ne fonctionne plus) ; sinon il reste dans la liste.
+configEvenementRouter.post(
+  "/:id/evenements-ponctuels/:eid/devenir-defaut",
+  modifier,
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const { lieuId, eid } = cible(req);
+    const { supprimer } = z.object({ supprimer: z.boolean().default(false) }).parse(req.body ?? {});
+    const source = await evenementDe(lieuId, eid);
+    const { lieu, evenement: habituel } = await charger(lieuId, null);
+    const contenu = reglagesSchema.parse(source!.reglages);
+    // Le par défaut garde ses propres dates (il couvre tout le temps hors programmation)
+    const datesDefaut = (habituel ? reglagesSchema.parse(habituel.reglages) : reglagesParDefaut(lieu)).lieu;
+    const reglages: Reglages = {
+      ...contenu,
+      lieu: { ...contenu.lieu, dateDebut: datesDefaut.dateDebut, dateFin: datesDefaut.dateFin, heureDebut: datesDefaut.heureDebut, heureFin: datesDefaut.heureFin },
+    };
+    const defaut = habituel ?? (await creerEvenement({ lieuId, habituel: true, nom: null, reglages }));
+    const [cadres, illustrations] = await Promise.all([
+      prisma.cadreEvenement.findMany({
+        where: { configEvenementId: source!.id },
+        select: { compositionId: true, gabarit: true, nom: true, formatId: true, gabaritStudioId: true, nbPoses: true, canvas: true, image: true, vignette: true },
+      }),
+      prisma.illustrationEvenement.findMany({
+        where: { configEvenementId: source!.id },
+        select: { cible: true, forme: true, largeur: true, hauteur: true, image: true, vignette: true },
+        orderBy: { id: "asc" },
+      }),
+    ]);
+    await prisma.$transaction([
+      prisma.configEvenement.update({ where: { id: defaut.id }, data: { reglages: reglages as Prisma.InputJsonObject, updatedAt: new Date() } }),
+      prisma.cadreEvenement.deleteMany({ where: { configEvenementId: defaut.id } }),
+      prisma.illustrationEvenement.deleteMany({ where: { configEvenementId: defaut.id } }),
+      prisma.cadreEvenement.createMany({ data: cadres.map((c) => ({ ...c, lieuId, configEvenementId: defaut.id })) }),
+      prisma.illustrationEvenement.createMany({ data: illustrations.map((i) => ({ ...i, configEvenementId: defaut.id })) }),
+      ...(supprimer ? [prisma.configEvenement.delete({ where: { id: source!.id } })] : []),
+    ]);
+    await prisma.auditLog.create({
+      data: {
+        userId: req.utilisateur?.id ?? null, entite: "config_evenement", entiteId: String(defaut.id), action: "MODIFICATION",
+        apres: { devientDefaut: { id: source!.id, code: source!.code, nom: source!.nom }, cadres: cadres.length, origineSupprimee: supprimer },
+      },
+    });
+    res.json({ id: defaut.id, code: defaut.code, cadres: cadres.length, origineSupprimee: supprimer });
   })
 );
 

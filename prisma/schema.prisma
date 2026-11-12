@@ -614,6 +614,7 @@ model Transaction {
   @@index([borneId, horodatage])
   @@index([jourLocal])
   @@index([lieuId]) // file des transactions non affectées (lieu_id IS NULL)
+  @@index([pikcloudUuid]) // vente d'une séance (galerie, fiche d'un média)
   @@map("transactions")
 }
 

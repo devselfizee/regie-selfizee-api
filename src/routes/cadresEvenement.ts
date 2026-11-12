@@ -37,6 +37,26 @@ cadresEvenementRouter.get(
   })
 );
 
+// GET /api/lieux/:id/cadres-du-lieu?gabarit= — les cadres de tous les événements du lieu (par défaut et
+// personnalisés), sans leur contenu : le départ « Cadre du lieu » du studio, pour repartir d'un cadre existant.
+// Le contenu se lit ensuite sur la route du cadre (…/cadres/:composition de son événement).
+cadresEvenementRouter.get(
+  "/:id/cadres-du-lieu",
+  voir,
+  asynchrone(async (req, res) => {
+    const lieuId = Number(req.params.id);
+    if (!Number.isInteger(lieuId)) throw new HttpError(404, "INTROUVABLE");
+    const gabarit = z.string().max(20).optional().parse(req.query.gabarit || undefined);
+    const cadres = await prisma.cadreEvenement.findMany({
+      where: { lieuId, ...(gabarit ? { gabarit } : {}) },
+      select: { ...resume, evenement: { select: { id: true, nom: true, habituel: true, code: true } } },
+      orderBy: { updatedAt: "desc" },
+    });
+    // Le par défaut d'abord, puis les événements personnalisés, chacun avec ses cadres du plus récent au plus ancien
+    res.json(cadres.sort((a, b) => Number(b.evenement.habituel) - Number(a.evenement.habituel)));
+  })
+);
+
 // GET …/cadres/:composition — le cadre à rouvrir dans le studio (canvas compris, sans le rendu)
 cadresEvenementRouter.get(
   chemins("/cadres/:composition"),

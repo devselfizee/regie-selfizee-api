@@ -31,6 +31,8 @@ const filtresSchema = z.object({
   au: z.string().regex(JOUR).optional(),
   // Les séances de test (is_fake, testMode) sont cachées sauf demande
   tests: z.enum(["0", "1"]).optional(),
+  // Comme la galerie de BoothPay : seulement les séances payées, ou seulement celles sans vente
+  vente: z.enum(["payee", "sans"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   parPage: z.coerce.number().int().min(1).max(96).default(48),
 });
@@ -60,6 +62,34 @@ async function vignetteDataUrl(chemin: string | null): Promise<string | null> {
 
 type MediaListe = Prisma.MediaGetPayload<{ include: { evenement: typeof selectionEvenement } }>;
 
+/** Vente d'une séance dans la galerie : total encaissé (une séance peut avoir plusieurs paiements) et moyen. */
+interface VenteSeance {
+  montantTtcCents: number;
+  paiements: number;
+  moyenPaiement: string;
+}
+
+/**
+ * Séances payées du lieu, par photo_uuid : ventes acceptées et réelles (hors cartes de test), reliées à la
+ * séance par le photo_uuid PikCloud que la borne envoie avec la vente.
+ */
+async function seancesPayees(lieuId: number): Promise<Map<string, VenteSeance>> {
+  const ventes = await prisma.transaction.findMany({
+    where: { lieuId, statut: "ACCEPTEE", test: false, pikcloudUuid: { not: null } },
+    select: { pikcloudUuid: true, montantTtcCents: true, moyenPaiement: true },
+    orderBy: { horodatage: "asc" },
+  });
+  const parSeance = new Map<string, VenteSeance>();
+  for (const v of ventes) {
+    const s = parSeance.get(v.pikcloudUuid!);
+    if (s) {
+      s.montantTtcCents += v.montantTtcCents;
+      s.paiements++;
+    } else parSeance.set(v.pikcloudUuid!, { montantTtcCents: v.montantTtcCents, paiements: 1, moyenPaiement: v.moyenPaiement });
+  }
+  return parSeance;
+}
+
 async function versClient(m: MediaListe) {
   const ext = m.mediaChemin ? extensionDuChemin(m.mediaChemin) : "";
   return {
@@ -84,7 +114,8 @@ async function versClient(m: MediaListe) {
   };
 }
 
-// GET /api/lieux/:id/medias?evenement=&type=&du=&au=&tests=1&page=&parPage= — les médias du lieu, les plus récents d'abord
+// GET /api/lieux/:id/medias?evenement=&type=&du=&au=&tests=1&vente=payee|sans&page=&parPage= — les médias du lieu, les plus
+// récents d'abord, chacun avec sa vente ; `ventes` : séances payées et montant encaissé sur les filtres (hors filtre vente)
 mediasLieuRouter.get(
   "/:id/medias",
   voitMedias,
@@ -92,13 +123,28 @@ mediasLieuRouter.get(
     const lieuId = lieuParam(req);
     await verifierAccesLieu(req.utilisateur, lieuId);
     const f = filtresSchema.parse(req.query);
-    const where: Prisma.MediaWhereInput = {
+    const base: Prisma.MediaWhereInput = {
       lieuId,
       ...(f.evenement ? { configEvenementId: f.evenement } : {}),
       ...(f.type ? { typeMedia: f.type } : {}),
       ...(f.tests === "1" ? {} : { test: false }),
       ...(f.du || f.au ? { datePhoto: { ...(f.du ? { gte: minuitParis(f.du) } : {}), ...(f.au ? { lt: minuitParis(f.au, 1) } : {}) } } : {}),
     };
+    const payees = await seancesPayees(lieuId);
+    // Séances payées et montant sur les filtres choisis (sans le filtre vente) : une séance compte une fois
+    const seances = new Set(
+      (await prisma.media.findMany({ where: { ...base, photoUuid: { not: null } }, select: { photoUuid: true }, distinct: ["photoUuid"] }))
+        .map((m) => m.photoUuid!)
+        .filter((u) => payees.has(u))
+    );
+    const ventes = { seancesPayees: seances.size, montantTtcCents: [...seances].reduce((t, u) => t + payees.get(u)!.montantTtcCents, 0) };
+    const uuidsPayes = [...payees.keys()];
+    const where: Prisma.MediaWhereInput =
+      f.vente === "payee"
+        ? { ...base, photoUuid: { in: uuidsPayes } }
+        : f.vente === "sans"
+          ? { AND: [base, { OR: [{ photoUuid: null }, { photoUuid: { notIn: uuidsPayes } }] }] }
+          : base;
     const [total, lignes] = await Promise.all([
       prisma.media.count({ where }),
       prisma.media.findMany({
@@ -110,7 +156,13 @@ mediasLieuRouter.get(
         take: f.parPage,
       }),
     ]);
-    res.json({ total, page: f.page, parPage: f.parPage, medias: await Promise.all(lignes.map(versClient)) });
+    res.json({
+      total,
+      page: f.page,
+      parPage: f.parPage,
+      ventes,
+      medias: await Promise.all(lignes.map(async (m) => ({ ...(await versClient(m)), venteSeance: (m.photoUuid && payees.get(m.photoUuid)) || null }))),
+    });
   })
 );
 
