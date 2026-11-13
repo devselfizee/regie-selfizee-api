@@ -274,6 +274,8 @@ mediasRouter.get(
       sha256: m.sha256,
       telechargeLe: m.telechargeLe,
       derniereErreur: m.derniereErreur,
+      // JSON de la séance : ABSENT (PikCloud n'a envoyé que la photo), A_TELECHARGER, TELECHARGE ou ERREUR
+      dataStatut: m.dataStatut,
       vente,
       parcours,
     });
