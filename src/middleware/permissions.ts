@@ -152,7 +152,7 @@ export function droitPerimetre(me: DroitsMoi | null, permKey: string): boolean {
   return ((me.apps || {})[APP_KEY] || {})[permKey] === true;
 }
 
-/** Admin de la plateforme (jeton Keycloak) : sert à des choix par défaut, jamais à autoriser */
+/** Admin de la plateforme (jeton Keycloak) : choix par défaut, et seul droit de supprimer un lieu ou une borne (super admin) */
 export async function estAdminPlateforme(req: Request): Promise<boolean> {
   if (sansKeycloak()) {
     const s = moiSimule(req);

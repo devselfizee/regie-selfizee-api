@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
-import { requirePerm, libellesProfils } from "../middleware/permissions.js";
+import { requirePerm, libellesProfils, estAdminPlateforme } from "../middleware/permissions.js";
 
 export const utilisateursRouter = Router();
 
@@ -11,7 +11,8 @@ export const utilisateursRouter = Router();
 utilisateursRouter.get(
   "/moi",
   asynchrone<UtilisateurRequest>(async (req, res) => {
-    res.json(req.utilisateur);
+    // superAdmin : admin de la plateforme, seul à pouvoir supprimer un lieu ou une borne
+    res.json({ ...req.utilisateur, superAdmin: await estAdminPlateforme(req) });
   })
 );
 

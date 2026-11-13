@@ -31,7 +31,7 @@ supervisionRouter.get(
     const maintenant = new Date();
     const debut = debutJournee(maintenant);
     const bornes = await prisma.borne.findMany({
-      where: { statut: { not: "REFORMEE" } },
+      where: { statut: { not: "REFORMEE" }, supprimeLe: null },
       select: {
         id: true,
         identifiant: true,

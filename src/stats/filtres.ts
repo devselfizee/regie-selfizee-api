@@ -93,6 +93,8 @@ export function conditionsLieu(f: Filtres): Prisma.Sql[] {
   if (f.capaciteMin !== undefined) c.push(Prisma.sql`l.capacite_accueil >= ${f.capaciteMin}`);
   if (f.capaciteMax !== undefined) c.push(Prisma.sql`l.capacite_accueil <= ${f.capaciteMax}`);
   if (f.visibiliteMin !== undefined) c.push(Prisma.sql`l.visibilite >= ${f.visibiliteMin}`);
+  // Lieux supprimés (super admin) : jamais comptés
+  c.push(Prisma.sql`l.supprime_le IS NULL`);
   // Parc test : hors des chiffres, même « tous les parcs », sauf demandé ou lieu choisi nommément (retour de Sébastien du 13/11)
   if (!f.parc?.length && !f.lieuId?.length) c.push(Prisma.sql`l.parc::text <> 'TEST'`);
   // Lieux de démonstration (« [DÉMO] … ») : hors des chiffres, sauf choisis nommément (retour de Sébastien du 12/11)
@@ -110,6 +112,8 @@ export function conditionsVentes(f: Filtres, colonneJour = "a.jour", testsSeuls 
   ];
   // Sur la table transactions (jour_local) : sans les ventes des cartes de test, qu'agg_jour ne contient pas
   if (colonneJour.endsWith("jour_local")) c.push(testsSeuls ? Prisma.sql`a.test` : Prisma.sql`NOT a.test`);
+  // Bornes supprimées (super admin) : leurs ventes ne comptent plus
+  c.push(Prisma.sql`b.supprime_le IS NULL`);
   if (f.gammeId?.length) c.push(Prisma.sql`b.gamme_id IN (${Prisma.join(f.gammeId)})`);
   if (f.typeModuleId?.length) c.push(Prisma.sql`a.type_module_id IN (${Prisma.join(f.typeModuleId)})`);
   if (f.moyenPaiement?.length) c.push(Prisma.sql`a.moyen_paiement::text IN (${Prisma.join(f.moyenPaiement)})`);

@@ -3,9 +3,10 @@ import { BorneStatut, type Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
+import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { genererCle } from "../lib/cleBorne.js";
 import { reattribuerTransactions } from "../ingestion/reattribution.js";
-import { requirePerm } from "../middleware/permissions.js";
+import { estAdminPlateforme, requirePerm } from "../middleware/permissions.js";
 
 export const bornesRouter = Router();
 export const affectationsRouter = Router();
@@ -25,6 +26,7 @@ bornesRouter.get(
     const q = String(req.query.q ?? "").trim();
     const bornes = await prisma.borne.findMany({
       where: {
+        supprimeLe: null,
         ...(req.query.gammeId ? { gammeId: Number(req.query.gammeId) } : {}),
         ...(req.query.statut ? { statut: req.query.statut as BorneStatut } : {}),
         // Parc du lieu où la borne est installée
@@ -37,7 +39,8 @@ bornesRouter.get(
       include: {
         gamme: true,
         modules: { where: { retireLe: null }, include: { type: true } },
-        affectations: { where: { fin: null }, include: { lieu: { select: { id: true, enseigne: true, ville: true, parc: true } } } },
+        // Dans un lieu supprimé : la borne apparaît sans lieu
+        affectations: { where: { fin: null, lieu: { supprimeLe: null } }, include: { lieu: { select: { id: true, enseigne: true, ville: true, parc: true } } } },
         // Dernier niveau de papier remonté par la borne
         heartbeats: { where: { papierRestant: { not: null } }, orderBy: { horodatage: "desc" }, take: 1, select: { papierRestant: true, horodatage: true } },
       },
@@ -68,12 +71,24 @@ bornesRouter.get(
   })
 );
 
+// DELETE /api/bornes/:id — réservé au super admin (admin de la plateforme) : la borne est marquée supprimée, rien n'est effacé ;
+// elle sort des listes et ses ventes des chiffres (demande du 13/11)
+bornesRouter.delete(
+  "/:id",
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    if (!(await estAdminPlateforme(req))) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer une borne.");
+    await prisma.borne.update({ where: { id: Number(req.params.id), supprimeLe: null }, data: { supprimeLe: new Date(), supprimeParId: req.utilisateur!.id } });
+    res.status(204).end();
+  })
+);
+
 // GET /api/bornes/:id — avec historique d'affectations
 bornesRouter.get(
   "/:id",
   asynchrone(async (req, res) => {
     const borne = await prisma.borne.findUniqueOrThrow({
-      where: { id: Number(req.params.id) },
+      // Borne supprimée : introuvable
+      where: { id: Number(req.params.id), supprimeLe: null },
       include: {
         gamme: true,
         modules: { include: { type: true }, orderBy: { id: "desc" } },

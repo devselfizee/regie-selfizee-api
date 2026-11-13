@@ -128,6 +128,9 @@ model Lieu {
   // Parc du compte client : Selfizee, ou client en location financière (hors des stats Selfizee par défaut).
   // Ses bornes et ses ventes le suivent.
   parc        Parc       @default(SELFIZEE)
+  // Supprimé par un super admin : gardé en base, hors des listes et des chiffres (demande du 13/11/2026)
+  supprimeLe    DateTime? @map("supprime_le") @db.Timestamptz(3)
+  supprimeParId Int?      @map("supprime_par_id")
 
   // Identité
   raisonSociale String   @map("raison_sociale")
@@ -398,6 +401,9 @@ model Borne {
   gammeId     Int         @map("gamme_id")
   crmId       Int?        @unique @map("crm_id") // lien parc CRM
   statut      BorneStatut @default(EN_STOCK)
+  // Supprimée par un super admin : gardée en base, hors des listes et des chiffres (demande du 13/11/2026)
+  supprimeLe    DateTime? @map("supprime_le") @db.Timestamptz(3)
+  supprimeParId Int?      @map("supprime_par_id")
   demo        Boolean     @default(false) // données de démonstration
 
   // Authentification de l'API d'ingestion : clé propre à la borne.

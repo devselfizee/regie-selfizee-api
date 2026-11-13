@@ -3,7 +3,7 @@ import { ContactRole, InterieurExterieur, LieuStatut, Prisma, Saisonnalite } fro
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { departement } from "../lib/departement.js";
-import { asynchrone } from "../lib/http.js";
+import { asynchrone, HttpError } from "../lib/http.js";
 import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { geocoder } from "../lib/geocodage.js";
@@ -133,6 +133,7 @@ lieuxRouter.get(
     const q = String(req.query.q ?? "").trim();
     const perimetre = perimetreLieux(req.utilisateur);
     const where: Prisma.LieuWhereInput = {
+      supprimeLe: null,
       ...(perimetre?.lieuId !== undefined ? { id: perimetre.lieuId } : {}),
       ...(req.query.statut ? { statut: req.query.statut as LieuStatut } : { statut: { not: "PROSPECT" } }),
       ...(req.query.typeLieuId ? { typeLieuId: Number(req.query.typeLieuId) } : {}),
@@ -164,7 +165,7 @@ lieuxRouter.get(
         antenne: { select: { id: true, libelle: true } },
         commercial: { select: { nom: true, prenom: true } },
         affectations: {
-          where: { fin: null },
+          where: { fin: null, borne: { supprimeLe: null } },
           select: { borne: { select: { id: true, identifiant: true, dernierHeartbeat: true, derniereVente: true, gamme: { select: { id: true, libelle: true } } } } },
         },
       },
@@ -201,13 +202,25 @@ lieuxRouter.get(
 
 const hhmm = (d: Date) => d.toISOString().slice(11, 16);
 
+// DELETE /api/lieux/:id — réservé au super admin (admin de la plateforme) : le lieu est marqué supprimé, rien n'est effacé ;
+// il sort des listes et des chiffres (demande du 13/11)
+lieuxRouter.delete(
+  "/:id",
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    if (!(await estAdminPlateforme(req))) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer un lieu.");
+    await prisma.lieu.update({ where: { id: Number(req.params.id), supprimeLe: null }, data: { supprimeLe: new Date(), supprimeParId: req.utilisateur!.id } });
+    res.status(204).end();
+  })
+);
+
 // GET /api/lieux/:id — fiche complète
 lieuxRouter.get(
   "/:id",
   asynchrone<UtilisateurRequest>(async (req, res) => {
     await verifierAccesLieu(req.utilisateur, Number(req.params.id));
     const lieu = await prisma.lieu.findUniqueOrThrow({
-      where: { id: Number(req.params.id) },
+      // Lieu supprimé : introuvable
+      where: { id: Number(req.params.id), supprimeLe: null },
       include: {
         typeLieu: true, sousType: true, standing: true, zoneGeo: true, tailleCommune: true, antenne: true,
         emplacementZone: true, eclairage: true, origineLead: true,
