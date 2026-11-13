@@ -509,6 +509,7 @@ model ImportLot {
 
   @@index([borneId, recuLe])
   @@index([payloadSha256])
+  @@index([statut, recuLe]) // page « Historique » : envois refusés ou partiels, par date
   @@map("import_lots")
 }
 
@@ -979,6 +980,7 @@ model Alerte {
   notifications NotificationAlerte[]
 
   @@index([statut, niveau])
+  @@index([detecteeLe]) // page « Historique » : lecture par date
   @@map("alertes")
 }
 
@@ -1183,6 +1185,7 @@ model AuditLog {
   user User? @relation(fields: [userId], references: [id])
 
   @@index([entite, entiteId])
+  @@index([createdAt]) // page « Historique » : lecture par date
   @@map("audit_logs")
 }
 

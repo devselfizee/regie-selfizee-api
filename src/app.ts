@@ -36,6 +36,7 @@ import { rgpdRouter } from "./routes/rgpd.js";
 import { modelesMailRouter } from "./routes/modelesMail.js";
 import { imagesStudioPublicRouter, imagesStudioRouter } from "./routes/imagesStudio.js";
 import { telechargementsEvenementsRouter } from "./routes/telechargementsEvenements.js";
+import { historiqueRouter } from "./routes/historique.js";
 import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
 import { souvenirLieuRouter } from "./routes/souvenirLieu.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
@@ -188,6 +189,7 @@ export function creerApp() {
   app.use("/api/modeles-mail", modelesMailRouter);
   app.use("/api/studio/images", imagesStudioRouter);
   app.use("/api/telechargements-evenements", requirePerm("bornes.view"), telechargementsEvenementsRouter);
+  app.use("/api/historique", historiqueRouter);
   app.use("/api/rapprochement", requirePerm("rapprochement.view"), rapprochementRouter);
 
   app.use((err: Error & { type?: string; status?: number }, _req: Request, res: Response, _next: NextFunction) => {
