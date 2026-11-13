@@ -441,6 +441,7 @@ model Borne {
   parcours               Parcours[]
   utilisationsCodeRemise UtilisationCodeRemise[]
   medias                 Media[]
+  installationsEvenement InstallationEvenement[]
 
   @@map("bornes")
 }
@@ -1216,6 +1217,7 @@ model ConfigEvenement {
   illustrations        IllustrationEvenement[]
   medias               Media[]
   souvenirInscriptions SouvenirInscription[]
+  installations        InstallationEvenement[]
 
   @@index([lieuId])
   @@map("config_evenements")
@@ -1767,4 +1769,31 @@ model ModeleMail {
   modifiePar User? @relation(fields: [modifieParId], references: [id], onDelete: SetNull)
 
   @@map("modeles_mail")
+}
+
+// ─── Mise à jour des événements sur les bornes (13/11/2026) ───
+// Ce que la borne signale après avoir chargé le zip d'un événement (POST /ingest/v1/evenements/installation) : la
+// Régie sait ainsi quelle version tourne sur chaque borne. Une ligne par signalement (historique).
+enum EtatInstallation {
+  TELECHARGE // zip reçu et vérifié (sha256), pas encore installé
+  INSTALLE // événement installé, prêt sur la borne
+  ECHEC // téléchargement ou installation raté (message)
+}
+
+model InstallationEvenement {
+  id                BigInt           @id @default(autoincrement())
+  borneId           Int              @map("borne_id")
+  configEvenementId Int?             @map("config_evenement_id")
+  code              String           @db.VarChar(8)
+  version           Int
+  etat              EtatInstallation
+  message           String?          @db.VarChar(500)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  borne     Borne            @relation(fields: [borneId], references: [id], onDelete: Cascade)
+  evenement ConfigEvenement? @relation(fields: [configEvenementId], references: [id], onDelete: SetNull)
+
+  @@index([borneId, createdAt])
+  @@index([configEvenementId, createdAt])
+  @@map("installations_evenement")
 }

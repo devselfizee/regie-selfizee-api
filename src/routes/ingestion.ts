@@ -5,6 +5,7 @@ import { asynchrone } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { cheminAbsolu } from "../lib/stockage.js";
 import { cheminZip, statutPourBorne, urlZipValide } from "../config-evenement/zipBorne.js";
+import { noterInstallation, programmePourBorne, versionsPourBorne } from "../config-evenement/programmeBorne.js";
 import { authBorne, type BorneRequest } from "../middleware/authBorne.js";
 import { journaliserRejet } from "../ingestion/journal.js";
 import { ingererLotTransactions } from "../ingestion/transactions.js";
@@ -110,6 +111,55 @@ ingestionRouter.post(
       .safeParse(req.body);
     if (!c.success) return invalide(req, res, c.error);
     res.json(await utiliserCode(req.borne!.id, c.data.code, c.data.nb, c.data.utilisation_id ?? null));
+  })
+);
+
+// ─── Mise à jour automatique des événements (13/11/2026, docs/synchronisation-bornes.md § 4 quinquies) ───
+
+const codeEvenement = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{3,8}$/);
+
+// POST /ingest/v1/evenements/programme { borne_id } — l'événement qui doit tourner maintenant sur la borne (programmation
+// de son lieu : le par défaut ou l'événement personnalisé en cours) et les prochains, avec leur version publiée.
+ingestionRouter.post(
+  "/evenements/programme",
+  authBorne("CONFIG"),
+  asynchrone<BorneRequest>(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await programmePourBorne(req.borne!));
+  })
+);
+
+// POST /ingest/v1/evenements/versions { borne_id, codes: [...] } — version publiée de chaque code (comme
+// getEventLastUpdate du booth) ; un code d'un autre lieu ou inconnu : « unknown ».
+ingestionRouter.post(
+  "/evenements/versions",
+  authBorne("CONFIG"),
+  asynchrone<BorneRequest>(async (req, res) => {
+    const c = z.object({ borne_id: z.string(), codes: z.array(codeEvenement).min(1).max(50) }).safeParse(req.body);
+    if (!c.success) return invalide(req, res, c.error, "CONFIG");
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await versionsPourBorne(req.borne!, [...new Set(c.data.codes)]));
+  })
+);
+
+// POST /ingest/v1/evenements/installation { borne_id, code, version, etat, message? } — la borne signale le zip
+// téléchargé (TELECHARGE), installé (INSTALLE) ou raté (ECHEC) : la Régie sait quelle version tourne sur chaque borne.
+ingestionRouter.post(
+  "/evenements/installation",
+  authBorne("CONFIG"),
+  asynchrone<BorneRequest>(async (req, res) => {
+    const c = z
+      .object({
+        borne_id: z.string(),
+        code: codeEvenement,
+        version: z.number().int().min(0),
+        etat: z.enum(["TELECHARGE", "INSTALLE", "ECHEC"]),
+        message: z.string().max(500).nullable().optional(),
+      })
+      .safeParse(req.body);
+    if (!c.success) return invalide(req, res, c.error, "CONFIG");
+    await noterInstallation(req.borne!, c.data);
+    res.json({ ok: true });
   })
 );
 

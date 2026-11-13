@@ -385,6 +385,45 @@ Conseils pour la borne : ne télécharger que si `version` diffère de celle qu'
 
 Différences avec le booth : la demande d'état exige la clé de la borne, et la borne doit être affectée au lieu de l'événement ; le paramètre du booth (base64 que tout le monde peut fabriquer, sans expiration) est remplacé par une signature HMAC qui expire.
 
+## 4 quinquies. Mise à jour automatique des événements
+
+La borne n'a plus besoin qu'on tape un code : elle demande à la Régie quel événement faire tourner, et le recharge quand il
+est republié. Toutes les routes ont la même authentification que les ventes (`Authorization: Bearer <clé>`, `borne_id`
+dans le corps). Les dates sont en ISO 8601 avec le décalage de Paris (`2026-11-13T20:00:00.000+01:00`), sauf `publieLe` (UTC).
+
+**Programme** — `POST /ingest/v1/evenements/programme` `{ "borne_id": "S513" }`, au démarrage puis toutes les 5 minutes :
+
+```json
+{
+  "lieu": { "id": 7, "nom": "La Ruche" },
+  "maintenant": "2026-11-13T15:00:00.000+01:00",
+  "actuel": { "code": "RHAL", "nom": "Halloween", "parDefaut": false, "version": 1, "publieLe": "2026-11-10T09:00:00.000Z", "status": "complete", "jusqua": "2026-11-15T00:00:00.000+01:00" },
+  "prochains": [
+    { "code": "RNOE", "nom": "Noël", "parDefaut": false, "version": 2, "publieLe": "…", "status": "complete", "debut": "2026-11-20T20:00:00.000+01:00", "fin": "2026-11-21T06:00:00.000+01:00" }
+  ]
+}
+```
+
+- `actuel` : l'événement à faire tourner maintenant. Règle de l'onglet Configuration de la Régie : parmi les événements
+  personnalisés en cours, celui qui a commencé le plus tard ; sinon l'événement par défaut (`parDefaut: true`, `nom: null`).
+  Un événement dont le zip n'est pas prêt (`status` ≠ `complete`) est sauté. `jusqua` : fin de l'événement, ou pour le par
+  défaut le début du prochain événement prêt (`null` : rien de prévu). `actuel: null` : rien de publié, garder ce qui tourne.
+- `prochains` : événements personnalisés qui commencent dans les 14 jours (10 au plus), prêts ou non, pour précharger leur zip.
+- `lieu: null` : borne affectée à aucun lieu dans la Régie (rien à faire tourner).
+
+**Versions** — `POST /ingest/v1/evenements/versions` `{ "borne_id": "S513", "codes": ["RHAL", "RNOE"] }` (comme
+`getEventLastUpdate` du booth, 50 codes au plus) → `{ "evenements": [ { code, nom, parDefaut, version, publieLe, status }, … ] }` ;
+un code d'un autre lieu ou inconnu : `{ "code": "RZZZ", "status": "unknown" }`.
+
+**Installation** — `POST /ingest/v1/evenements/installation`
+`{ "borne_id": "S513", "code": "RHAL", "version": 1, "etat": "INSTALLE", "message": null }`, `etat` : `TELECHARGE` (zip reçu
+et vérifié), `INSTALLE` (prêt sur la borne) ou `ECHEC` (`message` : la raison) → `{ "ok": true }`. La Régie sait ainsi
+quelle version tourne sur chaque borne.
+
+Boucle conseillée : (1) `programme` ; (2) pour `actuel` et les `prochains` prêts, si `version` diffère de la version locale :
+`statut` puis téléchargement (§ 4 quater), vérification `sha256`, `installation` `TELECHARGE` ; (3) basculer sur `actuel`
+s'il a changé (ou à `jusqua`), `installation` `INSTALLE` ; en cas d'échec, garder l'ancien zip et signaler `ECHEC`.
+
 ## 5. Codes de réponse HTTP et comportement attendu
 
 | Code | Signification | Que doit faire la borne |

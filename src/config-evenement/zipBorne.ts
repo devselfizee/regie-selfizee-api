@@ -62,7 +62,7 @@ export type StatutZip =
   | { status: "complete"; code: string; version: number; publieLe: string; taille: number; sha256: string; url: string; expireLe: string };
 
 /** Lieu où la borne est installée aujourd'hui (affectation en cours), ou null. */
-async function lieuDeLaBorne(borneId: number, maintenant: Date): Promise<number | null> {
+export async function lieuDeLaBorne(borneId: number, maintenant: Date): Promise<number | null> {
   const a = await prisma.affectationBorne.findFirst({
     where: { borneId, debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }] },
     orderBy: { debut: "desc" },
@@ -76,24 +76,31 @@ async function lieuDeLaBorne(borneId: number, maintenant: Date): Promise<number 
  * celui de la borne), « incomplete » (jamais publié), « obsolete » (publié avant que la Régie fige les zips :
  * republier), « complete » avec l'URL de téléchargement.
  */
+/** Ce qu'il faut d'un événement pour connaître l'état de son zip. */
+export const selectionZip = { code: true, lieuId: true, version: true, publieeLe: true, zipChemin: true, zipTaille: true, zipSha256: true } as const;
+type EvenementZip = { code: string; version: number; publieeLe: Date | null; zipChemin: string | null; zipTaille: number | null; zipSha256: string | null };
+
+/** État du zip publié : incomplete (jamais publié), obsolete (zip absent : republier), complete. */
+export async function etatDuZip(e: EvenementZip): Promise<"incomplete" | "obsolete" | "complete"> {
+  if (!e.publieeLe || e.version === 0) return "incomplete";
+  if (!e.zipChemin || !e.zipTaille || !e.zipSha256 || !(await existe(e.zipChemin))) return "obsolete";
+  return "complete";
+}
+
 export async function statutPourBorne(borne: Pick<Borne, "id">, code: string, base: string, maintenant = new Date()): Promise<StatutZip> {
-  const e = await prisma.configEvenement.findUnique({
-    where: { code },
-    select: { code: true, lieuId: true, version: true, publieeLe: true, zipChemin: true, zipTaille: true, zipSha256: true },
-  });
+  const e = await prisma.configEvenement.findUnique({ where: { code }, select: selectionZip });
   if (!e || e.lieuId !== (await lieuDeLaBorne(borne.id, maintenant))) return { status: "unknown" };
-  if (!e.publieeLe || e.version === 0) return { status: "incomplete" };
-  if (!e.zipChemin || !e.zipTaille || !e.zipSha256 || !(await existe(e.zipChemin))) {
-    return { status: "obsolete", version: e.version, message: "Republier l'événement dans la Régie pour préparer son zip." };
-  }
+  const etat = await etatDuZip(e);
+  if (etat === "incomplete") return { status: "incomplete" };
+  if (etat === "obsolete") return { status: "obsolete", version: e.version, message: "Republier l'événement dans la Régie pour préparer son zip." };
   const { url, expireLe } = urlZip(base, e.code, e.version, maintenant.getTime());
   return {
     status: "complete",
     code: e.code,
     version: e.version,
-    publieLe: e.publieeLe.toISOString(),
-    taille: e.zipTaille,
-    sha256: e.zipSha256,
+    publieLe: e.publieeLe!.toISOString(),
+    taille: e.zipTaille!,
+    sha256: e.zipSha256!,
     url,
     expireLe: expireLe.toISOString(),
   };
