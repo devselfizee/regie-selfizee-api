@@ -5,6 +5,7 @@ import { jourEtHeureLocaux, offsetMinutes } from "../lib/temps.js";
 import { ajouterAuxAgregats, recalculerAgregats, type LigneAgregee } from "./agregats.js";
 import { sha256Payload } from "./journal.js";
 import { chiffresCartesTest } from "./cartesTest.js";
+import { normaliserCode } from "../codes/codes.js";
 import {
   formaterErreurs,
   validerTransaction,
@@ -108,6 +109,7 @@ export const completer = (
   si("motif", e.motif, c.t.motif ? (c.t.motif.toUpperCase() as MotifStatut) : undefined);
   si("carteFin", e.carteFin, c.t.carte_derniers_chiffres ?? c.t.carte_fin);
   si("pikcloudUuid", e.pikcloudUuid, c.t.pikcloud_uuid);
+  si("codeRemise", e.codeRemise, c.t.code_remise ? normaliserCode(c.t.code_remise) : undefined);
   si("moduleId", e.moduleId, moduleId);
   si("produitLibelle", e.produitLibelle, c.t.produit.libelle);
   // Un moyen devenu connu rend la vente rapprochable (sauf si elle est déjà rapprochée)
@@ -311,6 +313,7 @@ export async function ingererLotTransactions(
         gratuite: c.t.gratuite ? (c.t.gratuite.toUpperCase() as Gratuite) : null,
         pikcloudUuid: c.t.pikcloud_uuid ?? null,
         carteFin: c.t.carte_derniers_chiffres ?? c.t.carte_fin ?? null,
+        codeRemise: c.t.code_remise ? normaliserCode(c.t.code_remise) : null,
         test: estTest(c.t.carte_derniers_chiffres ?? c.t.carte_fin),
         produitCode: c.t.produit.code,
         produitLibelle: c.t.produit.libelle ?? null,

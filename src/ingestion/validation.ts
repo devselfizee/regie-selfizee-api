@@ -67,6 +67,8 @@ export interface TransactionJson {
   carte_fin?: string;
   /** Même donnée que carte_fin, nom de l'avenant n° 2 (28/10/2026) */
   carte_derniers_chiffres?: string;
+  /** Code de remise utilisé pour la vente (13/11/2026) */
+  code_remise?: string;
   produit: { code: string; libelle?: string; nb_tirages: number };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CodeRemise, LotCodesRemise } from "@prisma/client";
-import { ALPHABET, etatCode, genererCode, libelleRemise, normaliserCode, titreLotCodes } from "../src/codes/codes.js";
+import { ALPHABET, etatCode, genererCode, libelleRemise, normaliserCode, seanceDeVente, titreLotCodes } from "../src/codes/codes.js";
 
 describe("libellés des lots de codes", () => {
   it("décrit la remise", () => {
@@ -67,5 +67,13 @@ describe("codes de remise", () => {
     expect(etatCode(code({}, { seulementLieu: true }), null, maintenant)).toEqual({ valide: false, raison: "AUTRE_LIEU" });
     expect(etatCode(code({}, { seulementLieu: true }), 10, maintenant).valide).toBe(true);
     expect(etatCode(code({}, { seulementLieu: false }), 12, maintenant).valide).toBe(true);
+  });
+});
+
+describe("séance d'une vente (lien vente ↔ code par utilisation_id)", () => {
+  it("retire le n° de paiement et de remboursement", () => {
+    expect(seanceDeVente("S513-20261103-K9CTDU-1")).toBe("S513-20261103-K9CTDU");
+    expect(seanceDeVente("S513-20261103-K9CTDU-2-RMB1")).toBe("S513-20261103-K9CTDU");
+    expect(seanceDeVente("S513-20261103-K9CTDU")).toBe("S513-20261103-K9CTDU");
   });
 });

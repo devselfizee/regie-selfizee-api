@@ -126,6 +126,7 @@ Content-Type: application/json
 | `pikcloud_uuid` | non | Identifiant de la photo côté PikCloud (`photo_uuid`), UUID avec ou sans tirets : la plateforme affiche la photo dans le récapitulatif de la commande. |
 | `carte_derniers_chiffres` | non | **Quatre derniers chiffres de la carte** tels qu'imprimés sur le ticket (`^[0-9]{4}$`), quand le ticket est rapproché de la vente. Jamais avec `especes`, `aucun` ou `web`. Visibles des seuls administrateurs. |
 | `carte_fin` | non | **Quatre derniers chiffres de la carte**, lus sur le ticket du terminal (4 chiffres). Seulement avec `cb` ou `sans_contact`, quand le ticket a été rapproché de la séance. Visibles des seuls administrateurs. |
+| `code_remise` | non | Code de remise utilisé pour cette vente (§ 4 ter), tel que validé par `/codes/utiliser`. |
 | `produit.code` | oui | `TIRAGE`, `TIRAGE_EXTRA` (paiement supplémentaire de la séance), `NUMERIQUE` (photo livrée en numérique seul), `POSTAL` (tirage expédié). |
 | `produit.libelle` | non | Libellé de la formule tel que la borne l'affiche (ex. « 2 tirages »). |
 | `produit.nb_tirages` | oui | Tirages payés, figés à l'envoi (0 à 100). `0` pour `NUMERIQUE` et pour un refus. Les réimpressions ultérieures ne modifient pas la vente. |
@@ -193,7 +194,7 @@ La borne ne rembourse jamais. Un remboursement est saisi par Selfizee dans la pl
 | Champ | Signification |
 |---|---|
 | `creees` | Ventes nouvelles enregistrées. |
-| `doublons` | Ventes déjà reçues. Si le renvoi a le même `statut`, `montant_ttc_centimes`, `devise` et `horodatage` (et le même module et code produit), la ligne existante est **complétée** avec ses champs facultatifs : `reference_monetique`, `reference_sequence`, `moyen_paiement`, `encaissement`, `motif`, `carte_derniers_chiffres`, `pikcloud_uuid`, `module.numero_serie`, `produit.libelle`. Un champ renvoyé remplace l'ancien ; un champ absent ne l'efface pas. Le statut et le montant ne changent jamais par ce chemin. |
+| `doublons` | Ventes déjà reçues. Si le renvoi a le même `statut`, `montant_ttc_centimes`, `devise` et `horodatage` (et le même module et code produit), la ligne existante est **complétée** avec ses champs facultatifs : `reference_monetique`, `reference_sequence`, `moyen_paiement`, `encaissement`, `motif`, `carte_derniers_chiffres`, `pikcloud_uuid`, `code_remise`, `module.numero_serie`, `produit.libelle`. Un champ renvoyé remplace l'ancien ; un champ absent ne l'efface pas. Le statut et le montant ne changent jamais par ce chemin. |
 | `rejetees` / `erreurs` | Ventes refusées, avec leur position dans le lot (`index`, à partir de 0) et le motif. Elles sont conservées côté plateforme dans la file d'erreurs : **inutile de les renvoyer telles quelles**. |
 | `non_affectees` | Ventes reçues alors que la borne n'est affectée à aucun lieu à cette date. Elles sont gardées et signalées à Selfizee : rien à faire côté borne. |
 
@@ -350,7 +351,13 @@ Réponse `200` :
 
 S'il reste **moins** d'impressions que demandé, la Régie accorde ce qu'il reste et le dit : `{ "ok": false, "accordees": 1, "demandees": 2, "restant": 0, "message": "Il ne restait que 1 impression sur ce code : 1 accordée sur 2 demandées" }`. La borne n'applique la remise qu'aux `accordees` impressions. Code refusé : `{ "ok": false, "accordees": 0, "raison": "…", "message": "…" }`, mêmes raisons que la vérification.
 
-Chaque utilisation est enregistrée (borne, lieu, date, impressions) et visible dans la Régie. La vente elle-même continue d'arriver par `/transactions` : une impression remisée est une vente au montant remisé, une impression offerte une séance à 0 €. **Point ouvert** : la façon de signaler dans la vente qu'un code a servi (motif de gratuité dédié, ou champ `code_remise`) reste à décider ensemble.
+Chaque utilisation est enregistrée (borne, lieu, date, impressions) et visible dans la Régie. La vente elle-même continue d'arriver par `/transactions` : une impression remisée est une vente au montant remisé, une impression offerte une séance à 0 €.
+
+**Relier la vente au code** (13/11/2026). Deux moyens, cumulables :
+- envoyer le code dans la vente, champ facultatif **`code_remise`** (tel que tapé : casse, espaces et tirets indifférents), sur chaque vente de la séance où il a servi ;
+- donner à `utilisation_id` le **code de séance** (`<borne>-<AAAAMMJJ>-<code séance>`, sans le rang) : la Régie relie alors au code toutes les ventes de la séance, y compris celles déjà envoyées.
+
+La vente porte alors le code dans la Régie (liste des ventes, détail de la commande, recherche par code) et la fiche du code liste ses ventes.
 
 ## 4 quater. Zip de l'événement (comme getEvent et e/zip/download du booth)
 

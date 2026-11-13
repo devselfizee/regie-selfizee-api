@@ -11,6 +11,7 @@ import { sha256Payload } from "../ingestion/journal.js";
 import { urlPhoto } from "../lib/photos.js";
 import { apercusParBorneEtHeure, apercusSeances } from "../lib/apercusMedias.js";
 import { requirePerm, userCan } from "../middleware/permissions.js";
+import { codesDesVentes, libelleRemise, normaliserCode, seanceDeVente } from "../codes/codes.js";
 
 // Recherche de ventes et remboursements (admin). La borne ne rembourse jamais :
 // un remboursement est saisi ici, rattaché à la vente d'origine (avenant synchro, § 3.7).
@@ -68,7 +69,9 @@ function whereListe(f: z.infer<typeof filtresListe>, sansType = false): Prisma.T
                 { transactionIdModule: { contains: f.q, mode: "insensitive" } },
                 { referenceMonetique: { contains: f.q, mode: "insensitive" } },
                 // « j'ai été débité deux fois » : retrouver par les 4 derniers chiffres de la carte
-                ...(/^d{4}$/.test(f.q) ? [{ carteFin: f.q }] : []),
+                ...(/^\d{4}$/.test(f.q) ? [{ carteFin: f.q }] : []),
+                // Code de remise utilisé (retour de Sébastien du 13/11)
+                { codeRemise: normaliserCode(f.q) },
               ],
             }
           : f.sansAction === "1" && type !== "tout"
@@ -146,6 +149,7 @@ ventesRouter.get(
       prisma.carteTest.findMany({ select: { derniersChiffres: true, nom: true } }),
     ]);
     const nomCarte = new Map(cartesTest.map((c) => [c.derniersChiffres, c.nom]));
+    const codes = await codesDesVentes(ventes);
     // Aperçu de la photo d'après la table medias (photo_uuid), pour qui voit les médias : ce sont des photos de personnes
     const peutVoirMedias = await userCan(req, "medias.view");
     const apercus = peutVoirMedias ? await apercusSeances(ventes.map((v) => v.pikcloudUuid)) : new Map<string, never>();
@@ -173,6 +177,7 @@ ventesRouter.get(
         rembourseHtCents: derivees.reduce((s, r) => s + r.montantHtCents, 0),
         photoUrl: (v.pikcloudUuid && apercus.get(v.pikcloudUuid)?.vignette) || approches.get(v.id)?.vignette || urlPhoto(v.pikcloudUuid),
         carteTest: v.test && v.carteFin ? (nomCarte.get(v.carteFin) ?? "Carte de test") : null,
+        codesRemise: codes.get(v.id) ?? [],
       })),
     });
   })
@@ -197,7 +202,7 @@ ventesRouter.get(
     if (!v) throw new HttpError(404, "INTROUVABLE");
     const carteTest = v.test && v.carteFin ? await prisma.carteTest.findUnique({ where: { derniersChiffres: v.carteFin }, select: { nom: true } }) : null;
     // Séance : l'identifiant sans son n° de paiement (S180-20261016-Z95FN7-1 → S180-20261016-Z95FN7)
-    const seance = v.transactionIdModule.replace(/-RMB\d+$/, "").replace(/-\d+$/, "");
+    const seance = seanceDeVente(v.transactionIdModule);
     const [paiementsSeance, parcours, motifs] = await Promise.all([
       prisma.transaction.findMany({
         where: { borneId: v.borneId, transactionIdModule: { startsWith: `${seance}-` }, statut: { not: "REMBOURSEE" } },
@@ -213,6 +218,15 @@ ventesRouter.get(
         ? prisma.auditLog.findMany({ where: { entite: "transaction", entiteId: v.id.toString(), action: "REMBOURSEMENT" }, orderBy: { createdAt: "asc" }, select: { apres: true } })
         : Promise.resolve([]),
     ]);
+    // Codes de remise de la vente (envoyé avec elle, ou utilisé pendant sa séance) et leur remise
+    const nomsCodes = (await codesDesVentes([v])).get(v.id) ?? [];
+    const codesRemise = nomsCodes.length
+      ? (await prisma.codeRemise.findMany({ where: { code: { in: nomsCodes } }, select: { id: true, code: true, lot: { select: { type: true, quantite: true, pourcentage: true } } } })).map(
+          (c) => ({ id: c.id, code: c.code, remise: libelleRemise(c.lot) })
+        )
+      : [];
+    // Code envoyé par la borne mais inconnu de la Régie (supprimé) : affiché quand même
+    for (const n of nomsCodes) if (!codesRemise.some((c) => c.code === n)) codesRemise.push({ id: 0, code: n, remise: "code inconnu de la Régie" });
     const photoUuid = v.pikcloudUuid ?? parcours?.photoUuid ?? null;
     // Média de la séance (table medias) : vignette tout de suite, fichier en grand lu par l'écran avec le jeton
     const peutVoirMedias = await userCan(req, "medias.view");
@@ -240,6 +254,7 @@ ventesRouter.get(
       photoUrl: media?.vignette ?? urlPhoto(photoUuid),
       media,
       carteTest: v.test ? (carteTest?.nom ?? "Carte de test") : null,
+      codesUtilises: codesRemise,
     });
   })
 );

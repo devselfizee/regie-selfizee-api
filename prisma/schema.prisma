@@ -593,6 +593,9 @@ model Transaction {
   pikcloudUuid       String?       @map("pikcloud_uuid") @db.Uuid // photo côté PikCloud (photo_uuid)
   // 4 derniers chiffres de la carte (ticket du terminal), pour une réclamation ou un relevé ; admin seulement
   carteFin           String?       @map("carte_fin") @db.Char(4)
+  // Code de remise saisi sur la borne pour cette vente (retour de Sébastien du 13/11), normalisé ; pas de clé
+  // étrangère : la vente garde le code même s'il est supprimé ou inconnu de la Régie
+  codeRemise         String?       @map("code_remise") @db.VarChar(20)
   // Payée avec une carte de test (CarteTest) : hors chiffres réels (agrégats, stats, commissions, exports)
   test               Boolean       @default(false)
 
@@ -625,6 +628,7 @@ model Transaction {
   @@index([jourLocal])
   @@index([lieuId]) // file des transactions non affectées (lieu_id IS NULL)
   @@index([pikcloudUuid]) // vente d'une séance (galerie, fiche d'un média)
+  @@index([codeRemise]) // ventes d'un code (fiche du code)
   @@map("transactions")
 }
 

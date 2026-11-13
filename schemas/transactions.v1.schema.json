@@ -227,6 +227,11 @@
           "type": "string",
           "pattern": "^[0-9]{4}$",
           "description": "Quatre derniers chiffres de la carte tels qu'imprimés sur le ticket du terminal, facultatif ; jamais avec especes, aucun ou web (avenant n° 2 à la synchronisation des ventes, 28/10/2026). Même usage que carte_fin."
+        },
+        "code_remise": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9 -]{3,20}$",
+          "description": "Code de remise utilisé pour cette vente (impression offerte ou remisée), tel que validé par /codes/utiliser ; casse, espaces et tirets indifférents. Facultatif."
         }
       },
       "allOf": [

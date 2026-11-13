@@ -90,3 +90,14 @@ describe("avenant n° 2 : renvoi d'une vente déjà reçue", () => {
     expect(completer(l, candidate(recue()), null)).toEqual({});
   });
 });
+
+describe("code de remise de la vente (13/11/2026)", () => {
+  it("accepte code_remise tel que tapé, refuse un caractère interdit", () => {
+    expect(validerTransaction({ ...recue(), code_remise: "k7px2" })).toBe(true);
+    expect(validerTransaction({ ...recue(), code_remise: "K7P-X2" })).toBe(true);
+    expect(validerTransaction({ ...recue(), code_remise: "K7PX2;" })).toBe(false);
+  });
+  it("un renvoi avec le code complète la ligne, code normalisé", () => {
+    expect(completer(ligne(), candidate({ ...recue(), code_remise: "k7p x2" }), null)).toEqual({ codeRemise: "K7PX2" });
+  });
+});

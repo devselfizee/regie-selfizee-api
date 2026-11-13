@@ -6,7 +6,7 @@ import { asynchrone, HttpError } from "../lib/http.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { envoyerClasseur, type Colonne } from "../lib/excel.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
-import { creerCodes, libelleRemise } from "../codes/codes.js";
+import { creerCodes, libelleRemise, ventesDuCode } from "../codes/codes.js";
 import { requirePerm } from "../middleware/permissions.js";
 
 // Codes de remise (demande de Sébastien, 02/11/2026) : génération par lots, liste, détail des utilisations, export.
@@ -194,7 +194,9 @@ codesRemiseRouter.get(
           photoUuid: carte.inscription.photoUuid,
         }
       : { type: "manuel" as const, le: c.lot.createdAt, par: c.lot.creePar, nbCodes: c.lot.nbCodes };
-    res.json({ ...ligne(c), origine, utilisations: utilisations.map((u) => ({ ...u, id: u.id.toString() })) });
+    // Ventes faites avec ce code (retour de Sébastien du 13/11)
+    const ventes = await ventesDuCode(c.code, utilisations);
+    res.json({ ...ligne(c), origine, utilisations: utilisations.map((u) => ({ ...u, id: u.id.toString() })), ventes: ventes.map((v) => ({ ...v, id: v.id.toString() })) });
   })
 );
 
