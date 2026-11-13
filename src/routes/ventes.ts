@@ -46,7 +46,7 @@ const filtresListe = z.object({
   au: jourIso.optional(),
   type: z.enum(Object.keys(TYPES) as [string, ...string[]]).default("paiements"),
   moyenPaiement: listeCodes,
-  parc: z.enum(["SELFIZEE", "CLIENT"]).optional(),
+  parc: z.enum(["SELFIZEE", "CLIENT", "TEST"]).optional(),
   cartes: z.enum(["reelles", "test", "toutes"]).default("reelles"),
   // 1 : ajoute les photos validées sans paiement (retour de Sébastien : elles n'ont rien à faire dans les ventes)
   sansAction: z.string().optional(),

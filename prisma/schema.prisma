@@ -1301,6 +1301,8 @@ model Parcours {
 enum Parc {
   SELFIZEE
   CLIENT
+  // Lieux et bornes d'essai : hors de toutes les statistiques (retour de Sébastien du 13/11)
+  TEST
 }
 
 // Cartes de test (4 derniers chiffres) : leurs ventes sont marquées transactions.test

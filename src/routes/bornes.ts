@@ -28,7 +28,7 @@ bornesRouter.get(
         ...(req.query.gammeId ? { gammeId: Number(req.query.gammeId) } : {}),
         ...(req.query.statut ? { statut: req.query.statut as BorneStatut } : {}),
         // Parc du lieu où la borne est installée
-        ...(req.query.parc === "SELFIZEE" || req.query.parc === "CLIENT" ? { affectations: { some: { fin: null, lieu: { parc: req.query.parc } } } } : {}),
+        ...(req.query.parc === "SELFIZEE" || req.query.parc === "CLIENT" || req.query.parc === "TEST" ? { affectations: { some: { fin: null, lieu: { parc: req.query.parc } } } } : {}),
         ...(q
           ? { identifiant: { contains: q, mode: "insensitive" } }
           : {}),
