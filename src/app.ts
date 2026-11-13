@@ -34,6 +34,7 @@ import { souvenirRouter } from "./routes/souvenir.js";
 import { webhookMailjetRouter } from "./routes/webhookMailjet.js";
 import { rgpdRouter } from "./routes/rgpd.js";
 import { modelesMailRouter } from "./routes/modelesMail.js";
+import { imagesStudioPublicRouter, imagesStudioRouter } from "./routes/imagesStudio.js";
 import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
 import { souvenirLieuRouter } from "./routes/souvenirLieu.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
@@ -101,6 +102,9 @@ export function creerApp() {
     rgpdRouter
   );
 
+  // Images du studio de cadres, servies sans jeton (nom = empreinte SHA-256, cache long) ; envoi sous /api/studio/images
+  app.use("/studio/v1/images", cors(), imagesStudioPublicRouter);
+
   // Webhook PikCloud : médias des séances, secret partagé X-Synchro-Token, pas de CORS (machine à machine)
   app.use("/webhooks/v1/pikcloud", express.json({ limit: "64kb" }), synchroPikcloudRouter);
   // Webhook Mailjet : rebonds des mails de la page souvenir, clé partagée dans l'URL (?cle=MAILJET_WEBHOOK_SECRET)
@@ -108,6 +112,8 @@ export function creerApp() {
 
   // Cadres du studio : rendu PNG + JSON Fabric avec ses illustrations, jusqu'à 25 Mo (lu avant la limite générale)
   app.use(["/api/lieux/:id/evenement/cadres", "/api/lieux/:id/evenements-ponctuels/:eid/cadres"], express.json({ limit: "30mb" }));
+  // Image du studio en data URL : 15 Mo au plus, soit environ 20 Mo en base64
+  app.use("/api/studio/images", express.json({ limit: "25mb" }));
   // Photos d'exemple (illustrations) : une image en data URL, 15 Mo au plus
   app.use(["/api/lieux/:id/evenement/illustrations", "/api/lieux/:id/evenements-ponctuels/:eid/illustrations", "/api/illustrations-series"], express.json({ limit: "15mb" }));
 
@@ -175,6 +181,7 @@ export function creerApp() {
   app.use("/api/reversements", reversementsRouter);
   app.use("/api/alertes", alertesRouter);
   app.use("/api/modeles-mail", modelesMailRouter);
+  app.use("/api/studio/images", imagesStudioRouter);
   app.use("/api/rapprochement", requirePerm("rapprochement.view"), rapprochementRouter);
 
   app.use((err: Error & { type?: string; status?: number }, _req: Request, res: Response, _next: NextFunction) => {
