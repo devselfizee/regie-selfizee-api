@@ -7,6 +7,7 @@ import { asynchrone } from "../lib/http.js";
 import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { geocoder } from "../lib/geocodage.js";
+import { telephoneE164 } from "../lib/telephone.js";
 import { zoneScolaire } from "../calendrier/calendrier.js";
 import { requirePerm, userCan, estAdminPlateforme } from "../middleware/permissions.js";
 
@@ -17,6 +18,19 @@ export const lieuxRouter = Router();
 const id = z.number().int().positive();
 const idOpt = id.nullable().optional();
 const texteOpt = z.string().trim().nullable().optional().transform((v) => (v === "" ? null : v));
+/** Téléphone saisi librement, enregistré en E.164 (« +33669045935 ») ; refusé s'il n'est pas un numéro possible */
+const telephoneOpt = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((v, ctx) => {
+    const n = telephoneE164(v);
+    if (n === undefined) {
+      ctx.addIssue({ code: "custom", message: "Numéro invalide : 06 12 34 56 78, ou avec l'indicatif pour l'étranger (+971 50 123 4567)" });
+      return z.NEVER;
+    }
+    return n;
+  });
 const dateOpt = z.iso.date().nullable().optional().transform((v) => (v ? new Date(`${v}T00:00:00Z`) : v));
 const date = z.iso.date().transform((v) => new Date(`${v}T00:00:00Z`));
 const heure = z
@@ -82,7 +96,9 @@ const lieuSchema = z.object({
         nom: z.string().trim().min(1),
         prenom: texteOpt,
         email: z.email().nullable().optional().or(z.literal("").transform(() => null)),
-        telephone: texteOpt,
+        telephone: telephoneOpt,
+        // Précision libre : rôle exact (« community manager »), quand le joindre, s'il est loin du lieu…
+        commentaire: texteOpt.pipe(z.string().max(500).nullable().optional()),
       })
     )
     .optional(),

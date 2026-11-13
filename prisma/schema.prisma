@@ -259,13 +259,15 @@ enum InterieurExterieur {
 }
 
 model LieuContact {
-  id        Int         @id @default(autoincrement())
-  lieuId    Int         @map("lieu_id")
-  role      ContactRole
-  nom       String
-  prenom    String?
-  email     String?
-  telephone String?
+  id          Int         @id @default(autoincrement())
+  lieuId      Int         @map("lieu_id")
+  role        ContactRole
+  nom         String
+  prenom      String?
+  email       String?
+  telephone   String? // E.164 (« +33669045935 »), normalisé à l'enregistrement (src/lib/telephone.ts)
+  // Précision libre : rôle exact (« community manager »), quand le joindre, s'il est loin du lieu…
+  commentaire String?
 
   lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
 
