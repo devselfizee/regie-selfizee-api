@@ -40,12 +40,12 @@ supervisionRouter.get(
         logicielVersion: true,
         gamme: { select: { libelle: true } },
         affectations: {
-          where: { debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }] },
+          where: { debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }], lieu: { supprimeLe: null } },
           take: 1,
           select: {
             lieu: {
               select: {
-                id: true, enseigne: true, ville: true, papierSurPlace: true, saisonnalite: true,
+                id: true, enseigne: true, ville: true, parc: true, papierSurPlace: true, saisonnalite: true,
                 horaires: { select: { jourSemaine: true, ouverture: true, fermeture: true } },
                 saisons: { select: { debut: true, fin: true } },
                 fermetures: { select: { debut: true, fin: true } },
@@ -107,7 +107,7 @@ supervisionRouter.get(
           identifiant: b.identifiant,
           gamme: b.gamme.libelle,
           // papierSurPlace : le lieu change lui-même le papier (sinon Selfizee)
-          lieu: lieu && { id: lieu.id, enseigne: lieu.enseigne, ville: lieu.ville, papierSurPlace: lieu.papierSurPlace },
+          lieu: lieu && { id: lieu.id, enseigne: lieu.enseigne, ville: lieu.ville, parc: lieu.parc, papierSurPlace: lieu.papierSurPlace },
           enLigne,
           lieuOuvert: ouvert,
           prochaineOuverture: lieu ? prochaineOuverture(lieu, maintenant) : null,
