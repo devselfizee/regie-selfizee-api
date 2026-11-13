@@ -160,14 +160,41 @@ codesRemiseRouter.get(
 codesRemiseRouter.get(
   "/:id",
   asynchrone(async (req, res) => {
-    const c = await prisma.codeRemise.findUnique({ where: { id: Number(req.params.id) }, include: inclure });
+    const c = await prisma.codeRemise.findUnique({
+      where: { id: Number(req.params.id) },
+      include: {
+        ...inclure,
+        lot: { include: { lieu: { select: { id: true, enseigne: true } }, creePar: { select: { prenom: true, nom: true } } } },
+        // Code gagné à la carte à gratter de la page souvenir : la séance d'où il vient (sans l'e-mail de l'invité)
+        carteSouvenir: {
+          select: {
+            createdAt: true, reveleeLe: true,
+            inscription: { select: { codeEvent: true, photoUuid: true, lieu: { select: { id: true, enseigne: true } }, evenement: { select: { nom: true, habituel: true } } } },
+          },
+        },
+      },
+    });
     if (!c) throw new HttpError(404, "INTROUVABLE");
     const utilisations = await prisma.utilisationCodeRemise.findMany({
       where: { codeId: c.id },
       orderBy: { horodatage: "desc" },
       include: { borne: { select: { id: true, identifiant: true } }, lieu: { select: { id: true, enseigne: true } } },
     });
-    res.json({ ...ligne(c), utilisations: utilisations.map((u) => ({ ...u, id: u.id.toString() })) });
+    // Quand et comment le code a été généré (retour de Sébastien du 13/11)
+    const carte = c.carteSouvenir;
+    const origine = carte
+      ? {
+          type: "carte_a_gratter" as const,
+          // La carte (et son code) est tirée à l'affichage de la page souvenir, puis grattée par l'invité
+          le: carte.createdAt,
+          grattee: carte.reveleeLe,
+          codeEvent: carte.inscription.codeEvent,
+          evenement: carte.inscription.evenement ? (carte.inscription.evenement.habituel ? "Habituel" : carte.inscription.evenement.nom) : null,
+          lieu: carte.inscription.lieu,
+          photoUuid: carte.inscription.photoUuid,
+        }
+      : { type: "manuel" as const, le: c.lot.createdAt, par: c.lot.creePar, nbCodes: c.lot.nbCodes };
+    res.json({ ...ligne(c), origine, utilisations: utilisations.map((u) => ({ ...u, id: u.id.toString() })) });
   })
 );
 
