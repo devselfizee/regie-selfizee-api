@@ -38,6 +38,8 @@ import { imagesStudioPublicRouter, imagesStudioRouter } from "./routes/imagesStu
 import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
 import { souvenirLieuRouter } from "./routes/souvenirLieu.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
+import { listeEvenementsRouter } from "./routes/listeEvenements.js";
+import { exigerSuperAdmin } from "./lib/superAdmin.js";
 import { cadresEvenementRouter } from "./routes/cadresEvenement.js";
 import { illustrationsEvenementRouter } from "./routes/illustrationsEvenement.js";
 import { illustrationsSeriesRouter } from "./routes/illustrationsSeries.js";
@@ -153,6 +155,8 @@ export function creerApp() {
   app.use("/api/tarifs", tarifsRouter);
   app.use("/api/commentaires", requirePerm("suivi.view"), commentairesRouter);
   app.use("/api/evenements", evenementsRouter);
+  // Tous les événements de borne : super admins (ADMIN_EMAILS) seulement
+  app.use("/api/config-evenements", exigerSuperAdmin, listeEvenementsRouter);
   app.use("/api/imports", requirePerm("imports.manage"), importsRouter);
   app.use("/api/bornes", requirePerm("bornes.view"), bornesRouter);
   app.use("/api/bornes", requirePerm("bornes.view"), coutsBornesRouter);
