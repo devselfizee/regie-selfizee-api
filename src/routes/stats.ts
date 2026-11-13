@@ -10,6 +10,8 @@ import { joursOuverts } from "../alertes/ouverture.js";
 import { disponibilite } from "../stats/disponibilite.js";
 import { apercusCadres, entonnoir, parcoursParTranche, photosPrisesParcours } from "../stats/parcours.js";
 import { userCan } from "../middleware/permissions.js";
+import { apercusSeances } from "../lib/apercusMedias.js";
+import { urlPhoto } from "../lib/photos.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
 export function filtresAutorises(req: UtilisateurRequest): Filtres {
@@ -210,15 +212,18 @@ async function parHeure(f: Filtres) {
   });
 }
 
-/** Les dernières vraies ventes (débitées) dans le périmètre et les filtres. */
-async function dernieresVentes(f: Filtres) {
+/** Les dernières vraies ventes (débitées) dans le périmètre et les filtres ; avecPhotos : vignette de la séance (medias.view). */
+async function dernieresVentes(f: Filtres, avecPhotos: boolean) {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT a.id, a.horodatage, a.montant_ttc_cents, a.montant_ht_cents, a.produit_code, a.produit_libelle, a.nb_tirages,
-           a.moyen_paiement::text moyen, l.id lieu_id, l.enseigne, b.identifiant
+           a.moyen_paiement::text moyen, a.pikcloud_uuid::text pikcloud_uuid, l.id lieu_id, l.enseigne, b.identifiant
     ${FROM_TRANSACTIONS}
     WHERE ${VENDUE} AND ${et([...conditionsVentes(f, "a.jour_local"), ...conditionsLieu(f)])}
     ORDER BY a.horodatage DESC LIMIT 10`;
+  // Vignette d'après la table medias, comme la liste des paiements (retour du 13/11) : ce sont des photos de personnes
+  const apercus = avecPhotos ? await apercusSeances(rows.map((r) => r.pikcloud_uuid as string | null)) : new Map();
   return rows.map((r) => ({
+    photoUrl: (r.pikcloud_uuid ? apercus.get(r.pikcloud_uuid as string)?.vignette : null) || urlPhoto(r.pikcloud_uuid as string | null),
     id: String(r.id),
     horodatage: r.horodatage as Date,
     montantTtcCents: n(r.montant_ttc_cents),
@@ -307,7 +312,7 @@ statsRouter.get(
       parc(f),
       (await userCan(req, "ventes.marges_view")) ? commissionsPeriode(f) : Promise.resolve(null),
       parHeure(f),
-      dernieresVentes(f),
+      userCan(req, "medias.view").then((voit) => dernieresVentes(f, voit)),
     ]);
 
     res.json({
