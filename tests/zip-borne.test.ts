@@ -14,6 +14,7 @@ const b = vi.hoisted(() => ({
   affectations: [] as { borneId: number; lieuId: number; debut: Date; fin: Date | null }[],
   evenements: [] as Record<string, unknown>[],
   rejets: [] as unknown[],
+  journal: [] as Record<string, unknown>[],
 }));
 
 vi.mock("../src/lib/prisma.js", () => ({
@@ -27,6 +28,7 @@ vi.mock("../src/lib/prisma.js", () => ({
     },
     configEvenement: { findUnique: async ({ where }: { where: { code: string } }) => b.evenements.find((e) => e.code === where.code) ?? null },
     importLot: { create: async ({ data }: { data: unknown }) => b.rejets.push(data) },
+    installationEvenement: { create: async ({ data }: { data: Record<string, unknown> }) => b.journal.push(data), findFirst: async () => null },
   },
 }));
 
@@ -51,6 +53,7 @@ beforeEach(async () => {
     { code: "RAUT", lieuId: 9, version: 1, publieeLe: new Date("2026-10-01"), ...empreinteZip("RAUT", 1, ZIP) },
   ];
   b.rejets = [];
+  b.journal = [];
   await rangerZip("RA7K", 3, ZIP);
 });
 afterAll(() => rmSync(dossier, { recursive: true, force: true }));
@@ -59,7 +62,7 @@ describe("zip de l'événement pour la borne", () => {
   it("état « complete » : version, empreinte et URL signée ; le zip se télécharge, avec reprise possible", async () => {
     const r = await statut("ra7k").expect(200);
     expect(r.body).toMatchObject({ status: "complete", code: "RA7K", version: 3, taille: ZIP.length, sha256: empreinteZip("RA7K", 3, ZIP).zipSha256 });
-    expect(r.body.url).toMatch(/\/ingest\/v1\/evenements\/RA7K\/zip\?v=3&exp=\d+&sig=[\w-]+$/);
+    expect(r.body.url).toMatch(/\/ingest\/v1\/evenements\/RA7K\/zip\?v=3&exp=\d+&b=1&d=m&sig=[\w-]+$/);
     expect(new Date(r.body.expireLe).getTime() - Date.now()).toBeLessThanOrEqual(15 * 60_000);
 
     const z = await request(app).get(chemin(r.body.url)).buffer(true).parse((res, fin) => {
@@ -72,6 +75,13 @@ describe("zip de l'événement pour la borne", () => {
     expect(Buffer.compare(z.body as Buffer, ZIP)).toBe(0);
     const partiel = await request(app).get(chemin(r.body.url)).set("Range", "bytes=0-3").expect(206);
     expect(partiel.headers["content-length"]).toBe("4");
+    // Journal : la demande, puis chaque envoi qui part du début ; une reprise au milieu du fichier ne compte pas
+    await request(app).get(chemin(r.body.url)).set("Range", "bytes=4-7").expect(206);
+    expect(b.journal.map((l) => [l.etat, l.declencheur, l.borneId, l.code, l.version, l.lieuId])).toEqual([
+      ["DEMANDE", "MANUEL", 1, "RA7K", 3, 7],
+      ["ENVOYE", "MANUEL", 1, "RA7K", 3, 7],
+      ["ENVOYE", "MANUEL", 1, "RA7K", 3, 7],
+    ]);
   });
 
   it("URL fausse, falsifiée ou expirée : 404 sans détail", async () => {
@@ -79,6 +89,8 @@ describe("zip de l'événement pour la borne", () => {
     await request(app).get(chemin(url).replace(/sig=[\w-]+/, "sig=faux")).expect(404);
     await request(app).get(chemin(url).replace("v=3", "v=2")).expect(404); // version changée : la signature ne suit pas
     await request(app).get(chemin(url).replace("/RA7K/", "/RAUT/")).expect(404); // autre événement
+    await request(app).get(chemin(url).replace("b=1", "b=2")).expect(404); // autre borne : la signature ne suit pas
+    await request(app).get(chemin(url).replace("d=m", "d=a")).expect(404);
     await request(app).get("/ingest/v1/evenements/RA7K/zip").expect(404);
     vi.useFakeTimers({ now: Date.now() + 16 * 60_000, toFake: ["Date"] });
     try {

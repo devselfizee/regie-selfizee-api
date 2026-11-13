@@ -335,7 +335,7 @@ export async function oublier(id: string, maintenant = Date.now()): Promise<{ ph
       where: { codeEvent: i.codeEvent, photoUuid: i.photoUuid, mediaStatut: "TELECHARGE" },
       select: { id: true, mediaChemin: true, vignetteChemin: true },
     });
-    for (const m of medias) await purgerMedia(m);
+    for (const m of medias) await purgerMedia(m, "RGPD");
     photosEffacees = true;
   }
   await journaliser("data_deleted", j, i.lieuId, { photos: photosEffacees });

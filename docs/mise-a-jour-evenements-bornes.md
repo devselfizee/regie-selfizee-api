@@ -1,6 +1,6 @@
 # Mise à jour automatique des événements sur les bornes
 
-Régie Selfizee · API bornes · v1 du 13/11/2026
+Régie Selfizee · API bornes · v1.1 du 13/11/2026
 
 Pour les codes d'événement Régie (`R…`), la borne n'a plus besoin qu'on tape un code : elle demande à la Régie quel
 événement faire tourner, le télécharge, le recharge quand il est republié, et signale ce qu'elle a installé.
@@ -168,6 +168,20 @@ Réponse `200` : `{ "ok": true }`
 | `ECHEC` | Téléchargement ou installation raté ; `message` donne la raison (500 caractères au plus). |
 
 La Régie sait ainsi quelle version tourne sur chaque borne.
+
+### Automatique ou manuel : le champ `declencheur`
+
+La Régie tient un journal de chaque téléchargement (zip demandé, envoyé, téléchargé, installé, échec) et y note s'il
+vient de la mise à jour automatique ou d'un code tapé à la main sur la borne.
+
+- Dans `statut` et `installation`, ajouter le champ facultatif `"declencheur": "auto"` (la borne suit son programme) ou
+  `"declencheur": "manuel"` (un code a été tapé).
+- Sans ce champ, la Régie le déduit : un code reçu dans le `programme` de la borne dans le dernier quart d'heure est
+  « auto », tout autre code est « manuel ». Le dire explicitement est plus sûr.
+
+```json
+{ "borne_id": "S513", "code": "RHAL", "declencheur": "auto" }
+```
 
 ## Boucle conseillée
 

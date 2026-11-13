@@ -5,7 +5,7 @@ import { asynchrone } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { cheminAbsolu } from "../lib/stockage.js";
 import { cheminZip, statutPourBorne, urlZipValide } from "../config-evenement/zipBorne.js";
-import { noterInstallation, programmePourBorne, versionsPourBorne } from "../config-evenement/programmeBorne.js";
+import { declencheurDe, noterEtape, noterInstallation, programmePourBorne, versionsPourBorne } from "../config-evenement/programmeBorne.js";
 import { authBorne, type BorneRequest } from "../middleware/authBorne.js";
 import { journaliserRejet } from "../ingestion/journal.js";
 import { ingererLotTransactions } from "../ingestion/transactions.js";
@@ -117,6 +117,8 @@ ingestionRouter.post(
 // ─── Mise à jour automatique des événements (13/11/2026, docs/synchronisation-bornes.md § 4 quinquies) ───
 
 const codeEvenement = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{3,8}$/);
+/** Facultatif : la borne dit si c'est sa mise à jour automatique ou un code tapé ; sinon la Régie le déduit */
+const declencheurAnnonce = z.enum(["auto", "manuel"]).nullable().optional();
 
 // POST /ingest/v1/evenements/programme { borne_id } — l'événement qui doit tourner maintenant sur la borne (programmation
 // de son lieu : le par défaut ou l'événement personnalisé en cours) et les prochains, avec leur version publiée.
@@ -154,11 +156,13 @@ ingestionRouter.post(
         code: codeEvenement,
         version: z.number().int().min(0),
         etat: z.enum(["TELECHARGE", "INSTALLE", "ECHEC"]),
+        declencheur: declencheurAnnonce,
         message: z.string().max(500).nullable().optional(),
       })
       .safeParse(req.body);
     if (!c.success) return invalide(req, res, c.error, "CONFIG");
-    await noterInstallation(req.borne!, c.data);
+    const { declencheur, ...d } = c.data;
+    await noterInstallation(req.borne!, { ...d, declencheur: declencheur ? (declencheur === "auto" ? "AUTO" : "MANUEL") : null });
     res.json({ ok: true });
   })
 );
@@ -173,10 +177,14 @@ ingestionRouter.post(
   "/evenements/statut",
   authBorne("CONFIG"),
   asynchrone<BorneRequest>(async (req, res) => {
-    const c = z.object({ borne_id: z.string(), code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{3,8}$/) }).safeParse(req.body);
+    const c = z.object({ borne_id: z.string(), code: codeEvenement, declencheur: declencheurAnnonce }).safeParse(req.body);
     if (!c.success) return invalide(req, res, c.error, "CONFIG");
+    const declencheur = declencheurDe(req.borne!.id, c.data.code, c.data.declencheur);
+    const statut = await statutPourBorne(req.borne!, c.data.code, `${req.protocol}://${req.get("host")}`, new Date(), declencheur);
+    // Journal : la borne a reçu le lien du zip (les interrogations sans zip prêt ne sont pas journalisées)
+    if (statut.status === "complete") await noterEtape(req.borne!.id, { code: statut.code, version: statut.version, etat: "DEMANDE", declencheur });
     res.setHeader("Cache-Control", "no-store");
-    res.json(await statutPourBorne(req.borne!, c.data.code, `${req.protocol}://${req.get("host")}`));
+    res.json(statut);
   })
 );
 
@@ -186,8 +194,9 @@ ingestionRouter.get(
   "/evenements/:code/zip",
   asynchrone(async (req, res) => {
     const code = String(req.params.code).toUpperCase();
-    const version = /^[A-Z0-9]{3,8}$/.test(code) ? urlZipValide(code, req.query.v, req.query.exp, req.query.sig) : null;
-    if (version === null) return void res.status(404).json({ error: "INTROUVABLE" });
+    const lien = /^[A-Z0-9]{3,8}$/.test(code) ? urlZipValide(code, req.query) : null;
+    if (lien === null) return void res.status(404).json({ error: "INTROUVABLE" });
+    const { version, porteur } = lien;
     const e = await prisma.configEvenement.findUnique({ where: { code }, select: { version: true, zipSha256: true } });
     if (!e) return void res.status(404).json({ error: "INTROUVABLE" });
     const absolu = cheminAbsolu(cheminZip(code, version));
@@ -195,6 +204,9 @@ ingestionRouter.get(
     res.setHeader("Cache-Control", "private, no-store");
     if (version === e.version && e.zipSha256) res.setHeader("X-Zip-Sha256", e.zipSha256);
     // sendFile : reprise des téléchargements interrompus (Range), Content-Length
+    // Journal : zip servi à cette borne ; une reprise (Range qui ne part pas de 0) ne compte pas une seconde fois
+    const reprise = /^bytes=(?!0-)/.test(String(req.headers.range ?? ""));
+    if (porteur && !reprise) await noterEtape(porteur.borneId, { code, version, etat: "ENVOYE", declencheur: porteur.declencheur });
     res.sendFile(absolu, { headers: { "Content-Type": "application/zip" }, etag: false, lastModified: false }, (err) => {
       if (err && !res.headersSent) res.status(404).json({ error: "INTROUVABLE" });
     });

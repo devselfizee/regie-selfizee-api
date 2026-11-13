@@ -35,7 +35,19 @@ vi.mock("../src/lib/prisma.js", () => {
         findUnique: async ({ where }: { where: { code: string } }) => b.evenements.find((e) => e.code === where.code) ?? null,
         findMany: async ({ where }: { where: Record<string, unknown> }) => b.evenements.filter((e) => correspond(e, where)),
       },
-      installationEvenement: { create: async ({ data }: { data: Record<string, unknown> }) => b.installations.push(data) },
+      installationEvenement: {
+        create: async ({ data }: { data: Record<string, unknown> }) => b.installations.push({ id: BigInt(b.installations.length + 1), createdAt: new Date(), ...data }),
+        // Dernière demande de la borne pour ce code (déclencheur repris par les signalements)
+        findFirst: async ({ where }: { where: { borneId: number; code: string } }) =>
+          [...b.installations].reverse().find((l) => l.borneId === where.borneId && l.code === where.code && l.declencheur) ?? null,
+        findMany: async ({ where, take }: { where: { id?: { lt: bigint }; declencheur?: string; borneId?: number }; take: number }) =>
+          [...b.installations]
+            .reverse()
+            .filter((l) => (!where.id || (l.id as bigint) < where.id.lt) && (!where.declencheur || l.declencheur === where.declencheur) && (!where.borneId || l.borneId === where.borneId))
+            .slice(0, take)
+            .map((l) => ({ ...l, borne: { id: 1, identifiant: "SZ-001" }, evenement: l.configEvenementId ? { id: l.configEvenementId, nom: "Halloween", habituel: false, lieu: { id: 7, enseigne: "La Ruche", ville: "Trégueux" } } : null })),
+      },
+      user: { upsert: async () => ({ id: 1, email: "dev@local", nom: "Dev", prenom: "", role: "ADMIN", lieuId: null, isActive: true }) },
       importLot: { create: async ({ data }: { data: unknown }) => b.rejets.push(data) },
     },
   };
@@ -128,10 +140,42 @@ describe("versions et installations", () => {
     await appel("installation", { code: "RZZZ", version: 2, etat: "ECHEC", message: "sha256 différent" }).expect(200);
     vi.useRealTimers();
     expect(b.installations).toEqual([
-      { borneId: 1, configEvenementId: "RHAL".charCodeAt(1), code: "RHAL", version: 1, etat: "INSTALLE", message: null },
-      { borneId: 1, configEvenementId: null, code: "RZZZ", version: 2, etat: "ECHEC", message: "sha256 différent" },
+      expect.objectContaining({ borneId: 1, configEvenementId: "RHAL".charCodeAt(1), lieuId: 7, code: "RHAL", version: 1, etat: "INSTALLE", declencheur: null, message: null }),
+      expect.objectContaining({ borneId: 1, configEvenementId: null, lieuId: null, code: "RZZZ", version: 2, etat: "ECHEC", message: "sha256 différent" }),
     ]);
     await appel("installation", { code: "RHAL", version: 1, etat: "FINI" }).expect(400);
     expect(b.rejets).toHaveLength(1);
+  });
+});
+
+describe("journal des téléchargements", () => {
+  it("auto si le code vient du programme de la borne, manuel sinon ; la borne peut aussi le dire ; les signalements suivent", async () => {
+    await appel("statut", { code: "ROLD" }).expect(200); // code que le programme n'annonce pas : tapé à la main
+    await appel("programme").expect(200);
+    await appel("statut", { code: "RNOE" }).expect(200); // annoncé par le programme : mise à jour automatique
+    await appel("statut", { code: "RNOE", declencheur: "manuel" }).expect(200);
+    await appel("installation", { code: "RNOE", version: 1, etat: "TELECHARGE" }).expect(200); // suit la dernière demande
+    await appel("installation", { code: "RNOE", version: 1, etat: "INSTALLE", declencheur: "auto" }).expect(200);
+    await appel("statut", { code: "RBRO" }).expect(200); // zip pas prêt : rien au journal
+    vi.useRealTimers();
+    expect(b.installations.map((l) => [l.etat, l.declencheur])).toEqual([
+      ["DEMANDE", "MANUEL"], ["DEMANDE", "AUTO"], ["DEMANDE", "MANUEL"], ["TELECHARGE", "MANUEL"], ["INSTALLE", "AUTO"],
+    ]);
+  });
+
+  it("lecture par curseur, de la plus récente à la plus ancienne, filtrée par déclencheur", async () => {
+    delete process.env.KEYCLOAK_URL;
+    for (let n = 0; n < 5; n++) await appel("installation", { code: "RHAL", version: 1, etat: "INSTALLE", declencheur: n % 2 ? "auto" : "manuel" }).expect(200);
+    vi.useRealTimers();
+    const p1 = (await request(app).get("/api/telechargements-evenements?limite=2").expect(200)).body;
+    expect(p1.lignes.map((l: { id: string }) => l.id)).toEqual(["5", "4"]);
+    expect(p1.lignes[0]).toMatchObject({ code: "RHAL", version: 1, etat: "INSTALLE", declencheur: "MANUEL", borne: { identifiant: "SZ-001" }, lieu: { enseigne: "La Ruche" }, evenement: { nom: "Halloween", parDefaut: false } });
+    expect(p1.suivant).toBe("4");
+    const p2 = (await request(app).get(`/api/telechargements-evenements?limite=2&avant=${p1.suivant}`).expect(200)).body;
+    expect(p2.lignes.map((l: { id: string }) => l.id)).toEqual(["3", "2"]);
+    const fin = (await request(app).get("/api/telechargements-evenements?limite=2&avant=2").expect(200)).body;
+    expect(fin).toMatchObject({ suivant: null });
+    const autos = (await request(app).get("/api/telechargements-evenements?declencheur=AUTO").expect(200)).body;
+    expect(autos.lignes.map((l: { id: string }) => l.id)).toEqual(["4", "2"]);
   });
 });

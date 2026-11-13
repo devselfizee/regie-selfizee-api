@@ -38,19 +38,33 @@ export async function rangerZip(code: string, version: number, zip: Buffer) {
 
 const secretDuProcessus = randomBytes(32);
 const secret = () => process.env.BORNE_ZIP_SECRET || secretDuProcessus;
-const signer = (code: string, version: number, exp: number) => createHmac("sha256", secret()).update(`zip-borne\n${code}\n${version}\n${exp}`).digest("base64url");
+/** Qui télécharge, écrit dans le lien et signé avec lui : la borne (b) et le déclencheur (d : a = auto, m = manuel). */
+export interface PorteurZip {
+  borneId: number;
+  declencheur: "AUTO" | "MANUEL";
+}
+const signer = (code: string, version: number, exp: number, b: string, d: string) =>
+  createHmac("sha256", secret()).update(`zip-borne\n${code}\n${version}\n${exp}\n${b}\n${d}`).digest("base64url");
 
-export function urlZip(base: string, code: string, version: number, maintenant = Date.now()) {
+export function urlZip(base: string, code: string, version: number, maintenant = Date.now(), porteur?: PorteurZip) {
   const exp = Math.floor(maintenant / 1000) + VALIDITE_URL_S;
-  return { url: `${base}/ingest/v1/evenements/${encodeURIComponent(code)}/zip?v=${version}&exp=${exp}&sig=${signer(code, version, exp)}`, expireLe: new Date(exp * 1000) };
+  const b = porteur ? String(porteur.borneId) : "";
+  const d = porteur ? (porteur.declencheur === "AUTO" ? "a" : "m") : "";
+  const qui = porteur ? `&b=${b}&d=${d}` : "";
+  return { url: `${base}/ingest/v1/evenements/${encodeURIComponent(code)}/zip?v=${version}&exp=${exp}${qui}&sig=${signer(code, version, exp, b, d)}`, expireLe: new Date(exp * 1000) };
 }
 
-export function urlZipValide(code: string, version: unknown, exp: unknown, sig: unknown, maintenant = Date.now()): number | null {
+/** La version et le porteur d'un lien bien signé et pas expiré ; null sinon. */
+export function urlZipValide(code: string, q: { v?: unknown; exp?: unknown; sig?: unknown; b?: unknown; d?: unknown }, maintenant = Date.now()): { version: number; porteur: PorteurZip | null } | null {
+  const { v: version, exp, sig } = q;
   if (typeof version !== "string" || !/^\d{1,6}$/.test(version) || typeof exp !== "string" || !/^\d{1,12}$/.test(exp) || typeof sig !== "string") return null;
+  const b = typeof q.b === "string" && /^\d{1,9}$/.test(q.b) ? q.b : "";
+  const d = q.d === "a" || q.d === "m" ? q.d : "";
   if (Number(exp) * 1000 < maintenant) return null;
-  const attendu = Buffer.from(signer(code, Number(version), Number(exp)));
+  const attendu = Buffer.from(signer(code, Number(version), Number(exp), b, d));
   const recu = Buffer.from(sig);
-  return attendu.length === recu.length && timingSafeEqual(attendu, recu) ? Number(version) : null;
+  if (attendu.length !== recu.length || !timingSafeEqual(attendu, recu)) return null;
+  return { version: Number(version), porteur: b && d ? { borneId: Number(b), declencheur: d === "a" ? "AUTO" : "MANUEL" } : null };
 }
 
 // ─── État de l'événement pour la borne ───
@@ -87,13 +101,13 @@ export async function etatDuZip(e: EvenementZip): Promise<"incomplete" | "obsole
   return "complete";
 }
 
-export async function statutPourBorne(borne: Pick<Borne, "id">, code: string, base: string, maintenant = new Date()): Promise<StatutZip> {
+export async function statutPourBorne(borne: Pick<Borne, "id">, code: string, base: string, maintenant = new Date(), declencheur: PorteurZip["declencheur"] = "MANUEL"): Promise<StatutZip> {
   const e = await prisma.configEvenement.findUnique({ where: { code }, select: selectionZip });
   if (!e || e.lieuId !== (await lieuDeLaBorne(borne.id, maintenant))) return { status: "unknown" };
   const etat = await etatDuZip(e);
   if (etat === "incomplete") return { status: "incomplete" };
   if (etat === "obsolete") return { status: "obsolete", version: e.version, message: "Republier l'événement dans la Régie pour préparer son zip." };
-  const { url, expireLe } = urlZip(base, e.code, e.version, maintenant.getTime());
+  const { url, expireLe } = urlZip(base, e.code, e.version, maintenant.getTime(), { borneId: borne.id, declencheur });
   return {
     status: "complete",
     code: e.code,

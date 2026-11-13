@@ -1,5 +1,5 @@
 import { TZDate } from "@date-fns/tz";
-import type { Borne, EtatInstallation } from "@prisma/client";
+import type { Borne, Declencheur, EtatInstallation, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
 import { reglagesSchema } from "./reglages.js";
@@ -107,7 +107,22 @@ export async function programmePourBorne(borne: Pick<Borne, "id">, maintenant = 
     .slice(0, MAX_PROCHAINS)
     .map((p) => ({ ...p.b, debut: isoParis(p.debut), fin: isoParis(p.fin) }));
 
+  // Les codes annoncés à cette borne : un zip demandé ensuite pour l'un d'eux est une mise à jour automatique
+  programmesRecents.set(borne.id, { t, codes: new Set([...(actuel ? [actuel.code] : []), ...prochains.map((p) => p.code)]) });
   return { lieu: lieu ? { id: lieu.id, nom: lieu.enseigne } : null, maintenant: isoParis(maintenant), actuel, prochains };
+}
+
+// ─── Auto ou manuel ───
+// La borne peut le dire (declencheur dans sa requête). Sinon on le déduit : un code reçu dans son programme dans le
+// dernier quart d'heure est une mise à jour automatique ; tout autre code a été tapé à la main. En mémoire : une
+// seule instance d'API, et une borne redemande son programme toutes les 5 minutes.
+const programmesRecents = new Map<number, { t: number; codes: Set<string> }>();
+const FENETRE_AUTO_MS = 15 * 60_000;
+
+export function declencheurDe(borneId: number, code: string, annonce?: "auto" | "manuel" | null, maintenant = Date.now()): Declencheur {
+  if (annonce) return annonce === "auto" ? "AUTO" : "MANUEL";
+  const p = programmesRecents.get(borneId);
+  return p && maintenant - p.t <= FENETRE_AUTO_MS && p.codes.has(code) ? "AUTO" : "MANUEL";
 }
 
 /**
@@ -128,10 +143,87 @@ export async function versionsPourBorne(borne: Pick<Borne, "id">, codes: string[
   };
 }
 
-/** Ce que la borne signale après le chargement d'un zip. Un code inconnu est gardé (sans lien) : rien n'est perdu. */
-export async function noterInstallation(borne: Pick<Borne, "id">, d: { code: string; version: number; etat: EtatInstallation; message?: string | null }) {
-  const e = await prisma.configEvenement.findUnique({ where: { code: d.code }, select: { id: true } });
-  await prisma.installationEvenement.create({
-    data: { borneId: borne.id, configEvenementId: e?.id ?? null, code: d.code, version: d.version, etat: d.etat, message: d.message?.slice(0, 500) ?? null },
+// ─── Journal des téléchargements ───
+
+/**
+ * Ajoute une ligne au journal (jamais bloquant pour la borne : une erreur d'écriture est seulement tracée). Un code
+ * inconnu est gardé sans lien. Sans déclencheur donné, celui de la dernière demande de cette borne pour ce code (2 h).
+ */
+export async function noterEtape(borneId: number, d: { code: string; version: number; etat: EtatInstallation; declencheur?: Declencheur | null; message?: string | null }) {
+  try {
+    const e = await prisma.configEvenement.findUnique({ where: { code: d.code }, select: { id: true, lieuId: true } });
+    let declencheur = d.declencheur ?? null;
+    if (!declencheur) {
+      const demande = await prisma.installationEvenement.findFirst({
+        where: { borneId, code: d.code, declencheur: { not: null }, createdAt: { gt: new Date(Date.now() - 2 * 3_600_000) } },
+        orderBy: { id: "desc" },
+        select: { declencheur: true },
+      });
+      declencheur = demande?.declencheur ?? null;
+    }
+    await prisma.installationEvenement.create({
+      data: { borneId, configEvenementId: e?.id ?? null, lieuId: e?.lieuId ?? null, code: d.code, version: d.version, etat: d.etat, declencheur, message: d.message?.slice(0, 500) ?? null },
+    });
+  } catch (err) {
+    console.error("Journal des téléchargements :", err);
+  }
+}
+
+/** Ce que la borne signale après le chargement d'un zip (TELECHARGE, INSTALLE, ECHEC). */
+export const noterInstallation = (borne: Pick<Borne, "id">, d: { code: string; version: number; etat: EtatInstallation; declencheur?: Declencheur | null; message?: string | null }) => noterEtape(borne.id, d);
+
+export interface FiltresJournal {
+  lieuId?: number;
+  borneId?: number;
+  etat?: EtatInstallation;
+  declencheur?: Declencheur;
+  du?: Date;
+  au?: Date;
+  /** Curseur : seulement les lignes d'identifiant inférieur (page suivante) */
+  avant?: bigint;
+  limite: number;
+  /** Périmètre de l'utilisateur sur les lieux (commercial, partenaire) */
+  lieu?: Prisma.LieuWhereInput;
+}
+
+/**
+ * Une page du journal, de la plus récente à la plus ancienne. Lecture par curseur sur l'identifiant (ordre
+ * d'arrivée) : pas de total ni de saut de lignes, le coût ne dépend pas de la taille de la table. `suivant` : le
+ * curseur de la page d'après, null à la fin.
+ */
+export async function lireJournal(f: FiltresJournal) {
+  const lignes = await prisma.installationEvenement.findMany({
+    where: {
+      ...(f.avant ? { id: { lt: f.avant } } : {}),
+      ...(f.lieuId ? { lieuId: f.lieuId } : {}),
+      ...(f.borneId ? { borneId: f.borneId } : {}),
+      ...(f.etat ? { etat: f.etat } : {}),
+      ...(f.declencheur ? { declencheur: f.declencheur } : {}),
+      ...(f.du || f.au ? { createdAt: { ...(f.du ? { gte: f.du } : {}), ...(f.au ? { lt: f.au } : {}) } } : {}),
+      ...(f.lieu ? { evenement: { lieu: f.lieu } } : {}),
+    },
+    orderBy: { id: "desc" },
+    take: f.limite + 1,
+    select: {
+      id: true, createdAt: true, code: true, version: true, etat: true, declencheur: true, message: true,
+      borne: { select: { id: true, identifiant: true } },
+      evenement: { select: { id: true, nom: true, habituel: true, lieu: { select: { id: true, enseigne: true, ville: true } } } },
+    },
   });
+  const page = lignes.slice(0, f.limite);
+  return {
+    lignes: page.map((l) => ({
+      id: String(l.id), date: l.createdAt, code: l.code, version: l.version, etat: l.etat, declencheur: l.declencheur, message: l.message,
+      borne: l.borne,
+      evenement: l.evenement ? { id: l.evenement.id, nom: l.evenement.nom, parDefaut: l.evenement.habituel } : null,
+      lieu: l.evenement?.lieu ?? null,
+    })),
+    suivant: lignes.length > f.limite ? String(page[page.length - 1].id) : null,
+  };
+}
+
+/** Conservation du journal : 180 jours (appelée par le planificateur). */
+export async function purgerJournal(maintenant = Date.now()) {
+  const { count } = await prisma.installationEvenement.deleteMany({ where: { createdAt: { lt: new Date(maintenant - 180 * 86_400_000) } } });
+  return count;
 }

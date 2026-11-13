@@ -8,6 +8,7 @@ import { synchroniserMeteo } from "./calendrier/meteo.js";
 import { antennesConfigure, synchroniserVillesPrincipales } from "./antennes/villes.js";
 import { purgerMedias, telechargerEnAttente } from "./synchro-pikcloud/telechargement.js";
 import { purgerSouvenir, rattraperLivraisons } from "./souvenir/donnees.js";
+import { purgerJournal } from "./config-evenement/programmeBorne.js";
 import { envoyerEnAttente } from "./souvenir/envois.js";
 
 const MINUTE = 60_000;
@@ -82,6 +83,11 @@ export function demarrerPlanificateur() {
     purgerSouvenir()
       .then((r) => r.anonymisees + r.liens && console.log(`Page souvenir : ${r.anonymisees} inscription(s) anonymisée(s), ${r.liens} lien(s) supprimé(s)`))
       .catch((err) => console.error("Purge de la page souvenir :", err));
+  // Journal des téléchargements d'événements : 180 jours gardés
+  const purgeJournal = () =>
+    purgerJournal()
+      .then((n) => n && console.log(`Journal des téléchargements : ${n} ligne(s) de plus de 180 jours supprimée(s)`))
+      .catch((err) => console.error("Purge du journal des téléchargements :", err));
 
   setTimeout(() => {
     purgeSouvenir();
@@ -94,6 +100,7 @@ export function demarrerPlanificateur() {
   setInterval(medias, MINUTE);
   setInterval(livraisons, MINUTE);
   setInterval(purgeSouvenir, 60 * MINUTE);
+  setInterval(purgeJournal, 6 * 60 * MINUTE);
   setInterval(purge, 60 * MINUTE);
   setInterval(donneesExternes, 6 * 60 * MINUTE);
   setInterval(reversements, 60 * MINUTE);

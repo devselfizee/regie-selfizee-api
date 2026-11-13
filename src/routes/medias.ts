@@ -163,6 +163,9 @@ async function versClient(m: MediaListe) {
     nbTirages: m.nbTirages,
     test: m.test,
     statut: m.mediaStatut,
+    // Fichier supprimé : à la demande de l'invité (RGPD) ou après la durée de conservation ; null : ancien, raison non notée
+    purgeMotif: m.purgeMotif,
+    purgeLe: m.purgeLe,
     jsonRecu: m.dataStatut === "TELECHARGE",
     taille: m.tailleOctets,
     recuLe: m.createdAt,
@@ -255,7 +258,7 @@ const uuidParam = z.uuid();
 async function mediaAccessible(req: UtilisateurRequest) {
   const uuid = uuidParam.safeParse(req.params.uuid);
   if (!uuid.success) throw new HttpError(404, "INTROUVABLE");
-  const m = await prisma.media.findUnique({ where: { uuid: uuid.data }, include: { evenement: selectionEvenement } });
+  const m = await prisma.media.findUnique({ where: { uuid: uuid.data }, include: { evenement: selectionEvenement, lieu: selectionLieu } });
   if (!m) throw new HttpError(404, "INTROUVABLE");
   if (m.lieuId === null) {
     if (!(await userCan(req, "medias.manage"))) throw new HttpError(404, "INTROUVABLE");
@@ -326,6 +329,7 @@ mediasRouter.get(
       pageSouvenir: m.photoUuid ? lienPageSouvenir(m.codeEvent, m.photoUuid) : null,
       dateSave: m.dateSave,
       lieuId: m.lieuId,
+      lieu: m.lieu,
       sha256: m.sha256,
       telechargeLe: m.telechargeLe,
       derniereErreur: m.derniereErreur,

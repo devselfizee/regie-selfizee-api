@@ -420,6 +420,12 @@ un code d'un autre lieu ou inconnu : `{ "code": "RZZZ", "status": "unknown" }`.
 et vérifié), `INSTALLE` (prêt sur la borne) ou `ECHEC` (`message` : la raison) → `{ "ok": true }`. La Régie sait ainsi
 quelle version tourne sur chaque borne.
 
+**Automatique ou manuel** — `statut` et `installation` acceptent le champ facultatif `"declencheur": "auto" | "manuel"`
+(mise à jour automatique, ou code tapé sur la borne). Sans lui, la Régie le déduit : un code reçu dans le `programme` de
+la borne dans le dernier quart d'heure est « auto », tout autre « manuel ». Chaque étape (zip demandé, envoyé,
+téléchargé, installé, échec) est gardée 180 jours dans le journal de la Régie (page « Téléchargements »). Le lien du
+zip porte la borne et le déclencheur (`b`, `d`), signés avec le reste : ne pas le modifier.
+
 Boucle conseillée : (1) `programme` ; (2) pour `actuel` et les `prochains` prêts, si `version` diffère de la version locale :
 `statut` puis téléchargement (§ 4 quater), vérification `sha256`, `installation` `TELECHARGE` ; (3) basculer sur `actuel`
 s'il a changé (ou à `jusqua`), `installation` `INSTALLE` ; en cas d'échec, garder l'ancien zip et signaler `ECHEC`.

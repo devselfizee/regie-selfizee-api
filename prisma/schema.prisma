@@ -1613,6 +1613,9 @@ model Media {
   tentatives     Int           @default(0)
   derniereErreur String?       @map("derniere_erreur")
   telechargeLe   DateTime?     @map("telecharge_le") @db.Timestamptz(3)
+  // Fichier supprimé (mediaStatut PURGE) : pourquoi (RGPD = demande de l'invité, CONSERVATION = durée dépassée) et quand
+  purgeMotif     String?       @map("purge_motif") @db.VarChar(12)
+  purgeLe        DateTime?     @map("purge_le") @db.Timestamptz(3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -1775,11 +1778,21 @@ model ModeleMail {
 // Ce que la borne signale après avoir chargé le zip d'un événement (POST /ingest/v1/evenements/installation) : la
 // Régie sait ainsi quelle version tourne sur chaque borne. Une ligne par signalement (historique).
 enum EtatInstallation {
+  DEMANDE // la borne a demandé le zip et reçu son lien (/statut)
+  ENVOYE // la Régie a servi le zip (téléchargement commencé)
   TELECHARGE // zip reçu et vérifié (sha256), pas encore installé
   INSTALLE // événement installé, prêt sur la borne
   ECHEC // téléchargement ou installation raté (message)
 }
 
+// Qui a lancé le téléchargement : la mise à jour automatique (programme) ou un code tapé sur la borne
+enum Declencheur {
+  AUTO
+  MANUEL
+}
+
+// Journal des téléchargements d'événements (page « Téléchargements ») : lignes ajoutées seulement, jamais modifiées.
+// Pensé pour le volume : lieu copié dans la ligne (filtre sans jointure), lecture par curseur sur id, purge à 180 jours.
 model InstallationEvenement {
   id                BigInt           @id @default(autoincrement())
   borneId           Int              @map("borne_id")
@@ -1787,13 +1800,18 @@ model InstallationEvenement {
   code              String           @db.VarChar(8)
   version           Int
   etat              EtatInstallation
+  declencheur       Declencheur?
+  // Lieu de l'événement au moment de la ligne (copie : filtre et périmètre sans jointure)
+  lieuId            Int?             @map("lieu_id")
   message           String?          @db.VarChar(500)
   createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
   borne     Borne            @relation(fields: [borneId], references: [id], onDelete: Cascade)
   evenement ConfigEvenement? @relation(fields: [configEvenementId], references: [id], onDelete: SetNull)
 
-  @@index([borneId, createdAt])
-  @@index([configEvenementId, createdAt])
+  @@index([borneId, id])
+  @@index([lieuId, id])
+  @@index([configEvenementId, id])
+  @@index([createdAt])
   @@map("installations_evenement")
 }

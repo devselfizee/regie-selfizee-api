@@ -189,7 +189,7 @@ async function effacerPhotos(i: Pick<Inscription, "codeEvent" | "photoUuid">) {
     where: { codeEvent: i.codeEvent, photoUuid: i.photoUuid, mediaStatut: "TELECHARGE" },
     select: { id: true, mediaChemin: true, vignetteChemin: true },
   });
-  for (const m of medias) await purgerMedia(m);
+  for (const m of medias) await purgerMedia(m, "RGPD");
 }
 
 export interface BilanSuppression {
