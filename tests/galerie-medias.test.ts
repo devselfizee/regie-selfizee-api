@@ -207,7 +207,12 @@ describe("galerie : un média", () => {
     // Page souvenir : base du QR (défaut sans SOUVENIR_QR_BASE_URL) + code d'événement + photo_uuid
     expect(r.body.pageSouvenir).toBe("https://myevent.selfizee.fr/p/RAAA-3f9c2a7e5b1d4c8a9e217d4b0c6a1f53");
     expect((await admin.get(`/api/medias/${ids.attente5}`).expect(200)).body.pageSouvenir).toBeNull();
-    expect((await admin.get(`/api/medias/${ids.multi2}`).expect(200)).body.vente).toBeNull();
+    // multi2 n'a pas de photo_uuid : la vente T2 de la même borne, 3 minutes après la prise de vue, par l'heure
+    const multi2 = (await admin.get(`/api/medias/${ids.multi2}`).expect(200)).body;
+    expect(multi2.vente).toMatchObject({ montantTtcCents: 500, approximatif: true });
+    expect(multi2.vente.horodatage).toBe("2026-11-05T21:03:00.000Z");
+    // video3 (11-01 21:00) : aucune vente dans les 10 minutes
+    expect((await admin.get(`/api/medias/${ids.video3}`).expect(200)).body.vente).toBeNull();
   });
 
   it("sert le fichier et la vignette derrière le jeton, en ligne ou en téléchargement", async () => {

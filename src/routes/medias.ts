@@ -255,16 +255,28 @@ mediasRouter.get(
   voitMedias,
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const m = await mediaAccessible(req);
-    const [vente, parcours] = m.photoUuid
+    const selectionVente = { id: true, horodatage: true, statut: true, montantTtcCents: true, moyenPaiement: true, nbTirages: true, produitLibelle: true } as const;
+    const [parUuid, parcours] = m.photoUuid
       ? await Promise.all([
-          prisma.transaction.findFirst({
-            where: { pikcloudUuid: m.photoUuid },
-            select: { id: true, horodatage: true, statut: true, montantTtcCents: true, moyenPaiement: true, nbTirages: true, produitLibelle: true },
-            orderBy: { id: "asc" },
-          }),
+          prisma.transaction.findFirst({ where: { pikcloudUuid: m.photoUuid }, select: selectionVente, orderBy: { id: "asc" } }),
           prisma.parcours.findFirst({ where: { photoUuid: m.photoUuid }, select: { id: true, issue: true, dureeS: true, tirages: true } }),
         ])
       : [null, null];
+    // Sans photo_uuid (JSON pas reçu, ou borne qui ne l'envoie pas dans ses ventes) : le premier paiement de la même borne
+    // dans les 10 minutes qui suivent la prise de vue, comme l'aperçu des ventes (apercusParBorneEtHeure), marqué approximatif
+    const parHeure =
+      !parUuid && m.borneId && m.datePhoto
+        ? await prisma.transaction.findFirst({
+            where: {
+              borneId: m.borneId,
+              statut: { not: "REMBOURSEE" },
+              horodatage: { gte: new Date(m.datePhoto.getTime() - 60_000), lte: new Date(m.datePhoto.getTime() + 10 * 60_000) },
+            },
+            select: selectionVente,
+            orderBy: { horodatage: "asc" },
+          })
+        : null;
+    const vente = parUuid ?? (parHeure ? { ...parHeure, approximatif: true } : null);
     // Page souvenir de la séance : la base du QR imprimé, avec le jeton code d'événement + « - » + photo_uuid
     res.json({
       ...(await versClient(m)),
