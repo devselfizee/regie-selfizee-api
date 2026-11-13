@@ -89,6 +89,11 @@ export const extensionDuChemin = (chemin: string) => /\.([a-z0-9]+)$/i.exec(chem
 /** Type MIME d'un fichier du stockage d'après son extension. */
 export const mimeDe = (chemin: string) => MIME[extensionDuChemin(chemin)] ?? "application/octet-stream";
 
+/** Renomme un fichier du stockage (même disque : instantané, sans copie). */
+export async function deplacer(de: string, vers: string): Promise<void> {
+  await rename(cheminAbsolu(de), cheminAbsolu(vers));
+}
+
 export async function existe(relatif: string): Promise<boolean> {
   return stat(cheminAbsolu(relatif)).then(() => true, () => false);
 }

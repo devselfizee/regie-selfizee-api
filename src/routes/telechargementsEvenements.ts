@@ -18,8 +18,8 @@ const minuitParis = (ymd: string, plusJours = 0) => {
 };
 
 const filtres = z.object({
-  lieuId: z.coerce.number().int().positive().optional(),
-  borneId: z.coerce.number().int().positive().optional(),
+  lieuId: z.coerce.number().int().positive().max(2_147_483_647).optional(),
+  borneId: z.coerce.number().int().positive().max(2_147_483_647).optional(),
   parc: z.enum(["SELFIZEE", "CLIENT", "TEST"]).optional(),
   etat: z.enum(["DEMANDE", "ENVOYE", "TELECHARGE", "INSTALLE", "ECHEC"]).optional(),
   declencheur: z.enum(["AUTO", "MANUEL"]).optional(),

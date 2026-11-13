@@ -91,6 +91,7 @@ export function demarrerPlanificateur() {
 
   setTimeout(() => {
     purgeSouvenir();
+    purgeJournal();
     reversements();
     alertes();
     donneesExternes();

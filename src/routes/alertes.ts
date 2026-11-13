@@ -15,12 +15,12 @@ const TECHNIQUES: TypeAlerte[] = ["BORNE_MUETTE", "ZERO_VENTE", "TAUX_REFUS", "C
 const COMMERCIALES: TypeAlerte[] = ["BAISSE_CA", "ZERO_VENTE", "PIC_SUSPECT", "VENTE_HORS_HORAIRES", "TAUX_REFUS"];
 
 // Alertes d'un lieu ou d'une borne supprimés (super admin, 13/11) : plus affichées ni comptées
-const SANS_SUPPRIMES: Prisma.AlerteWhereInput = {
+export const SANS_SUPPRIMES: Prisma.AlerteWhereInput = {
   AND: [{ OR: [{ lieuId: null }, { lieu: { supprimeLe: null } }] }, { OR: [{ borneId: null }, { borne: { supprimeLe: null } }] }],
 };
 
 /** Alertes visibles selon les droits : techniques (alertes.techniques_view) et/ou de vente (alertes.ventes_view). */
-async function perimetre(req: UtilisateurRequest): Promise<Prisma.AlerteWhereInput> {
+export async function perimetre(req: UtilisateurRequest): Promise<Prisma.AlerteWhereInput> {
   const [techniques, ventes] = await Promise.all([userCan(req, "alertes.techniques_view"), userCan(req, "alertes.ventes_view")]);
   if (techniques && ventes) return {};
   if (techniques) return { type: { in: TECHNIQUES } };

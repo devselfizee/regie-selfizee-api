@@ -3,7 +3,7 @@ import { z } from "zod";
 import { utiliserCode, verifierCode } from "../codes/codes.js";
 import { asynchrone } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
-import { cheminAbsolu } from "../lib/stockage.js";
+import { cheminAbsolu, existe } from "../lib/stockage.js";
 import { cheminZip, statutPourBorne, urlZipValide } from "../config-evenement/zipBorne.js";
 import { declencheurDe, noterEtape, noterInstallation, programmePourBorne, versionsPourBorne } from "../config-evenement/programmeBorne.js";
 import { authBorne, type BorneRequest } from "../middleware/authBorne.js";
@@ -199,6 +199,8 @@ ingestionRouter.get(
     const { version, porteur } = lien;
     const e = await prisma.configEvenement.findUnique({ where: { code }, select: { version: true, zipSha256: true } });
     if (!e) return void res.status(404).json({ error: "INTROUVABLE" });
+    // Version plus gardée : 404 avant d'écrire « envoyé » au journal
+    if (!(await existe(cheminZip(code, version)))) return void res.status(404).json({ error: "INTROUVABLE" });
     const absolu = cheminAbsolu(cheminZip(code, version));
     res.setHeader("Content-Disposition", `attachment; filename="${code}.zip"`);
     res.setHeader("Cache-Control", "private, no-store");

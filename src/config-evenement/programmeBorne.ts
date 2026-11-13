@@ -77,13 +77,15 @@ export async function programmePourBorne(borne: Pick<Borne, "id">, maintenant = 
 
   const t = maintenant.getTime();
   const horizon = t + HORIZON_JOURS * 86_400_000;
+  // Un événement aux réglages illisibles (ancien format) est ignoré : il ne doit pas priver le lieu de son programme
+  const lisibles = evenements.flatMap((e) => {
+    if (e.habituel) return [];
+    const r = reglagesSchema.safeParse(e.reglages);
+    if (!r.success) console.error(`Programme des bornes : réglages illisibles pour l'événement ${e.code}, ignoré`);
+    return r.success ? [{ e, l: r.data.lieu }] : [];
+  });
   const ponctuels = await Promise.all(
-    evenements
-      .filter((e) => !e.habituel)
-      .map(async (e) => {
-        const l = reglagesSchema.parse(e.reglages).lieu;
-        return { e, b: await versBorne(e), debut: instantParis(l.dateDebut, l.heureDebut, false), fin: instantParis(l.dateFin, l.heureFin, true) };
-      })
+    lisibles.map(async ({ e, l }) => ({ e, b: await versBorne(e), debut: instantParis(l.dateDebut, l.heureDebut, false), fin: instantParis(l.dateFin, l.heureFin, true) }))
   );
   const defaut = evenements.find((e) => e.habituel);
   const bDefaut = defaut ? await versBorne(defaut) : null;
@@ -151,7 +153,10 @@ export async function versionsPourBorne(borne: Pick<Borne, "id">, codes: string[
  */
 export async function noterEtape(borneId: number, d: { code: string; version: number; etat: EtatInstallation; declencheur?: Declencheur | null; message?: string | null }) {
   try {
-    const e = await prisma.configEvenement.findUnique({ where: { code: d.code }, select: { id: true, lieuId: true } });
+    const trouve = await prisma.configEvenement.findUnique({ where: { code: d.code }, select: { id: true, lieuId: true } });
+    // Rattaché à l'événement seulement s'il est du lieu de la borne : une borne ne peut pas écrire dans le journal d'un
+    // autre lieu en déclarant son code (la ligne est gardée, sans lien, comme un code inconnu)
+    const e = trouve && trouve.lieuId === (await lieuDeLaBorne(borneId, new Date())) ? trouve : null;
     let declencheur = d.declencheur ?? null;
     if (!declencheur) {
       const demande = await prisma.installationEvenement.findFirst({

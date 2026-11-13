@@ -3,6 +3,11 @@ import type { Borne, ImportType } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { decouperCle, verifierSecret } from "../lib/cleBorne.js";
 import { journaliserRejet } from "../ingestion/journal.js";
+import { Limiteur } from "../lib/limiteur.js";
+
+// Clés fausses : 20 refus par IP et par 10 minutes sont journalisés, les suivants reçoivent le même 401 sans écrire
+// en base (une boucle ou un robot ne doit pas remplir le journal des bornes)
+const refusJournalises = new Limiteur(20, 10 * 60_000);
 
 export interface BorneRequest extends Request {
   borne?: Borne;
@@ -23,7 +28,7 @@ export function authBorne(type: ImportType) {
         : null;
 
       if (!parts || !borne?.apiKeyHash || !verifierSecret(parts.secret, borne.apiKeyHash)) {
-        await journaliserRejet(req, type, "CLE_INVALIDE", "Clé borne absente ou invalide");
+        if (refusJournalises.essayer(req.ip ?? "?")) await journaliserRejet(req, type, "CLE_INVALIDE", "Clé borne absente ou invalide");
         return res.status(401).json({ error: "CLE_INVALIDE" });
       }
 

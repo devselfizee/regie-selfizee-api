@@ -320,7 +320,21 @@ lieuxRouter.put(
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const lieuId = Number(req.params.id);
     await verifierAccesLieu(req.utilisateur, lieuId);
-    const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(req.body));
+    // Un ancien numéro resté illisible (saisi avant la normalisation) est renvoyé tel quel par la fiche : il ne doit pas
+    // bloquer une modification sans rapport. Il est gardé inchangé ; seul un numéro nouveau ou modifié est contrôlé.
+    const corps = req.body && typeof req.body === "object" ? { ...(req.body as Record<string, unknown>) } : req.body;
+    const aGarder = new Map<number, string>();
+    if (corps && Array.isArray(corps.contacts)) {
+      const anciens = new Set((await prisma.lieuContact.findMany({ where: { lieuId }, select: { telephone: true } })).map((c) => c.telephone));
+      corps.contacts = (corps.contacts as unknown[]).map((c, i) => {
+        const tel = c && typeof c === "object" ? (c as { telephone?: unknown }).telephone : null;
+        if (typeof tel !== "string" || !anciens.has(tel) || telephoneE164(tel) !== undefined) return c;
+        aGarder.set(i, tel);
+        return { ...(c as object), telephone: null };
+      });
+    }
+    const { champs, clienteleIds, contacts, horaires, saisons, fermetures } = donneesLieu(lieuSchema.parse(corps));
+    for (const [i, tel] of aGarder) if (contacts?.[i]) contacts[i].telephone = tel;
     // Le commercial responsable ne change qu'avec le droit de le choisir
     if (champs.commercialId !== undefined && !(await userCan(req, "lieux.commercial_edit"))) delete champs.commercialId;
     await positionner(

@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
 import { perimetreLieux, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { perimetre as perimetreAlertes, SANS_SUPPRIMES } from "./alertes.js";
 import { userCan } from "../middleware/permissions.js";
 
 // Historique de la Régie (page « Historique ») : une seule chronologie, de la plus récente à la plus ancienne, de ce
@@ -49,12 +50,13 @@ const minuitParis = (ymd: string, plusJours = 0) => {
 
 const filtresSchema = z.object({
   types: z.string().max(100).optional(),
-  lieuId: z.coerce.number().int().positive().optional(),
-  borneId: z.coerce.number().int().positive().optional(),
+  lieuId: z.coerce.number().int().positive().max(2_147_483_647).optional(),
+  borneId: z.coerce.number().int().positive().max(2_147_483_647).optional(),
   du: z.string().regex(JOUR).optional(),
   au: z.string().regex(JOUR).optional(),
   // Curseur : « <date ISO>|<clés déjà vues à cet instant, séparées par des virgules> »
-  avant: z.string().max(2000).optional(),
+  // 6000 caractères : de quoi porter ~400 lignes au même instant (un import en lot) sans bloquer « Charger la suite »
+  avant: z.string().max(6000).optional(),
   limite: z.coerce.number().int().min(1).max(100).default(40),
 });
 
@@ -161,9 +163,10 @@ async function audit(f: Fenetre, publications: boolean): Promise<LigneHistorique
   });
 }
 
-async function alertes(f: Fenetre): Promise<LigneHistorique[]> {
+/** `visibles` : le filtre de la page Alertes (techniques et/ou de vente selon les droits, lieux et bornes non supprimés). */
+async function alertes(f: Fenetre, visibles: Prisma.AlerteWhereInput): Promise<LigneHistorique[]> {
   const lignes = await prisma.alerte.findMany({
-    where: { ...(aPeriode(f) ? { detecteeLe: periode(f) } : {}), ...(f.lieuId ? { lieuId: f.lieuId } : {}), ...(f.borneId ? { borneId: f.borneId } : {}) },
+    where: { AND: [visibles, { ...(aPeriode(f) ? { detecteeLe: periode(f) } : {}), ...(f.lieuId ? { lieuId: f.lieuId } : {}), ...(f.borneId ? { borneId: f.borneId } : {}) }] },
     orderBy: { detecteeLe: "desc" },
     take: f.limite,
     select: {
@@ -256,8 +259,10 @@ historiqueRouter.get(
     const [isoAvant, vues] = (f.avant ?? "|").split("|");
     const avant = isoAvant && !Number.isNaN(Date.parse(isoAvant)) ? new Date(isoAvant) : f.au ? new Date(minuitParis(f.au, 1).getTime() - 1) : null;
     const fenetre: Fenetre = { avant, du: f.du ? minuitParis(f.du) : null, lieuId: f.lieuId, borneId: f.borneId, limite: f.limite + 1 + (vues ? vues.split(",").length : 0) };
+    // Mêmes alertes que la page Alertes : techniques et/ou de vente selon les droits, sans les lieux et bornes supprimés
+    const alertesVisibles: Prisma.AlerteWhereInput = types.includes("alerte") ? { AND: [await perimetreAlertes(req), SANS_SUPPRIMES] } : {};
     const pages = await Promise.all(
-      types.map((t) => (t === "telechargement" ? telechargements(fenetre) : t === "publication" ? audit(fenetre, true) : t === "utilisateur" ? audit(fenetre, false) : t === "alerte" ? alertes(fenetre) : bornes(fenetre)))
+      types.map((t) => (t === "telechargement" ? telechargements(fenetre) : t === "publication" ? audit(fenetre, true) : t === "utilisateur" ? audit(fenetre, false) : t === "alerte" ? alertes(fenetre, alertesVisibles) : bornes(fenetre)))
     );
     const curseur = isoAvant && !Number.isNaN(Date.parse(isoAvant)) ? Date.parse(isoAvant) : null;
     res.json({ ...fusionner(pages, f.limite, new Set(vues ? vues.split(",").filter(Boolean) : []), curseur), typesPermis: permis });

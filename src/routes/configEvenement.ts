@@ -8,7 +8,8 @@ import { avecGrilleDuLieu, avecInfosDuLieu, controler, heureSchema, infosLieuSch
 import { grilleEffective } from "../tarifs/grille.js";
 import { genererConfig, lireModele, type HoraireOuverture } from "../config-evenement/generation.js";
 import { genererZip } from "../config-evenement/zip.js";
-import { empreinteZip, rangerZip } from "../config-evenement/zipBorne.js";
+import { empreinteZip, preparerZip, validerZip } from "../config-evenement/zipBorne.js";
+import { supprimer as supprimerFichier } from "../lib/stockage.js";
 import { illustrationsAExporter } from "../config-evenement/illustrations.js";
 import { chemins, cible, creerEvenement, evenementDe, infosLieuDe } from "../config-evenement/acces.js";
 import { requirePerm, requireAnyPerm } from "../middleware/permissions.js";
@@ -279,6 +280,8 @@ configEvenementRouter.post(
     await prisma.auditLog.create({
       data: {
         userId: req.utilisateur?.id ?? null, entite: "config_evenement", entiteId: String(defaut.id), action: "MODIFICATION",
+        // L'ancien contenu du par défaut est remplacé : ses réglages sont gardés ici (ses cadres ne le sont pas)
+        ...(habituel ? { avant: { reglages: habituel.reglages as Prisma.InputJsonValue } } : {}),
         apres: { devientDefaut: { id: source!.id, code: source!.code, nom: source!.nom }, cadres: cadres.length, origineSupprimee: supprimer },
       },
     });
@@ -384,6 +387,8 @@ configEvenementRouter.post(
     const config = await configDe(charge, maintenant, reglages);
     // Zip figé avec la version : la borne charge exactement ce qui a été publié (/ingest/v1/evenements)
     const zip = await zipDe(e.id, e.lieuId, config, reglages, maintenant);
+    // Écrit avant d'enregistrer la version : si le disque refuse, la publication échoue et l'ancienne version reste servie
+    const attente = await preparerZip(e.code, e.version + 1, zip);
     const publie = await prisma.$transaction(async (db) => {
       // Seulement si personne n'a publié entre-temps : la version doit être celle du zip rangé
       const maj = await db.configEvenement.updateMany({
@@ -396,11 +401,16 @@ configEvenementRouter.post(
         data: { userId: req.utilisateur?.id ?? null, entite: "config_evenement", entiteId: String(e.id), action: "PUBLICATION", apres: { code: e.code, version: e.version + 1 } },
       });
       return true;
+    }).catch(async (err) => {
+      await supprimerFichier(attente).catch(() => undefined);
+      throw err;
     });
-    if (!publie) throw new HttpError(409, "PUBLICATION_CONCURRENTE", "L'événement vient d'être publié par quelqu'un d'autre : rechargez la fiche.");
-    // Rangé après l'enregistrement de la version : une publication concurrente perdante n'écrase rien. Jusqu'à la
-    // fin de l'écriture (quelques instants), la borne lit « obsolete » et redemandera.
-    await rangerZip(e.code, e.version + 1, zip);
+    if (!publie) {
+      await supprimerFichier(attente).catch(() => undefined);
+      throw new HttpError(409, "PUBLICATION_CONCURRENTE", "L'événement vient d'être publié par quelqu'un d'autre : rechargez la fiche.");
+    }
+    // Renommé après l'enregistrement de la version : une publication concurrente perdante n'écrase rien
+    await validerZip(e.code, e.version + 1, attente);
     res.json(reponse(await charger(lieuId, eid)));
   })
 );

@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Borne } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { ecrireBuffer, existe, supprimer } from "../lib/stockage.js";
+import { deplacer, ecrireBuffer, existe, supprimer } from "../lib/stockage.js";
 
 // Zip de l'événement chargé par la borne, sur le modèle du booth (getEvent puis e/zip/download/<paramètre>) :
 // 1. la borne demande l'état de son événement avec sa clé (POST /ingest/v1/evenements/statut) ;
@@ -29,6 +29,22 @@ export const empreinteZip = (code: string, version: number, zip: Buffer) => ({
  */
 export async function rangerZip(code: string, version: number, zip: Buffer) {
   await ecrireBuffer(cheminZip(code, version), zip);
+  if (version > 2) await supprimer(cheminZip(code, version - 2)).catch(() => undefined);
+}
+
+/**
+ * Publication en deux temps, pour qu'un disque plein ne laisse jamais une version enregistrée sans son zip (les bornes
+ * repasseraient au par défaut) : le zip est d'abord écrit dans un fichier d'attente, AVANT d'enregistrer la version ;
+ * si l'écriture échoue, rien n'a changé. Une fois la version enregistrée, validerZip le renomme (instantané).
+ */
+export async function preparerZip(code: string, version: number, zip: Buffer): Promise<string> {
+  const attente = `${cheminZip(code, version)}.attente-${randomBytes(6).toString("hex")}`;
+  await ecrireBuffer(attente, zip);
+  return attente;
+}
+
+export async function validerZip(code: string, version: number, attente: string) {
+  await deplacer(attente, cheminZip(code, version));
   if (version > 2) await supprimer(cheminZip(code, version - 2)).catch(() => undefined);
 }
 

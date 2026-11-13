@@ -47,7 +47,7 @@ import { illustrationsEvenementRouter } from "./routes/illustrationsEvenement.js
 import { illustrationsSeriesRouter } from "./routes/illustrationsSeries.js";
 import { commentairesRouter, suiviLieuRouter } from "./routes/suivi.js";
 import { tarifsLieuRouter, tarifsRouter } from "./routes/tarifs.js";
-import { utilisateurCourant } from "./middleware/utilisateur.js";
+import { utilisateurCourant, verifierAccesLieu, type UtilisateurRequest } from "./middleware/utilisateur.js";
 import { requirePerm } from "./middleware/permissions.js";
 import { reponseErreur } from "./lib/http.js";
 import { buildPermissionsSchema } from "./permissions/schema.js";
@@ -139,6 +139,13 @@ export function creerApp() {
   // dans les routeurs. Les lieux, stats et exports filtrent en plus selon le périmètre (lieux.view_any / view_own).
   app.use("/api/utilisateurs", utilisateursRouter);
   app.use("/api/referentiel", referentielRouter);
+  // Périmètre (commercial, partenaire) : toute route d'un lieu, y compris ses événements, ses cadres et son studio,
+  // répond 404 hors des lieux de l'utilisateur. Les routeurs ne vérifiaient que le droit, pas le lieu.
+  app.use("/api/lieux/:id", (req: UtilisateurRequest, _res, next) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return next();
+    verifierAccesLieu(req.utilisateur, id).then(() => next(), next);
+  });
   app.use("/api/lieux", lieuxRouter);
   // Accès au lieu : localisation des clés (texte, photos), disponibilité des contacts
   app.use("/api/lieux", accesLieuRouter);
