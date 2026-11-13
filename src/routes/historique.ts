@@ -40,6 +40,8 @@ export interface LigneHistorique {
   utilisateur: string | null;
   /** Événement de borne concerné (lien vers sa fiche) */
   evenement: { id: number; lieuId: number; parDefaut: boolean; nom: string | null; code: string } | null;
+  /** Étape d'un téléchargement : la page regroupe les étapes d'un même téléchargement (borne, code, version) en une ligne */
+  telechargement?: { etat: string; code: string; version: number; declencheur: "AUTO" | "MANUEL" | null; message: string | null };
 }
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
@@ -103,7 +105,38 @@ async function telechargements(f: Fenetre): Promise<LigneHistorique[]> {
     borne: l.borne,
     utilisateur: null,
     evenement: l.evenement ? { id: l.evenement.id, lieuId: l.evenement.lieu.id, parDefaut: l.evenement.habituel, nom: l.evenement.nom, code: l.evenement.code } : null,
+    telechargement: { etat: l.etat, code: l.code, version: l.version, declencheur: l.declencheur, message: l.message },
   }));
+}
+
+/**
+ * Le lieu de chaque borne citée sans lieu (un envoi refusé ne porte que l'identifiant de la borne : « C113 » seul ne dit
+ * rien) : le lieu où elle est installée aujourd'hui. Une borne connue par son identifiant retrouve aussi son lien.
+ */
+async function situerLesBornes(lignes: LigneHistorique[]): Promise<void> {
+  const aSituer = lignes.filter((l) => l.borne && !l.lieu);
+  if (!aSituer.length) return;
+  const maintenant = new Date();
+  const bornes = await prisma.borne.findMany({
+    where: { identifiant: { in: [...new Set(aSituer.map((l) => l.borne!.identifiant))] } },
+    select: {
+      id: true,
+      identifiant: true,
+      affectations: {
+        where: { debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }] },
+        orderBy: { debut: "desc" },
+        take: 1,
+        select: { lieu: { select: { id: true, enseigne: true } } },
+      },
+    },
+  });
+  const parIdentifiant = new Map(bornes.map((b) => [b.identifiant, b]));
+  for (const l of aSituer) {
+    const b = parIdentifiant.get(l.borne!.identifiant);
+    if (!b) continue;
+    l.borne = { id: b.id, identifiant: b.identifiant };
+    l.lieu = b.affectations[0]?.lieu ?? null;
+  }
 }
 
 // Journal d'audit : ce que chaque action veut dire, en clair
@@ -265,6 +298,8 @@ historiqueRouter.get(
       types.map((t) => (t === "telechargement" ? telechargements(fenetre) : t === "publication" ? audit(fenetre, true) : t === "utilisateur" ? audit(fenetre, false) : t === "alerte" ? alertes(fenetre, alertesVisibles) : bornes(fenetre)))
     );
     const curseur = isoAvant && !Number.isNaN(Date.parse(isoAvant)) ? Date.parse(isoAvant) : null;
-    res.json({ ...fusionner(pages, f.limite, new Set(vues ? vues.split(",").filter(Boolean) : []), curseur), typesPermis: permis });
+    const page = fusionner(pages, f.limite, new Set(vues ? vues.split(",").filter(Boolean) : []), curseur);
+    await situerLesBornes(page.lignes);
+    res.json({ ...page, typesPermis: permis });
   })
 );
