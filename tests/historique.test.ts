@@ -6,7 +6,7 @@ const { fusionner } = await import("../src/routes/historique.js");
 type L = Parameters<typeof fusionner>[0][number][number];
 
 const ligne = (cle: string, minute: number): L => ({
-  cle, type: "alerte", date: new Date(Date.UTC(2026, 10, 13, 10, minute)), titre: cle, detail: null, ton: "info", lieu: null, borne: null, utilisateur: null, evenement: null,
+  cle, type: "alerte", date: new Date(Date.UTC(2026, 10, 13, 10, minute)), titre: cle, nature: "Alertes", detail: null, ton: "info", lieu: null, borne: null, utilisateur: null, evenement: null,
 });
 
 describe("fusion de l'historique", () => {

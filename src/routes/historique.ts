@@ -32,6 +32,8 @@ export interface LigneHistorique {
   type: TypeHistorique;
   date: Date;
   titre: string;
+  /** Nature de la ligne, pour le résumé de la page (« Modifications · Lieux », « Envois refusés des bornes »…) */
+  nature: string;
   detail: string | null;
   /** info, ok, attention, critique : la couleur de la ligne */
   ton: "info" | "ok" | "attention" | "critique";
@@ -97,6 +99,7 @@ async function telechargements(f: Fenetre): Promise<LigneHistorique[]> {
   return lignes.map((l) => ({
     cle: `tel-${l.id}`,
     type: "telechargement",
+    nature: "Téléchargements d'événements",
     date: l.createdAt,
     titre: `${ETAPES[l.etat].titre} · ${l.evenement ? (l.evenement.habituel ? "Par défaut" : l.evenement.nom ?? "Événement") : "événement inconnu"} (${l.code}, v${l.version})`,
     detail: [l.declencheur === "AUTO" ? "Mise à jour automatique" : l.declencheur === "MANUEL" ? "Code tapé sur la borne" : null, l.message].filter(Boolean).join(" · ") || null,
@@ -152,6 +155,24 @@ const ACTIONS: Record<string, string> = {
   CATEGORISER_EMPLACEMENTS: "a catégorisé les emplacements de",
 };
 
+// Nature d'une action, pour le résumé : « Modifications · Lieux »
+const NATURES_ACTION: Record<string, string> = {
+  CREATION: "Créations", MODIFICATION: "Modifications", SUPPRESSION: "Suppressions", SUPPRESSION_CODES: "Suppressions", TARIFS: "Changements de tarifs",
+  REMBOURSEMENT: "Remboursements", ENVOI_RELEVE: "Envois de relevés", RETOUR_DEFAUT: "Retours au par défaut", EXPORT_CONTACTS_SOUVENIR: "Exports de contacts",
+  IMPORT_EMPLACEMENTS: "Imports d'emplacements", GOOGLE_EMPLACEMENTS: "Recherches Google", CATEGORISER_EMPLACEMENTS: "Catégorisations d'emplacements",
+};
+const NATURES_ENTITE: Record<string, string> = {
+  lieu: "Lieux", config_evenement: "Événements", cadre_evenement: "Cadres", transaction: "Ventes", reversement: "Reversements", lot_codes_remise: "Codes de remise",
+  tarifs_base: "Tarifs de base", modele_mail: "Modèles de mail", carte_test: "Cartes de test", illustration_serie: "Séries d'illustrations",
+  illustration_lieu: "Illustrations", concurrent: "Concurrents",
+};
+const natureAudit = (action: string, entite: string) => {
+  const a = NATURES_ACTION[action];
+  const e = NATURES_ENTITE[entite] ?? entite.replace(/_/g, " ");
+  // Créations, modifications, suppressions : par objet ; les autres actions disent déjà de quoi il s'agit
+  return !a ? "Autres actions" : ["CREATION", "MODIFICATION", "SUPPRESSION"].includes(action) ? `${a} · ${e}` : a;
+};
+
 async function audit(f: Fenetre, publications: boolean): Promise<LigneHistorique[]> {
   if (f.borneId) return []; // le journal d'audit ne porte pas sur une borne
   // Par lieu : ses propres lignes et celles de ses événements
@@ -184,6 +205,7 @@ async function audit(f: Fenetre, publications: boolean): Promise<LigneHistorique
     return {
       cle: `audit-${l.id}`,
       type: publications ? "publication" : "utilisateur",
+      nature: publications ? "Publications d'événements" : natureAudit(l.action, l.entite),
       date: l.createdAt,
       titre: `${qui ?? "Quelqu'un"} ${ACTIONS[l.action] ?? l.action.toLowerCase().replace(/_/g, " ")} ${quoi}${version}`,
       detail: null,
@@ -211,6 +233,7 @@ async function alertes(f: Fenetre, visibles: Prisma.AlerteWhereInput): Promise<L
   return lignes.map((a) => ({
     cle: `alerte-${a.id}`,
     type: "alerte",
+    nature: a.niveau === "CRITIQUE" ? "Alertes critiques" : "Alertes",
     date: a.detecteeLe,
     titre: a.message,
     detail: a.statut === "NOUVELLE" ? "Pas encore traitée" : a.statut.toLowerCase().replace(/_/g, " "),
@@ -242,6 +265,7 @@ async function bornes(f: Fenetre): Promise<LigneHistorique[]> {
   return lignes.map((l) => ({
     cle: `import-${l.id}`,
     type: "borne",
+    nature: l.statut === "REJETE" ? "Envois refusés des bornes" : "Envois en partie rejetés",
     date: l.recuLe,
     titre: `Envoi ${l.statut === "REJETE" ? "refusé" : "en partie rejeté"} : ${LIBELLES_IMPORT[l.type] ?? l.type.toLowerCase()}`,
     detail: l.erreurs[0] ? `${l.erreurs[0].code}${l.erreurs[0].message ? ` : ${l.erreurs[0].message}` : ""}`.slice(0, 300) : l.statut === "PARTIEL" ? `${l.nbRejetees} ligne(s) rejetée(s) sur ${l.nbRecues}` : null,
