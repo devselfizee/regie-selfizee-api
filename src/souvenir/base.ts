@@ -9,9 +9,10 @@ let derniereBase: string | null = null;
  * Base absolue des URLs de fichiers : celle que le navigateur de l'invité peut joindre (SOUVENIR_URL_FICHIERS, à défaut
  * l'hôte de la requête authentifiée du serveur de la page souvenir, retenu pour les mails envoyés en tâche de fond).
  */
-export function baseFichiers(req: Request): string {
+export function baseFichiers(req: Request, retenir = true): string {
   const base = (process.env.SOUVENIR_URL_FICHIERS || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
-  derniereBase = base;
+  // `retenir: false` pour une route publique : son en-tête Host ne doit jamais finir dans les mails des autres invités
+  if (retenir) derniereBase = base;
   return base;
 }
 

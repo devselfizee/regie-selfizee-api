@@ -110,8 +110,12 @@ export async function recevoirMedia(corps: CorpsWebhook, ipSource: string | unde
       maj[champ.url] = url;
       reponse[type] = succes("EN_ATTENTE");
       doublons++;
+    } else if (type === "photo" && statut === "PURGE" && existant?.purgeMotif === "RGPD") {
+      // Effacé à la demande de l'invité (RGPD) : jamais repris, même si PikCloud le renvoie. Succès, sinon il renverrait en boucle
+      reponse[type] = succes("DEJA_RECU");
+      doublons++;
     } else {
-      // ABSENT, ERREUR (un renvoi relance) ou PURGE (PikCloud l'a encore : on reprend une copie).
+      // ABSENT, ERREUR (un renvoi relance) ou PURGE par durée de conservation (PikCloud l'a encore : on reprend une copie).
       // Lien qui répond déjà en erreur : 4002 tout de suite, PikCloud renverra (le worker ne le verrait qu'après le 200)
       const probleme = await verifierLien(url);
       if (probleme) {

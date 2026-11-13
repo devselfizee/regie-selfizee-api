@@ -184,6 +184,11 @@ export async function telechargerEnAttente(options: { limite?: number; ignorerDe
         }
         m = await prisma.media.findUniqueOrThrow({ where: { id: m.id } });
       }
+      // Séance effacée à la demande de l'invité avant l'arrivée du fichier (ou de son JSON) : rien n'est gardé
+      if (await seanceEffacee(m.codeEvent, m.photoUuid)) {
+        if (m.mediaStatut !== "PURGE" || m.purgeMotif !== "RGPD") await purgerMedia(m, "RGPD");
+        continue;
+      }
       if (m.mediaStatut === "A_TELECHARGER" && m.mediaUrl) {
         try {
           await traiterMedia(m);
@@ -198,6 +203,20 @@ export async function telechargerEnAttente(options: { limite?: number; ignorerDe
     enCours = false;
   }
   return bilan;
+}
+
+/**
+ * L'invité a-t-il fait effacer la photo de cette séance (RGPD), sans que personne d'autre ne la demande depuis ?
+ * Sert aux fichiers qui arrivent après la demande : ils ne sont pas copiés, ou sont effacés aussitôt.
+ */
+async function seanceEffacee(codeEvent: string, photoUuid: string | null): Promise<boolean> {
+  if (!photoUuid) return false;
+  const demande = await prisma.souvenirJournal.findFirst({
+    where: { evenement: "data_deleted", codeEvent, photoUuid, details: { path: ["photos"], equals: true } },
+    select: { id: true },
+  });
+  if (!demande) return false;
+  return (await prisma.souvenirInscription.count({ where: { codeEvent, photoUuid, email: { not: null } } })) === 0;
 }
 
 let planifie = false;
@@ -228,6 +247,17 @@ export async function purgerMedias(maintenant = new Date()): Promise<number> {
   for (const m of perimes) await purgerMedia(m, "CONSERVATION");
   return perimes.length;
 }
+
+/**
+ * Filtre des médias d'une séance à effacer pour une demande RGPD : tous, quel que soit leur état (un fichier encore en
+ * file ou en erreur passe en « purgé » et ne sera plus copié), y compris ceux déjà purgés par durée de conservation
+ * (leur motif devient RGPD, pour qu'un renvoi de PikCloud ne les ramène pas).
+ */
+export const mediasAEffacer = (codeEvent: string, photoUuid: string) => ({
+  codeEvent,
+  photoUuid,
+  OR: [{ mediaStatut: { not: "PURGE" as const } }, { purgeMotif: "CONSERVATION" }],
+});
 
 /** Efface les fichiers d'un média (et sa vignette) ; la ligne reste, en « purgé » (compteurs, ventes). */
 export type MotifPurge = "RGPD" | "CONSERVATION";

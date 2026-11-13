@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { TZDate } from "@date-fns/tz";
 import { FUSEAU_METIER, jourEtHeureLocaux } from "../lib/temps.js";
 import { genererCode } from "../codes/codes.js";
-import { purgerMedia } from "../synchro-pikcloud/telechargement.js";
+import { mediasAEffacer, purgerMedia } from "../synchro-pikcloud/telechargement.js";
 import { LOTS } from "../config-evenement/reglages.js";
 import { ecrireJeton, type JetonSouvenir } from "./jeton.js";
 import { CONSERVATION_JOURS, contexteSeance } from "./seance.js";
@@ -323,21 +323,25 @@ export async function oublier(id: string, maintenant = Date.now()): Promise<{ ph
   const i = await prisma.souvenirInscription.findFirst({ where: { id, email: { not: null } }, select: { id: true, codeEvent: true, photoUuid: true, lieuId: true } });
   if (!i) return null;
   const j = { code: i.codeEvent, photoUuid: i.photoUuid };
-  await prisma.souvenirInscription.update({
-    where: { id: i.id },
-    data: { email: null, prenom: null, ipTronquee: null, userAgent: null, anonymiseeLe: new Date(maintenant) },
-  });
-  await prisma.souvenirLivraison.deleteMany({ where: { inscriptionId: i.id, etat: { in: ["A_ENVOYER", ...ATTENTE_PHOTO] } } });
-  const autres = await prisma.souvenirInscription.count({ where: { ...deLaSeance(j), email: { not: null } } });
+  const autres = await prisma.souvenirInscription.count({ where: { ...deLaSeance(j), email: { not: null }, id: { not: i.id } } });
+  // Les fichiers d'abord : si leur suppression échoue, l'inscription est intacte et la demande peut être refaite.
+  // Tous les médias de la séance, y compris ceux pas encore copiés (ils ne le seront plus).
   let photosEffacees = false;
   if (autres === 0) {
     const medias = await prisma.media.findMany({
-      where: { codeEvent: i.codeEvent, photoUuid: i.photoUuid, mediaStatut: "TELECHARGE" },
+      where: mediasAEffacer(i.codeEvent, i.photoUuid),
       select: { id: true, mediaChemin: true, vignetteChemin: true },
     });
     for (const m of medias) await purgerMedia(m, "RGPD");
     photosEffacees = true;
   }
+  // Consentements retirés avec l'adresse : la ligne anonymisée ne compte plus parmi les opt-in
+  const faite = await prisma.souvenirInscription.updateMany({
+    where: { id: i.id, email: { not: null } },
+    data: { email: null, prenom: null, ipTronquee: null, userAgent: null, optinLieu: false, optinSelfizee: false, anonymiseeLe: new Date(maintenant) },
+  });
+  if (!faite.count) return null; // effacée entre-temps par une demande simultanée : une seule compte
+  await prisma.souvenirLivraison.deleteMany({ where: { inscriptionId: i.id, etat: { in: ["A_ENVOYER", ...ATTENTE_PHOTO] } } });
   await journaliser("data_deleted", j, i.lieuId, { photos: photosEffacees });
   return { photosEffacees };
 }

@@ -1,7 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { emailConfigure, envoyerEmail } from "../lib/envoi.js";
 import { HttpError } from "../lib/http.js";
-import { purgerMedia } from "../synchro-pikcloud/telechargement.js";
+import { mediasAEffacer, purgerMedia } from "../synchro-pikcloud/telechargement.js";
 import { journaliser, oublier } from "../souvenir/donnees.js";
 import { expediteur } from "../souvenir/envois.js";
 import { affichable, urlSignee } from "../souvenir/seance.js";
@@ -134,7 +134,11 @@ export async function rapport(email: string, base: string): Promise<Rapport> {
 /** Export (droit à la portabilité) : une ligne par donnée, CSV pour Excel (point-virgule, BOM). */
 export async function exporterCsv(email: string): Promise<string> {
   const ins = await inscriptionsDe(email);
-  const cellule = (v: string) => (/[";\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  // Une valeur qui commence comme une formule (= + - @) est précédée d'une apostrophe : Excel l'affiche sans la calculer
+  const cellule = (brut: string) => {
+    const v = /^[=+\-@\t\r]/.test(brut) ? `'${brut}` : brut;
+    return /[";\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  };
   const lignes = [["Événement", "Code de l'événement", "Enregistré le", "Donnée", "Valeur"]];
   for (const i of ins) {
     const commun = [nomEvenement(i), i.codeEvent, dateAffichee(i.createdAt)];
@@ -174,7 +178,7 @@ export type Cible = "photo" | "data" | "both";
 
 /** L'inscription de cette adresse, sinon 404 (on ne dit pas si elle existe pour une autre adresse). */
 async function inscriptionDe(email: string, id: unknown): Promise<Inscription> {
-  if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(404, "INTROUVABLE", "Cet enregistrement n'existe plus.");
+  if (typeof id !== "string" || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) throw new HttpError(404, "INTROUVABLE", "Cet enregistrement n'existe plus.");
   const i = await prisma.souvenirInscription.findFirst({ where: { id, email }, select: selection });
   if (!i) throw new HttpError(404, "INTROUVABLE", "Cet enregistrement n'existe plus.");
   return i;
@@ -186,7 +190,7 @@ const autresDemandeurs = (i: Pick<Inscription, "id" | "codeEvent" | "photoUuid">
 
 async function effacerPhotos(i: Pick<Inscription, "codeEvent" | "photoUuid">) {
   const medias = await prisma.media.findMany({
-    where: { codeEvent: i.codeEvent, photoUuid: i.photoUuid, mediaStatut: "TELECHARGE" },
+    where: mediasAEffacer(i.codeEvent, i.photoUuid),
     select: { id: true, mediaChemin: true, vignetteChemin: true },
   });
   for (const m of medias) await purgerMedia(m, "RGPD");
@@ -210,7 +214,9 @@ export async function supprimerEnregistrement(email: string, id: unknown, cible:
   let detail: string;
   if (cible === "both") {
     const r = await oublier(i.id, maintenant);
-    bilan = { deleted: 1, photoKept: r && !r.photosEffacees ? 1 : 0 };
+    // Déjà effacée par une demande simultanée : celle-là a répondu et notifié
+    if (!r) throw new HttpError(404, "INTROUVABLE", "Cet enregistrement n'existe plus.");
+    bilan = { deleted: 1, photoKept: r.photosEffacees ? 0 : 1 };
     detail = bilan.photoKept ? "données effacées ; photo gardée (demandée par d'autres personnes)" : "photo et données effacées";
   } else if (cible === "data") {
     await prisma.souvenirInscription.update({
@@ -263,10 +269,14 @@ export async function modifierEnregistrement(email: string, id: unknown, champsR
   const i = await inscriptionDe(email, id);
   const data: { prenom?: string | null; optinLieu?: boolean; optinSelfizee?: boolean } = {};
   const details: string[] = [];
-  const avant = Object.fromEntries(champs(i).filter((c) => c.contactId).map((c) => [c.contactId!, c]));
+  // Map et non objet : « __proto__ » ou « constructor » ne sont pas des champs
+  const avant = new Map(champs(i).filter((c) => c.contactId).map((c) => [c.contactId!, c]));
+  const vus = new Set<string>();
   for (const { contactId, value } of champsRecus) {
-    const c = avant[contactId];
+    const c = avant.get(contactId);
     if (!c) throw new HttpError(400, "CHAMP_NON_MODIFIABLE", "Ce champ ne peut pas être modifié.");
+    if (vus.has(contactId)) continue; // champ envoyé deux fois : le premier compte
+    vus.add(contactId);
     const v = value.trim();
     if (contactId === "prenom") {
       if (v.length > 60) throw new HttpError(400, "VALEUR_INVALIDE", "Le prénom est trop long (60 caractères au plus).");

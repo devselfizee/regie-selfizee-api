@@ -28,7 +28,11 @@ vi.mock("../src/lib/envoi.js", () => ({
     return null;
   },
 }));
-vi.mock("../src/synchro-pikcloud/telechargement.js", () => ({ purgerMedia: async (m: { id: bigint }) => void b.purges.push(m.id) }));
+vi.mock("../src/synchro-pikcloud/telechargement.js", () => ({
+  purgerMedia: async (m: { id: bigint }) => void b.purges.push(m.id),
+  // Même filtre que le vrai : tous les médias de la séance, sauf ceux déjà effacés pour motif RGPD
+  mediasAEffacer: (codeEvent: string, photoUuid: string) => ({ codeEvent, photoUuid, OR: [{ mediaStatut: { not: "PURGE" } }, { purgeMotif: "CONSERVATION" }] }),
+}));
 
 vi.mock("../src/lib/prisma.js", () => {
   const corresp = (l: Ligne, where: Record<string, unknown> = {}): boolean =>
@@ -55,6 +59,11 @@ vi.mock("../src/lib/prisma.js", () => {
         },
         count: async ({ where }: { where: Ligne }) => b.inscriptions.filter((i) => corresp(i, where)).length,
         update: async ({ where, data }: { where: { id: string }; data: Ligne }) => Object.assign(b.inscriptions.find((i) => i.id === where.id)!, data),
+        updateMany: async ({ where, data }: { where: Ligne; data: Ligne }) => {
+          const l = b.inscriptions.filter((i) => corresp(i, where));
+          l.forEach((i) => Object.assign(i, data));
+          return { count: l.length };
+        },
       },
       souvenirLivraison: { deleteMany: async () => ({ count: 0 }) },
       souvenirJournal: { create: async ({ data }: { data: Ligne }) => b.journal.push(data) },
@@ -254,6 +263,29 @@ describe("rectification (POST /rgpd/v1/edition)", () => {
   });
 });
 
+describe("entrées hostiles", () => {
+  it("export CSV : un prénom en forme de formule est neutralisé", async () => {
+    b.inscriptions[0].prenom = '=HYPERLINK("http://x.tld";"Voir")';
+    const r = await request(app).get(`/rgpd/v1/export/${jeton}`).expect(200);
+    expect(r.text).toContain(`"'=HYPERLINK(""http://x.tld"";""Voir"")"`);
+    expect(r.text).not.toMatch(/;=HYPERLINK/);
+  });
+
+  it("édition : __proto__ et constructor ne sont pas des champs ; un champ envoyé deux fois ne compte qu'une fois", async () => {
+    for (const contactId of ["__proto__", "constructor", "toString"]) {
+      await request(app).post("/rgpd/v1/edition").send({ token: jeton, photoId: ID1, fields: [{ contactId, value: "Oui" }] }).expect(400);
+    }
+    await attendre();
+    expect(b.envois).toEqual([]);
+    const r = await request(app)
+      .post("/rgpd/v1/edition")
+      .send({ token: jeton, photoId: ID1, fields: [{ contactId: "prenom", value: "Lou" }, { contactId: "prenom", value: "Max" }] })
+      .expect(200);
+    expect(r.body.updated).toBe(1);
+    expect(b.inscriptions[0].prenom).toBe("Lou");
+  });
+});
+
 describe("effacement (POST /rgpd/v1/suppression)", () => {
   it("« both » : données effacées et photo purgée si personne d'autre ne l'a demandée", async () => {
     const r = await request(app).post("/rgpd/v1/suppression").send({ token: jeton, photoId: ID1, target: "both" }).expect(200);
@@ -263,6 +295,24 @@ describe("effacement (POST /rgpd/v1/suppression)", () => {
     expect(b.purges).toEqual([1n, 2n]);
     await attendre();
     expect(b.envois[0].sujet).toBe(`RGPD : suppression des données de ${MOI}`);
+  });
+
+  it("un média pas encore copié (en file, en erreur) ou purgé par conservation est effacé aussi ; déjà effacé RGPD : non", async () => {
+    b.medias.push(
+      { id: 10n, uuid: "m-file", codeEvent: "RA7K", photoUuid: UUID_A, mediaStatut: "A_TELECHARGER", mediaChemin: null, vignetteChemin: null },
+      { id: 11n, uuid: "m-err", codeEvent: "RA7K", photoUuid: UUID_A, mediaStatut: "ERREUR", mediaChemin: null, vignetteChemin: null },
+      { id: 12n, uuid: "m-cons", codeEvent: "RA7K", photoUuid: UUID_A, mediaStatut: "PURGE", purgeMotif: "CONSERVATION", mediaChemin: null, vignetteChemin: null },
+      { id: 13n, uuid: "m-rgpd", codeEvent: "RA7K", photoUuid: UUID_A, mediaStatut: "PURGE", purgeMotif: "RGPD", mediaChemin: null, vignetteChemin: null }
+    );
+    await request(app).post("/rgpd/v1/suppression").send({ token: jeton, photoId: ID1, target: "both" }).expect(200);
+    expect(b.purges).toEqual([1n, 2n, 10n, 11n, 12n]);
+    // Consentements retirés avec l'adresse ; une seconde demande ne trouve plus rien
+    expect(b.inscriptions[0]).toMatchObject({ email: null, optinLieu: false, optinSelfizee: false });
+    await request(app).post("/rgpd/v1/suppression").send({ token: jeton, photoId: ID1, target: "both" }).expect(404);
+  });
+
+  it("identifiant qui n'est pas un UUID : 404, jamais envoyé à la base", async () => {
+    await request(app).post("/rgpd/v1/suppression").send({ token: jeton, photoId: "-".repeat(36) }).expect(404);
   });
 
   it("photo de groupe : « both » garde la photo, « photo » est refusé (409)", async () => {

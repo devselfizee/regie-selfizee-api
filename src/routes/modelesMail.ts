@@ -61,7 +61,7 @@ modelesMailRouter.get(
 
 const corpsModele = z.object({
   sujet: z.string().trim().min(1).max(200),
-  corps: z.string().max(40_000),
+  corps: z.string().max(20_000, "Le texte est trop long (20 000 caractères au plus)."),
   destinataires: z.string().max(500).nullable().optional(),
 });
 

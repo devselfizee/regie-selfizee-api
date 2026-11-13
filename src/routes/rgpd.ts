@@ -48,7 +48,7 @@ rgpdRouter.get(
     const j = lireJetonAcces(req.params.jeton);
     if (!j) throw new HttpError(404, "LIEN_INVALIDE", "Ce lien n'est pas valide.");
     if (j.expire) return vide(res, true);
-    res.json(await rapport(j.email, baseFichiers(req)));
+    res.json(await rapport(j.email, baseFichiers(req, false)));
   })
 );
 
