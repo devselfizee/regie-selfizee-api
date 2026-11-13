@@ -29,6 +29,16 @@ listeEvenementsRouter.get(
     const telecharges = new Map(
       (await prisma.media.groupBy({ by: ["configEvenementId"], where: { configEvenementId: { not: null }, mediaStatut: "TELECHARGE" }, _count: { _all: true } })).map((m) => [m.configEvenementId!, m._count._all])
     );
+    // Séances dont la photo téléchargée retrouve sa vente (photo_uuid du JSON PikCloud = pikcloud_uuid envoyé par la borne)
+    const relies = new Map(
+      (
+        await prisma.$queryRaw<{ id: number; n: bigint }[]>`
+          SELECT m.config_evenement_id id, count(DISTINCT m.photo_uuid) n FROM medias m
+          WHERE m.config_evenement_id IS NOT NULL AND m.media_statut = 'TELECHARGE'
+            AND EXISTS (SELECT 1 FROM transactions t WHERE t.pikcloud_uuid = m.photo_uuid)
+          GROUP BY m.config_evenement_id`
+      ).map((r) => [r.id, Number(r.n)])
+    );
 
     res.json({
       evenements: evenements
@@ -48,7 +58,7 @@ listeEvenementsRouter.get(
             publieeLe: e.publieeLe,
             modifieDepuisPublication: e.publieeLe === null || e.updatedAt > e.publieeLe,
             creeLe: e.createdAt,
-            medias: { recus: m?.nombre ?? 0, telecharges: telecharges.get(e.id) ?? 0, dernier: m?.dernier ?? null },
+            medias: { recus: m?.nombre ?? 0, telecharges: telecharges.get(e.id) ?? 0, reliesVente: relies.get(e.id) ?? 0, dernier: m?.dernier ?? null },
           };
         })
         .sort((a, b) => a.lieu.enseigne.localeCompare(b.lieu.enseigne, "fr") || Number(b.habituel) - Number(a.habituel) || (b.dateDebut ?? "").localeCompare(a.dateDebut ?? "")),
