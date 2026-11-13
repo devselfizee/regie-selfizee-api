@@ -20,6 +20,9 @@ La synchronisation est **directe : borne → plateforme de suivi**, sans passer 
 - **Carte** : champ facultatif `carte_fin` (quatre derniers chiffres, avec `cb` ou `sans_contact`) ; `pikcloud_uuid` accepté avec ou sans tirets.
 - **Séances à 0 €** : nouvelle valeur `sans_tirage` de `gratuite` (photo enregistrée sans tirage ni paiement). Avec elle, `gratuite` peut être envoyé pour toute séance `aucun`.
 
+**Nouveautés du 13/11/2026** (avenant n° 4 sur les ventes) :
+- **Code de remise sur la vente** : champs facultatifs `code_remise` et `code_utilisation_id` (§ 3 et § 4 ter), complétés par un renvoi.
+
 **Nouveautés du 28/10/2026** (avenant n° 2 à la synchronisation des ventes) :
 - **Carte** : champ facultatif `carte_derniers_chiffres` (4 chiffres, jamais avec `especes`, `aucun` ou `web`), même donnée que `carte_fin`, qui reste accepté.
 - **`pikcloud_uuid`** : 32 hexadécimaux sans tirets (jeton du QR du kit nightlife) ou UUID avec tirets, envoyé tel quel.
@@ -126,7 +129,8 @@ Content-Type: application/json
 | `pikcloud_uuid` | non | Identifiant de la photo côté PikCloud (`photo_uuid`), UUID avec ou sans tirets : la plateforme affiche la photo dans le récapitulatif de la commande. |
 | `carte_derniers_chiffres` | non | **Quatre derniers chiffres de la carte** tels qu'imprimés sur le ticket (`^[0-9]{4}$`), quand le ticket est rapproché de la vente. Jamais avec `especes`, `aucun` ou `web`. Visibles des seuls administrateurs. |
 | `carte_fin` | non | **Quatre derniers chiffres de la carte**, lus sur le ticket du terminal (4 chiffres). Seulement avec `cb` ou `sans_contact`, quand le ticket a été rapproché de la séance. Visibles des seuls administrateurs. |
-| `code_remise` | non | Code de remise utilisé pour cette vente (§ 4 ter), tel que validé par `/codes/utiliser`. |
+| `code_remise` | non | Code de remise servi pour cette vente (§ 4 ter), `^[A-Za-z0-9 -]{1,32}$` (casse, espaces et tirets indifférents). Seulement avec `accepte` ou `offert`, jamais sur un `TIRAGE_EXTRA`. |
+| `code_utilisation_id` | non | L'`utilisation_id` envoyé à `/codes/utiliser` pour cette vente (128 caractères au plus). Jamais sans `code_remise`. |
 | `produit.code` | oui | `TIRAGE`, `TIRAGE_EXTRA` (paiement supplémentaire de la séance), `NUMERIQUE` (photo livrée en numérique seul), `POSTAL` (tirage expédié). |
 | `produit.libelle` | non | Libellé de la formule tel que la borne l'affiche (ex. « 2 tirages »). |
 | `produit.nb_tirages` | oui | Tirages payés, figés à l'envoi (0 à 100). `0` pour `NUMERIQUE` et pour un refus. Les réimpressions ultérieures ne modifient pas la vente. |
@@ -162,7 +166,8 @@ Les séances à 0 € sont **acceptées** : elles ne font ni vente ni chiffre d'
 - `gratuite` seulement avec `aucun` ;
 - `aucun` seulement à 0 € et avec `accepte` ;
 - pas de `reference_monetique` avec `especes` ou `aucun` ;
-- `transaction_origine_id` obligatoire avec `rembourse`.
+- `transaction_origine_id` obligatoire avec `rembourse` ;
+- `code_remise` seulement avec `accepte` ou `offert`, et pas sur un `TIRAGE_EXTRA` ; `code_utilisation_id` seulement avec `code_remise`.
 
 ### Remboursements
 
@@ -194,7 +199,7 @@ La borne ne rembourse jamais. Un remboursement est saisi par Selfizee dans la pl
 | Champ | Signification |
 |---|---|
 | `creees` | Ventes nouvelles enregistrées. |
-| `doublons` | Ventes déjà reçues. Si le renvoi a le même `statut`, `montant_ttc_centimes`, `devise` et `horodatage` (et le même module et code produit), la ligne existante est **complétée** avec ses champs facultatifs : `reference_monetique`, `reference_sequence`, `moyen_paiement`, `encaissement`, `motif`, `carte_derniers_chiffres`, `pikcloud_uuid`, `code_remise`, `module.numero_serie`, `produit.libelle`. Un champ renvoyé remplace l'ancien ; un champ absent ne l'efface pas. Le statut et le montant ne changent jamais par ce chemin. |
+| `doublons` | Ventes déjà reçues. Si le renvoi a le même `statut`, `montant_ttc_centimes`, `devise` et `horodatage` (et le même module et code produit), la ligne existante est **complétée** avec ses champs facultatifs : `reference_monetique`, `reference_sequence`, `moyen_paiement`, `encaissement`, `motif`, `carte_derniers_chiffres`, `pikcloud_uuid`, `code_remise`, `code_utilisation_id`, `module.numero_serie`, `produit.libelle`. Un champ renvoyé remplace l'ancien ; un champ absent ne l'efface pas. Le statut et le montant ne changent jamais par ce chemin. |
 | `rejetees` / `erreurs` | Ventes refusées, avec leur position dans le lot (`index`, à partir de 0) et le motif. Elles sont conservées côté plateforme dans la file d'erreurs : **inutile de les renvoyer telles quelles**. |
 | `non_affectees` | Ventes reçues alors que la borne n'est affectée à aucun lieu à cette date. Elles sont gardées et signalées à Selfizee : rien à faire côté borne. |
 
@@ -353,9 +358,9 @@ S'il reste **moins** d'impressions que demandé, la Régie accorde ce qu'il rest
 
 Chaque utilisation est enregistrée (borne, lieu, date, impressions) et visible dans la Régie. La vente elle-même continue d'arriver par `/transactions` : une impression remisée est une vente au montant remisé, une impression offerte une séance à 0 €.
 
-**Relier la vente au code** (13/11/2026). Deux moyens, cumulables :
-- envoyer le code dans la vente, champ facultatif **`code_remise`** (tel que tapé : casse, espaces et tirets indifférents), sur chaque vente de la séance où il a servi ;
-- donner à `utilisation_id` le **code de séance** (`<borne>-<AAAAMMJJ>-<code séance>`, sans le rang) : la Régie relie alors au code toutes les ventes de la séance, y compris celles déjà envoyées.
+**Relier la vente au code** (avenant ventes n° 4, 13/11/2026, accepté) : sur la vente que le code a servie, deux champs facultatifs, `code_remise` (le code) et `code_utilisation_id` (l'`utilisation_id` envoyé à `/codes/utiliser` pour cette vente). Seulement avec `statut` `accepte` ou `offert`, jamais sur un paiement supplémentaire (`TIRAGE_EXTRA`) ; `code_utilisation_id` jamais sans `code_remise` ; sinon `SCHEMA_INVALIDE`. Les autres champs ne changent pas (impression offerte : `aucun`, 0 €, `gratuite: "mode_gratuit"` ; remisée : vente ordinaire au montant payé). Un renvoi d'une vente déjà reçue avec ces champs **complète** la ligne.
+
+La vente porte alors le code dans la Régie (liste des ventes, récapitulatif de la commande, recherche par code), et chaque utilisation du code pointe vers sa vente. À défaut des deux champs, une utilisation dont l'`utilisation_id` est le code de séance (`<borne>-<AAAAMMJJ>-<code séance>`) ou le `transaction_id` est aussi reliée aux ventes correspondantes.
 
 La vente porte alors le code dans la Régie (liste des ventes, détail de la commande, recherche par code) et la fiche du code liste ses ventes.
 

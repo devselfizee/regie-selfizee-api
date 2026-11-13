@@ -91,13 +91,37 @@ describe("avenant n° 2 : renvoi d'une vente déjà reçue", () => {
   });
 });
 
-describe("code de remise de la vente (13/11/2026)", () => {
-  it("accepte code_remise tel que tapé, refuse un caractère interdit", () => {
-    expect(validerTransaction({ ...recue(), code_remise: "k7px2" })).toBe(true);
-    expect(validerTransaction({ ...recue(), code_remise: "K7P-X2" })).toBe(true);
-    expect(validerTransaction({ ...recue(), code_remise: "K7PX2;" })).toBe(false);
+describe("avenant ventes n° 4 : code de remise sur la vente (13/11/2026)", () => {
+  // Exemple du § 3 : impressions offertes
+  const offerte = () =>
+    ({
+      transaction_id: "S513-20261103-K9CTDU-1",
+      horodatage: "2026-11-03T23:41:12+01:00",
+      montant_ttc_centimes: 0,
+      devise: "EUR",
+      statut: "accepte",
+      module: { type: "HEXAPAY" },
+      moyen_paiement: "aucun",
+      gratuite: "mode_gratuit",
+      code_remise: "K7PX2",
+      code_utilisation_id: "S513-20261103-K9CTDU-234112",
+      produit: { code: "TIRAGE", libelle: "2 tirages", nb_tirages: 2 },
+    }) as TransactionJson;
+  const sur = (t: Partial<TransactionJson>) => ({ ...recue(), produit: { code: "TIRAGE", nb_tirages: 1 }, ...t });
+
+  it("accepte l'exemple du § 3 et un code tapé tel quel", () => {
+    expect(validerTransaction(offerte())).toBe(true);
+    expect(validerTransaction(sur({ code_remise: "k7p-x2" }))).toBe(true);
+    expect(validerTransaction(sur({ code_remise: "K7PX2;" }))).toBe(false);
+  });
+  it("refuse un code sur un refus ou un paiement supplémentaire, et code_utilisation_id sans code", () => {
+    expect(validerTransaction(sur({ statut: "refuse", encaissement: undefined, code_remise: "K7PX2" }))).toBe(false);
+    expect(validerTransaction({ ...recue(), code_remise: "K7PX2" })).toBe(false); // TIRAGE_EXTRA
+    expect(validerTransaction(sur({ code_utilisation_id: "S513-20261103-K9CTDU-234112" }))).toBe(false);
+    expect(validerTransaction(sur({ statut: "offert", encaissement: undefined, code_remise: "K7PX2" }))).toBe(true);
   });
   it("un renvoi avec le code complète la ligne, code normalisé", () => {
-    expect(completer(ligne(), candidate({ ...recue(), code_remise: "k7p x2" }), null)).toEqual({ codeRemise: "K7PX2" });
+    const l = { ...ligne(), produitCode: "TIRAGE" } as Prisma.TransactionGetPayload<object>;
+    expect(completer(l, candidate(sur({ code_remise: "k7p x2", code_utilisation_id: "U-1" })), null)).toEqual({ codeRemise: "K7PX2", codeUtilisationId: "U-1" });
   });
 });

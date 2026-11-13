@@ -128,17 +128,24 @@ const reponseUtilisation = (demandees: number, accordees: number, restant: numbe
 /** Séance d'une vente : son identifiant sans le n° de paiement ni de remboursement (S180-20261016-Z95FN7-1 → S180-20261016-Z95FN7) */
 export const seanceDeVente = (transactionIdModule: string) => transactionIdModule.replace(/-RMB\d+$/, "").replace(/-\d+$/, "");
 
-type VenteCode = { id: bigint; borneId: number; transactionIdModule: string; codeRemise: string | null };
+type VenteCode = { id: bigint; borneId: number; transactionIdModule: string; codeRemise: string | null; codeUtilisationId: string | null };
+
+/** Utilisations d'une vente : code_utilisation_id envoyé avec elle (avenant ventes n° 4), ou la séance, ou la vente elle-même */
+const utilisationsDeVente = (v: VenteCode) => [v.codeUtilisationId, seanceDeVente(v.transactionIdModule), v.transactionIdModule].filter((x): x is string => !!x);
+
+/** Une utilisation du code est-elle celle de cette vente ? */
+export const utilisationDeVente = (u: { borneId: number; utilisationId: string | null }, v: VenteCode) =>
+  !!u.utilisationId && u.borneId === v.borneId && (u.utilisationId === v.codeUtilisationId || u.utilisationId === v.transactionIdModule || v.transactionIdModule.startsWith(`${u.utilisationId}-`));
 
 /**
  * Codes de remise de chaque vente (retour de Sébastien du 13/11) : le code_remise envoyé avec la vente, et les codes
- * utilisés par la borne avec utilisation_id = la séance (ou la vente), ce qui relie aussi les ventes reçues sans code_remise.
+ * dont l'utilisation_id est le code_utilisation_id de la vente, sa séance ou la vente (ventes reçues sans code_remise).
  */
 export async function codesDesVentes(ventes: VenteCode[]): Promise<Map<bigint, string[]>> {
   const parBorne = new Map<number, Set<string>>();
   for (const v of ventes) {
     const ids = parBorne.get(v.borneId) ?? new Set<string>();
-    ids.add(seanceDeVente(v.transactionIdModule)).add(v.transactionIdModule);
+    for (const u of utilisationsDeVente(v)) ids.add(u);
     parBorne.set(v.borneId, ids);
   }
   const utilisations = parBorne.size
@@ -149,8 +156,8 @@ export async function codesDesVentes(ventes: VenteCode[]): Promise<Map<bigint, s
     : [];
   return new Map(
     ventes.map((v) => {
-      const seance = seanceDeVente(v.transactionIdModule);
-      const parUtilisation = utilisations.filter((u) => u.borneId === v.borneId && (u.utilisationId === seance || u.utilisationId === v.transactionIdModule)).map((u) => u.code.code);
+      const ids = utilisationsDeVente(v);
+      const parUtilisation = utilisations.filter((u) => u.borneId === v.borneId && !!u.utilisationId && ids.includes(u.utilisationId)).map((u) => u.code.code);
       return [v.id, [...new Set([...(v.codeRemise ? [v.codeRemise] : []), ...parUtilisation])]];
     })
   );
@@ -166,6 +173,7 @@ export async function ventesDuCode(code: string, utilisations: { borneId: number
         ...utilisations
           .filter((u) => u.utilisationId)
           .flatMap((u) => [
+            { borneId: u.borneId, codeUtilisationId: u.utilisationId! },
             { borneId: u.borneId, transactionIdModule: u.utilisationId! },
             { borneId: u.borneId, transactionIdModule: { startsWith: `${u.utilisationId}-` } },
           ]),
@@ -174,7 +182,7 @@ export async function ventesDuCode(code: string, utilisations: { borneId: number
     orderBy: { horodatage: "desc" },
     take: 200,
     select: {
-      id: true, transactionIdModule: true, horodatage: true, statut: true, montantTtcCents: true, moyenPaiement: true, nbTirages: true, produitLibelle: true,
+      id: true, borneId: true, transactionIdModule: true, codeRemise: true, codeUtilisationId: true, horodatage: true, statut: true, montantTtcCents: true, moyenPaiement: true, nbTirages: true, produitLibelle: true,
       borne: { select: { id: true, identifiant: true } },
       lieu: { select: { id: true, enseigne: true } },
     },

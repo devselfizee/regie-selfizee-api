@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CodeRemise, LotCodesRemise } from "@prisma/client";
-import { ALPHABET, etatCode, genererCode, libelleRemise, normaliserCode, seanceDeVente, titreLotCodes } from "../src/codes/codes.js";
+import { ALPHABET, etatCode, genererCode, libelleRemise, normaliserCode, seanceDeVente, titreLotCodes, utilisationDeVente } from "../src/codes/codes.js";
 
 describe("libellés des lots de codes", () => {
   it("décrit la remise", () => {
@@ -75,5 +75,13 @@ describe("séance d'une vente (lien vente ↔ code par utilisation_id)", () => {
     expect(seanceDeVente("S513-20261103-K9CTDU-1")).toBe("S513-20261103-K9CTDU");
     expect(seanceDeVente("S513-20261103-K9CTDU-2-RMB1")).toBe("S513-20261103-K9CTDU");
     expect(seanceDeVente("S513-20261103-K9CTDU")).toBe("S513-20261103-K9CTDU");
+  });
+  it("relie l'utilisation à sa vente : code_utilisation_id, séance, ou la vente elle-même", () => {
+    const v = { id: 1n, borneId: 7, transactionIdModule: "S513-20261103-K9CTDU-1", codeRemise: "K7PX2", codeUtilisationId: "S513-20261103-K9CTDU-234112" };
+    expect(utilisationDeVente({ borneId: 7, utilisationId: "S513-20261103-K9CTDU-234112" }, v)).toBe(true);
+    expect(utilisationDeVente({ borneId: 7, utilisationId: "S513-20261103-K9CTDU" }, v)).toBe(true);
+    expect(utilisationDeVente({ borneId: 8, utilisationId: "S513-20261103-K9CTDU" }, v)).toBe(false);
+    expect(utilisationDeVente({ borneId: 7, utilisationId: "S513-20261103-K9CTDU-99" }, v)).toBe(false);
+    expect(utilisationDeVente({ borneId: 7, utilisationId: null }, v)).toBe(false);
   });
 });

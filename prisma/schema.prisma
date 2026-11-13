@@ -595,7 +595,9 @@ model Transaction {
   carteFin           String?       @map("carte_fin") @db.Char(4)
   // Code de remise saisi sur la borne pour cette vente (retour de Sébastien du 13/11), normalisé ; pas de clé
   // étrangère : la vente garde le code même s'il est supprimé ou inconnu de la Régie
-  codeRemise         String?       @map("code_remise") @db.VarChar(20)
+  codeRemise         String?       @map("code_remise") @db.VarChar(32)
+  // utilisation_id envoyé à /codes/utiliser pour cette vente (avenant ventes n° 4) : la ligne d'utilisation exacte
+  codeUtilisationId  String?       @map("code_utilisation_id") @db.VarChar(128)
   // Payée avec une carte de test (CarteTest) : hors chiffres réels (agrégats, stats, commissions, exports)
   test               Boolean       @default(false)
 

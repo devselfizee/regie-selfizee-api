@@ -230,9 +230,18 @@
         },
         "code_remise": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9 -]{3,20}$",
-          "description": "Code de remise utilisé pour cette vente (impression offerte ou remisée), tel que validé par /codes/utiliser ; casse, espaces et tirets indifférents. Facultatif."
+          "pattern": "^[A-Za-z0-9 -]{1,32}$",
+          "description": "Code de remise servi pour cette vente (impression offerte ou remisée), tel que validé par /codes/utiliser ; casse, espaces et tirets indifférents. Seulement avec accepte ou offert, jamais sur un TIRAGE_EXTRA (avenant ventes n° 4, 13/11/2026)."
+        },
+        "code_utilisation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "utilisation_id envoyé à /codes/utiliser pour cette vente : rattache la vente à la ligne d'utilisation exacte. Jamais sans code_remise (avenant ventes n° 4)."
         }
+      },
+      "dependentRequired": {
+        "code_utilisation_id": ["code_remise"]
       },
       "allOf": [
         {
@@ -331,6 +340,34 @@
                   "cb",
                   "sans_contact"
                 ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "code_remise"
+            ]
+          },
+          "then": {
+            "properties": {
+              "statut": {
+                "enum": [
+                  "accepte",
+                  "offert"
+                ]
+              },
+              "produit": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "not": {
+                      "const": "TIRAGE_EXTRA"
+                    }
+                  }
+                }
               }
             }
           }

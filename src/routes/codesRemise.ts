@@ -6,7 +6,7 @@ import { asynchrone, HttpError } from "../lib/http.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { envoyerClasseur, type Colonne } from "../lib/excel.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
-import { creerCodes, libelleRemise, ventesDuCode } from "../codes/codes.js";
+import { creerCodes, libelleRemise, utilisationDeVente, ventesDuCode } from "../codes/codes.js";
 import { requirePerm } from "../middleware/permissions.js";
 
 // Codes de remise (demande de Sébastien, 02/11/2026) : génération par lots, liste, détail des utilisations, export.
@@ -196,7 +196,17 @@ codesRemiseRouter.get(
       : { type: "manuel" as const, le: c.lot.createdAt, par: c.lot.creePar, nbCodes: c.lot.nbCodes };
     // Ventes faites avec ce code (retour de Sébastien du 13/11)
     const ventes = await ventesDuCode(c.code, utilisations);
-    res.json({ ...ligne(c), origine, utilisations: utilisations.map((u) => ({ ...u, id: u.id.toString() })), ventes: ventes.map((v) => ({ ...v, id: v.id.toString() })) });
+    res.json({
+      ...ligne(c),
+      origine,
+      // Chaque utilisation pointe vers sa vente (avenant ventes n° 4 : code_utilisation_id = utilisation_id)
+      utilisations: utilisations.map((u) => ({
+        ...u,
+        id: u.id.toString(),
+        ventes: ventes.filter((v) => utilisationDeVente(u, v)).map((v) => ({ id: v.id.toString(), transactionIdModule: v.transactionIdModule })),
+      })),
+      ventes: ventes.map((v) => ({ ...v, id: v.id.toString() })),
+    });
   })
 );
 
