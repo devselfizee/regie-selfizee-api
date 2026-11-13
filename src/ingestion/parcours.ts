@@ -2,17 +2,21 @@ import { Prisma, type Borne, type ImportSource } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { sha256Payload } from "./journal.js";
-import type { LotParcoursJson, ParcoursJson } from "./validation.js";
+import { sansChamps11, type LotParcoursJson, type ParcoursJson } from "./validation.js";
 
 // Parcours invité (avenant du 26/10/2026) : une séance du kit nightlife, vente ou pas.
 // Mêmes règles que les ventes : (borne, parcours_id) unique ; renvoi identique = doublon,
 // contenu différent = CONFLIT_DOUBLON (l'original est gardé) ; lieu = affectation au début de la séance.
+// Schéma 1.1 (avenant n° 2 du 10/11/2026) : un parcours renvoyé avec reconstitue: true, dont l'original n'a aucun
+// champ 1.1 et dont les champs 1.0 sont identiques, complète l'original (compté dans « enrichis »).
 
 export interface ResultatLotParcours {
   import_id: string;
   recus: number;
   crees: number;
   doublons: number;
+  /** Parcours déjà reçus en 1.0, complétés par leur version reconstituée */
+  enrichis: number;
   rejetees: number;
   non_affectees: number;
   erreurs: { index: number; parcours_id: string; code: string; message: string }[];
@@ -21,6 +25,15 @@ export interface ResultatLotParcours {
 /** Forme canonique (clés triées) pour comparer un renvoi à l'original. */
 const canonique = (v: unknown): string =>
   JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+
+/** Champs 1.1 d'un parcours, pour les colonnes */
+const champs11 = (p: ParcoursJson) => ({
+  rendu: p.rendu ?? null,
+  offreFermeture: p.offre_fermeture ?? null,
+  paiementPassages: (p.paiement?.passages as unknown as Prisma.InputJsonValue) ?? Prisma.DbNull,
+  upsellPassages: (p.upsell?.passages as unknown as Prisma.InputJsonValue) ?? Prisma.DbNull,
+  reconstitue: p.reconstitue === true,
+});
 
 export async function ingererLotParcours(
   borne: Borne,
@@ -59,10 +72,15 @@ export async function ingererLotParcours(
     prisma.affectationBorne.findMany({ where: { borneId: borne.id } }),
   ]);
   let doublons = 0;
+  let enrichis = 0;
   for (const e of existants) {
     const c = candidats.get(e.parcoursId)!;
+    const original = e.brut as unknown as ParcoursJson;
     if (canonique(e.brut) === canonique(c.p)) doublons++;
-    else erreurs.push({ index: c.index, parcours_id: e.parcoursId, code: "CONFLIT_DOUBLON", message: `parcours_id déjà reçu (#${e.id}) avec un contenu différent : non écrasé` });
+    else if (c.p.reconstitue === true && canonique(sansChamps11(original)) === canonique(original) && canonique(sansChamps11(c.p)) === canonique(original)) {
+      await prisma.parcours.update({ where: { id: e.id }, data: { ...champs11(c.p), brut: c.p as unknown as Prisma.InputJsonValue } });
+      enrichis++;
+    } else erreurs.push({ index: c.index, parcours_id: e.parcoursId, code: "CONFLIT_DOUBLON", message: `parcours_id déjà reçu (#${e.id}) avec un contenu différent : non écrasé` });
     candidats.delete(e.parcoursId);
   }
 
@@ -102,6 +120,7 @@ export async function ingererLotParcours(
       upsellMontantCents: p.upsell?.montant_ttc_centimes ?? null,
       appel: p.appel ?? null,
       appelEngagee: p.appel_engagee ?? null,
+      ...champs11(p),
       brut: p as unknown as Prisma.InputJsonValue,
     };
   });
@@ -116,7 +135,8 @@ export async function ingererLotParcours(
       statut: erreurs.length === 0 ? "OK" : erreurs.length === lot.parcours.length ? "REJETE" : "PARTIEL",
       nbRecues: lot.parcours.length,
       nbCreees: count,
-      nbDoublons: doublons,
+      // Le journal des imports n'a pas de compteur à part : un parcours complété y compte comme déjà reçu
+      nbDoublons: doublons + enrichis,
       nbRejetees: erreurs.length,
       ...(erreurs.length
         ? { erreurs: { create: erreurs.map((e) => ({ index: e.index, transactionIdModule: e.parcours_id, code: e.code, message: e.message, payload: lot.parcours[e.index] as unknown as Prisma.InputJsonValue })) } }
@@ -129,6 +149,7 @@ export async function ingererLotParcours(
     recus: lot.parcours.length,
     crees: count,
     doublons,
+    enrichis,
     rejetees: erreurs.length,
     non_affectees: lignes.filter((l) => l.lieuId === null).length,
     erreurs,

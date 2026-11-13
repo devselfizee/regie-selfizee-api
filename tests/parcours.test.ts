@@ -52,6 +52,28 @@ describe("parcours invité", () => {
     expect(r3.erreurs[0]).toMatchObject({ parcours_id: a.parcours_id, code: "CONFLIT_DOUBLON" });
   });
 
+  it("1.1 : enregistre rendu, fermeture de l'offre et passages ; un parcours reconstitué complète l'original 1.0", async () => {
+    const paiement = { demandes: 1, statut: "accepte", montant_ttc_centimes: 350 };
+    const a = seance("AAAAAA", { cadre: h("10"), offre: h("10"), paiement: h("11") }, { paiement, tirages: 1 });
+    const b = seance("BBBBBB", { cadre: h("10"), offre: h("10") }, { rendu: "couleur", offre_fermeture: "non_merci" });
+    expect((await envoyer([a, b]).expect(200)).body).toMatchObject({ crees: 2, rejetees: 0 });
+    expect(await prisma.parcours.findFirstOrThrow({ where: { parcoursId: b.parcours_id } })).toMatchObject({ rendu: "couleur", offreFermeture: "non_merci", reconstitue: false });
+
+    const passages = [{ demande: h("11"), reponse: h("11"), statut: "accepte", enregistrement: { statut: "fait" } }];
+    const aReconstitue = { ...a, rendu: "noir_blanc", offre_fermeture: "paiement", reconstitue: true, paiement: { ...paiement, passages } };
+    const r = (await envoyer([aReconstitue]).expect(200)).body;
+    expect(r).toMatchObject({ crees: 0, enrichis: 1, doublons: 0, rejetees: 0 });
+    expect(await prisma.parcours.findFirstOrThrow({ where: { parcoursId: a.parcours_id } })).toMatchObject({ rendu: "noir_blanc", offreFermeture: "paiement", paiementPassages: passages, reconstitue: true, dureeS: 60 });
+
+    // Second renvoi : doublon ordinaire ; un champ 1.0 changé ou un original déjà en 1.1 : conflit
+    expect((await envoyer([aReconstitue]).expect(200)).body).toMatchObject({ enrichis: 0, doublons: 1 });
+    expect((await envoyer([{ ...aReconstitue, rendu: "couleur" }]).expect(200)).body.erreurs[0].code).toBe("CONFLIT_DOUBLON");
+    expect((await envoyer([{ ...b, rendu: "surprise", reconstitue: true }]).expect(200)).body.erreurs[0].code).toBe("CONFLIT_DOUBLON");
+    const c = seance("CCCCCC", { cadre: h("10") }, { issue: "delai" });
+    await envoyer([c]).expect(200);
+    expect((await envoyer([{ ...c, duree_s: 61, reconstitue: true }]).expect(200)).body.erreurs[0].code).toBe("CONFLIT_DOUBLON");
+  });
+
   it("entonnoir : une étape non atteinte ne compte pas", async () => {
     await envoyer([
       seance("AAAAAA", { cadre: h("10"), photo: h("10"), offre: h("10"), paiement: h("11") }, { paiement: { demandes: 1, statut: "accepte", montant_ttc_centimes: 350 } }),

@@ -118,14 +118,43 @@ export interface ParcoursJson {
   couleurs_relances?: number;
   retours_offre?: number;
   tirages: number;
-  paiement?: { demandes: number; statut: "accepte" | "refuse" | "annule" | "expire" | "offert" | "inconnu"; montant_ttc_centimes: number };
-  upsell?: { proposes: number; acceptes: number; montant_ttc_centimes: number };
+  paiement?: { demandes: number; statut: "accepte" | "refuse" | "annule" | "expire" | "offert" | "inconnu"; montant_ttc_centimes: number; passages?: PassageTerminalJson[] };
+  upsell?: { proposes: number; acceptes: number; montant_ttc_centimes: number; passages?: PassageTerminalJson[] };
   appel?: boolean;
   appel_engagee?: boolean;
+  // 1.1 (avenant n° 2 du 10/11/2026)
+  rendu?: "couleur" | "noir_blanc" | "surprise";
+  offre_fermeture?: "non_merci" | "delai" | "paiement" | "retour" | "autre";
+  reconstitue?: boolean;
+}
+
+/** 1.1 : un passage au terminal (appui sur « Payer », ou « +1 » pour un pote) */
+export interface PassageTerminalJson {
+  demande?: string;
+  envoi?: string;
+  reponse?: string;
+  statut: "accepte" | "refuse" | "annule" | "expire" | "inconnu";
+  duree_ms?: number;
+  renvoi?: boolean;
+  enregistrement?: { statut: "fait" | "abandonne" | "inconnu"; le?: string; essais?: number };
+}
+
+/** Le parcours sans ses champs 1.1 : ce qu'une version reconstituée doit avoir en commun avec l'original */
+export function sansChamps11(p: ParcoursJson): ParcoursJson {
+  const { rendu: _r, offre_fermeture: _o, reconstitue: _c, ...reste } = p;
+  const sansPassages = <T extends { passages?: unknown }>(b: T) => {
+    const { passages: _p, ...r } = b;
+    return r;
+  };
+  return {
+    ...reste,
+    ...(p.paiement && { paiement: sansPassages(p.paiement) }),
+    ...(p.upsell && { upsell: sansPassages(p.upsell) }),
+  };
 }
 
 export interface LotParcoursJson {
-  schema_version: "1.0";
+  schema_version: "1.0" | "1.1";
   borne_id: string;
   envoye_le: string;
   logiciel_version: string;

@@ -36,7 +36,7 @@ La synchronisation est **directe : borne → plateforme de suivi**, sans passer 
 - **URL de base** : fournie par Selfizee, en **HTTPS**. Une URL de DEV est disponible pour les essais avec le simulateur de terminal ; l'URL de PROD sera livrée ensuite.
 - **Format** : JSON (UTF-8), en-tête `Content-Type: application/json`.
 - **Taille maximale d'une requête** : 2 Mo.
-- **Schémas JSON officiels** (à utiliser pour valider côté borne) : [`schemas/transactions.v1.schema.json`](../schemas/transactions.v1.schema.json) et [`schemas/heartbeat.v1.schema.json`](../schemas/heartbeat.v1.schema.json), plus [`schemas/parcours.v1.schema.json`](../schemas/parcours.v1.schema.json) pour les parcours (version `"1.0"`). Les deux premiers acceptent `schema_version` `"1.0"` et `"1.1"`. Des exemples sont dans [`schemas/examples/`](../schemas/examples/).
+- **Schémas JSON officiels** (à utiliser pour valider côté borne) : [`schemas/transactions.v1.schema.json`](../schemas/transactions.v1.schema.json) et [`schemas/heartbeat.v1.schema.json`](../schemas/heartbeat.v1.schema.json), plus [`schemas/parcours.v1.schema.json`](../schemas/parcours.v1.schema.json) pour les parcours (versions `"1.0"` et `"1.1"`). Les deux premiers acceptent `schema_version` `"1.0"` et `"1.1"`. Des exemples sont dans [`schemas/examples/`](../schemas/examples/).
 
 ## 2. Authentification
 
@@ -298,10 +298,16 @@ Un **parcours** décrit une séance du kit nightlife, de la première page aprè
 | `paiement` | non | Dès qu'un paiement a été demandé : `demandes`, `statut` (`accepte`, `refuse`, `annule`, `expire`, `offert`, `inconnu`), `montant_ttc_centimes`. |
 | `upsell` | non | « +1 pour un pote » : `proposes`, `acceptes`, `montant_ttc_centimes`. |
 | `appel`, `appel_engagee` | non | Photo d'appel lancée par la borne ; quelqu'un a touché la bandelette. |
+| `rendu` | non | **1.1.** Dernier rendu choisi à la révélation : `couleur`, `noir_blanc`, `surprise`. Absent si l'invité n'a rien choisi. |
+| `offre_fermeture` | non | **1.1.** Comment l'offre a été quittée la dernière fois : `non_merci`, `delai`, `paiement`, `retour`, `autre`. Seulement si l'étape `offre` est atteinte. |
+| `paiement.passages`, `upsell.passages` | non | **1.1.** Un objet par passage au terminal (appui sur « Payer », ou « +1 »), dans l'ordre, 10 au plus : `statut` (requis : `accepte`, `refuse`, `annule`, `expire`, `inconnu`), `demande`, `envoi`, `reponse`, `duree_ms`, `renvoi`, `enregistrement` { `statut` (`fait`, `abandonne`, `inconnu`), `le`, `essais` }. |
+| `reconstitue` | non | **1.1.** `true` : parcours déjà envoyé en 1.0, complété après coup par la borne. |
 
-Tout champ non prévu est refusé. Comme pour les ventes, **un parcours mal formé est rejeté seul** (`SCHEMA_INVALIDE` dans `erreurs[]`) sans bloquer le reste du lot ; seule une enveloppe invalide renvoie `400`.
+`schema_version` vaut `"1.0"` ou `"1.1"` (avenant n° 2 du 10/11/2026) ; les champs 1.1 sont acceptés dans les deux. Tout champ non prévu est refusé. Comme pour les ventes, **un parcours mal formé est rejeté seul** (`SCHEMA_INVALIDE` dans `erreurs[]`) sans bloquer le reste du lot ; seule une enveloppe invalide renvoie `400`.
 
-**Réponse** `200` : `{ "import_id", "recus", "crees", "doublons", "rejetees", "non_affectees", "erreurs": [{ "index", "parcours_id", "code", "message" }] }`. Un renvoi identique (même `borne_id`, même `parcours_id`, même contenu) compte en `doublons` ; un contenu différent est refusé en `CONFLIT_DOUBLON` et l'original est gardé ; un même `parcours_id` deux fois dans le lot donne `DOUBLON_DANS_LE_LOT` pour le second.
+**Réponse** `200` : `{ "import_id", "recus", "crees", "doublons", "enrichis", "rejetees", "non_affectees", "erreurs": [{ "index", "parcours_id", "code", "message" }] }`. Un renvoi identique (même `borne_id`, même `parcours_id`, même contenu) compte en `doublons` ; un contenu différent est refusé en `CONFLIT_DOUBLON` et l'original est gardé ; un même `parcours_id` deux fois dans le lot donne `DOUBLON_DANS_LE_LOT` pour le second.
+
+**Exception, parcours reconstitués (1.1)** : un parcours reçu avec `reconstitue: true`, dont l'original n'a **aucun** champ 1.1 et dont tous les champs 1.0 sont identiques, **complète** l'original et compte en `enrichis`. Un second renvoi du même parcours reconstitué est un doublon ordinaire ; un champ 1.0 différent reste un `CONFLIT_DOUBLON`.
 
 ## 4 ter. Codes de remise (impressions offertes ou remisées)
 

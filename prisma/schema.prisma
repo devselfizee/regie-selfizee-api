@@ -1288,6 +1288,13 @@ model Parcours {
   upsellMontantCents   Int?     @map("upsell_montant_cents")
   appel                Boolean?
   appelEngagee         Boolean? @map("appel_engagee")
+  // Schéma 1.1 (avenant n° 2 du 10/11/2026) : rendu choisi, façon de quitter l'offre, passages au terminal
+  rendu                String? // couleur, noir_blanc, surprise
+  offreFermeture       String?  @map("offre_fermeture") // non_merci, delai, paiement, retour, autre
+  paiementPassages     Json?    @map("paiement_passages")
+  upsellPassages       Json?    @map("upsell_passages")
+  // Parcours 1.0 complété après coup par la borne (renvoi avec reconstitue: true)
+  reconstitue          Boolean  @default(false)
   // Objet reçu tel quel : un renvoi identique est un doublon, différent un conflit
   brut                 Json
   recuLe               DateTime @default(now()) @map("recu_le") @db.Timestamptz(3)

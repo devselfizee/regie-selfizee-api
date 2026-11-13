@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { erreursParLigne, erreursUniquementSurLignes, validerLotParcours } from "../src/ingestion/validation.js";
+import { erreursParLigne, erreursUniquementSurLignes, sansChamps11, validerLotParcours, type ParcoursJson } from "../src/ingestion/validation.js";
 
 // Exemple de l'avenant « parcours invité » du 26/10/2026, tel quel
 const exemple = () => ({
@@ -49,6 +49,44 @@ describe("schéma des parcours invité", () => {
     expect(validerLotParcours(lot([{ ...exemple(), inconnu: 1 }]))).toBe(false);
     expect(validerLotParcours(lot([{ ...exemple(), etapes: { accueil: "2026-10-22T23:10:00+02:00" } }]))).toBe(false);
     expect(validerLotParcours(lot([{ ...exemple(), debut: "2026-10-22T23:10:00" }]))).toBe(false);
+  });
+
+  // Exemple de l'avenant n° 2 du 10/11/2026 (schéma 1.1), tel quel
+  const exemple11 = () => ({
+    ...exemple(),
+    upsell: undefined,
+    rendu: "noir_blanc",
+    offre_fermeture: "paiement",
+    paiement: {
+      demandes: 2, statut: "accepte", montant_ttc_centimes: 350,
+      passages: [
+        { demande: "2026-11-10T23:10:56+01:00", envoi: "2026-11-10T23:10:56+01:00", reponse: "2026-11-10T23:11:02+01:00", statut: "refuse", duree_ms: 6100 },
+        { demande: "2026-11-10T23:11:06+01:00", envoi: "2026-11-10T23:11:06+01:00", reponse: "2026-11-10T23:11:13+01:00", statut: "accepte", duree_ms: 6800, enregistrement: { statut: "fait", le: "2026-11-10T23:11:21+01:00", essais: 1 } },
+      ],
+    },
+  });
+  const lot11 = (parcours: unknown[]) => JSON.parse(JSON.stringify({ ...lot(parcours), schema_version: "1.1" }));
+
+  it("1.1 : accepte l'exemple de l'avenant n° 2, un « +1 » et un parcours reconstitué incomplet", () => {
+    expect(validerLotParcours(lot11([exemple11()]))).toBe(true);
+    const upsell = { proposes: 1, acceptes: 1, montant_ttc_centimes: 300, passages: [{ demande: "2026-11-10T23:11:30+01:00", reponse: "2026-11-10T23:11:36+01:00", statut: "accepte", enregistrement: { statut: "abandonne" } }] };
+    expect(validerLotParcours(lot11([{ ...exemple11(), upsell }]))).toBe(true);
+    expect(validerLotParcours({ ...lot11([{ ...exemple11(), reconstitue: true, paiement: { demandes: 1, statut: "refuse", montant_ttc_centimes: 350, passages: [{ statut: "refuse" }] } }]), rattrapage: true })).toBe(true);
+    // Les champs 1.1 restent acceptés dans une enveloppe 1.0
+    expect(validerLotParcours(JSON.parse(JSON.stringify(lot([exemple11()]))))).toBe(true);
+  });
+
+  it("1.1 : refuse une version inconnue, un rendu ou une fermeture hors liste, un passage sans statut", () => {
+    expect(validerLotParcours({ ...lot11([exemple11()]), schema_version: "1.2" })).toBe(false);
+    expect(validerLotParcours(lot11([{ ...exemple11(), rendu: "sepia" }]))).toBe(false);
+    expect(validerLotParcours(lot11([{ ...exemple11(), offre_fermeture: "fermee" }]))).toBe(false);
+    expect(validerLotParcours(lot11([{ ...exemple11(), paiement: { demandes: 1, statut: "refuse", montant_ttc_centimes: 350, passages: [{ demande: "2026-11-10T23:10:56+01:00" }] } }]))).toBe(false);
+  });
+
+  it("sansChamps11 rend le parcours 1.0 d'origine", () => {
+    const original = exemple();
+    const reconstitue = { ...original, rendu: "couleur", offre_fermeture: "non_merci", reconstitue: true, paiement: { ...original.paiement, passages: [{ statut: "accepte" }] }, upsell: { ...original.upsell, passages: [{ statut: "accepte" }] } };
+    expect(sansChamps11(reconstitue as unknown as ParcoursJson)).toEqual(original);
   });
 
   it("une ligne fautive est isolée, le reste du lot passe", () => {

@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://regie-selfizee-api.orkessidev.com/schemas/parcours.v1.schema.json",
-  "title": "Parcours invité des bornes (kit nightlife), v1.0",
-  "description": "Un enregistrement par séance, vente ou pas, envoyé à la clôture de la séance (avenant « parcours invité » du 26/10/2026).",
+  "title": "Parcours invité des bornes (kit nightlife), v1.0 et v1.1",
+  "description": "Un enregistrement par séance, vente ou pas, envoyé à la clôture de la séance (avenant « parcours invité » du 26/10/2026). 1.1 (avenant n° 2 du 10/11/2026) : rendu, offre_fermeture, paiement.passages, upsell.passages et reconstitue, tous facultatifs.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "borne_id", "envoye_le", "logiciel_version", "parcours"],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "enum": ["1.0", "1.1"] },
     "borne_id": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9_-]{2,63}$" },
     "envoye_le": { "$ref": "#/$defs/horodatage" },
     "logiciel_version": { "type": "string", "minLength": 1, "maxLength": 32 },
@@ -61,7 +61,8 @@
           "properties": {
             "demandes": { "type": "integer", "minimum": 1, "maximum": 100 },
             "statut": { "enum": ["accepte", "refuse", "annule", "expire", "offert", "inconnu"] },
-            "montant_ttc_centimes": { "type": "integer", "minimum": 0, "maximum": 100000 }
+            "montant_ttc_centimes": { "type": "integer", "minimum": 0, "maximum": 100000 },
+            "passages": { "$ref": "#/$defs/passages" }
           }
         },
         "upsell": {
@@ -71,11 +72,44 @@
           "properties": {
             "proposes": { "type": "integer", "minimum": 0, "maximum": 100 },
             "acceptes": { "type": "integer", "minimum": 0, "maximum": 100 },
-            "montant_ttc_centimes": { "type": "integer", "minimum": 0, "maximum": 100000 }
+            "montant_ttc_centimes": { "type": "integer", "minimum": 0, "maximum": 100000 },
+            "passages": { "$ref": "#/$defs/passages" }
           }
         },
         "appel": { "type": "boolean" },
-        "appel_engagee": { "type": "boolean" }
+        "appel_engagee": { "type": "boolean" },
+        "rendu": { "enum": ["couleur", "noir_blanc", "surprise"], "description": "1.1 : dernier rendu choisi à la révélation ; absent si l'invité n'a rien choisi." },
+        "offre_fermeture": { "enum": ["non_merci", "delai", "paiement", "retour", "autre"], "description": "1.1 : comment l'offre a été quittée la dernière fois ; seulement si l'étape offre est atteinte." },
+        "reconstitue": { "type": "boolean", "description": "1.1 : parcours déjà envoyé en 1.0, complété après coup par la borne." }
+      }
+    },
+    "passages": {
+      "type": "array",
+      "description": "1.1 : un objet par passage au terminal, dans l'ordre (appui sur Payer, ou « +1 » pour l'upsell). Parcours reconstitué : demande, le et essais peuvent manquer.",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statut"],
+        "properties": {
+          "demande": { "$ref": "#/$defs/horodatage" },
+          "envoi": { "$ref": "#/$defs/horodatage" },
+          "reponse": { "$ref": "#/$defs/horodatage" },
+          "statut": { "enum": ["accepte", "refuse", "annule", "expire", "inconnu"] },
+          "duree_ms": { "type": "integer", "minimum": 0, "maximum": 600000 },
+          "renvoi": { "type": "boolean" },
+          "enregistrement": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["statut"],
+            "properties": {
+              "statut": { "enum": ["fait", "abandonne", "inconnu"] },
+              "le": { "$ref": "#/$defs/horodatage" },
+              "essais": { "type": "integer", "minimum": 1, "maximum": 10 }
+            }
+          }
+        }
       }
     }
   }
