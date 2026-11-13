@@ -4,7 +4,7 @@ import { TZDate } from "@date-fns/tz";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
+import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../middleware/utilisateur.js";
 import { EXTENSIONS_VIDEO, extensionDuChemin, lireBuffer, lireFlux, mimeDe } from "../lib/stockage.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
 import { declencherTelechargement } from "../synchro-pikcloud/telechargement.js";
@@ -61,6 +61,62 @@ async function vignetteDataUrl(chemin: string | null): Promise<string | null> {
 }
 
 type MediaListe = Prisma.MediaGetPayload<{ include: { evenement: typeof selectionEvenement } }>;
+const selectionLieu = { select: { id: true, enseigne: true, ville: true } } as const;
+
+/** Filtres de la galerie communs au lieu et à la page « Photos » (tous lieux) : événement, type, période, tests. */
+function filtresCommuns(f: z.infer<typeof filtresSchema>): Prisma.MediaWhereInput {
+  return {
+    ...(f.evenement ? { configEvenementId: f.evenement } : {}),
+    ...(f.type ? { typeMedia: f.type } : {}),
+    ...(f.tests === "1" ? {} : { test: false }),
+    ...(f.du || f.au ? { datePhoto: { ...(f.du ? { gte: minuitParis(f.du) } : {}), ...(f.au ? { lt: minuitParis(f.au, 1) } : {}) } } : {}),
+  };
+}
+
+/**
+ * Une page de médias, les plus récents d'abord, chacun avec sa vente et son lieu ; `ventes` : séances payées et montant
+ * sur les filtres (hors filtre vente) ; `types` : les types présents (choix du filtre). `portee` : les ventes à relier.
+ */
+async function pageMedias(base: Prisma.MediaWhereInput, f: z.infer<typeof filtresSchema>, portee: Prisma.TransactionWhereInput) {
+  const payees = await seancesPayees(portee);
+  // Séances payées et montant sur les filtres choisis (sans le filtre vente) : une séance compte une fois
+  const seances = new Set(
+    (await prisma.media.findMany({ where: { ...base, photoUuid: { not: null } }, select: { photoUuid: true }, distinct: ["photoUuid"] }))
+      .map((m) => m.photoUuid!)
+      .filter((u) => payees.has(u))
+  );
+  const ventes = { seancesPayees: seances.size, montantTtcCents: [...seances].reduce((t, u) => t + payees.get(u)!.montantTtcCents, 0) };
+  const uuidsPayes = [...payees.keys()];
+  const where: Prisma.MediaWhereInput =
+    f.vente === "payee"
+      ? { ...base, photoUuid: { in: uuidsPayes } }
+      : f.vente === "sans"
+        ? { AND: [base, { OR: [{ photoUuid: null }, { photoUuid: { notIn: uuidsPayes } }] }] }
+        : base;
+  const { typeMedia: _type, ...sansType } = base;
+  const [total, lignes, types] = await Promise.all([
+    prisma.media.count({ where }),
+    prisma.media.findMany({
+      where,
+      include: { evenement: selectionEvenement, lieu: selectionLieu },
+      // Sans date de prise de vue (JSON pas encore reçu) : en tête, ce sont les plus récents
+      orderBy: [{ datePhoto: { sort: "desc", nulls: "first" } }, { id: "desc" }],
+      skip: (f.page - 1) * f.parPage,
+      take: f.parPage,
+    }),
+    prisma.media.groupBy({ by: ["typeMedia"], where: sansType, _count: { _all: true }, orderBy: { _count: { typeMedia: "desc" } } }),
+  ]);
+  return {
+    total,
+    page: f.page,
+    parPage: f.parPage,
+    ventes,
+    types: types.map((t) => t.typeMedia),
+    medias: await Promise.all(
+      lignes.map(async (m) => ({ ...(await versClient(m)), lieu: m.lieu, venteSeance: (m.photoUuid && payees.get(m.photoUuid)) || null }))
+    ),
+  };
+}
 
 /** Vente d'une séance dans la galerie : total encaissé (une séance peut avoir plusieurs paiements) et moyen. */
 interface VenteSeance {
@@ -74,9 +130,9 @@ interface VenteSeance {
  * séance par le photo_uuid PikCloud que la borne envoie avec la vente. Une séance à 0 € (gratuite, code à 100 %,
  * sans moyen de paiement) n'est pas payée (retour du 13/11 : « Payée · 0,00 € »).
  */
-async function seancesPayees(lieuId: number): Promise<Map<string, VenteSeance>> {
+async function seancesPayees(portee: Prisma.TransactionWhereInput): Promise<Map<string, VenteSeance>> {
   const ventes = await prisma.transaction.findMany({
-    where: { lieuId, statut: "ACCEPTEE", test: false, montantTtcCents: { gt: 0 }, moyenPaiement: { not: "AUCUN" }, pikcloudUuid: { not: null } },
+    where: { ...portee, statut: "ACCEPTEE", test: false, montantTtcCents: { gt: 0 }, moyenPaiement: { not: "AUCUN" }, pikcloudUuid: { not: null } },
     select: { pikcloudUuid: true, montantTtcCents: true, moyenPaiement: true },
     orderBy: { horodatage: "asc" },
   });
@@ -124,50 +180,10 @@ mediasLieuRouter.get(
     const lieuId = lieuParam(req);
     await verifierAccesLieu(req.utilisateur, lieuId);
     const f = filtresSchema.parse(req.query);
-    const base: Prisma.MediaWhereInput = {
-      lieuId,
-      ...(f.evenement ? { configEvenementId: f.evenement } : {}),
-      ...(f.type ? { typeMedia: f.type } : {}),
-      ...(f.tests === "1" ? {} : { test: false }),
-      ...(f.du || f.au ? { datePhoto: { ...(f.du ? { gte: minuitParis(f.du) } : {}), ...(f.au ? { lt: minuitParis(f.au, 1) } : {}) } } : {}),
-    };
-    const payees = await seancesPayees(lieuId);
-    // Séances payées et montant sur les filtres choisis (sans le filtre vente) : une séance compte une fois
-    const seances = new Set(
-      (await prisma.media.findMany({ where: { ...base, photoUuid: { not: null } }, select: { photoUuid: true }, distinct: ["photoUuid"] }))
-        .map((m) => m.photoUuid!)
-        .filter((u) => payees.has(u))
-    );
-    const ventes = { seancesPayees: seances.size, montantTtcCents: [...seances].reduce((t, u) => t + payees.get(u)!.montantTtcCents, 0) };
-    const uuidsPayes = [...payees.keys()];
-    const where: Prisma.MediaWhereInput =
-      f.vente === "payee"
-        ? { ...base, photoUuid: { in: uuidsPayes } }
-        : f.vente === "sans"
-          ? { AND: [base, { OR: [{ photoUuid: null }, { photoUuid: { notIn: uuidsPayes } }] }] }
-          : base;
-    const [total, lignes] = await Promise.all([
-      prisma.media.count({ where }),
-      prisma.media.findMany({
-        where,
-        include: { evenement: selectionEvenement },
-        // Sans date de prise de vue (JSON pas encore reçu) : en tête, ce sont les plus récents
-        orderBy: [{ datePhoto: { sort: "desc", nulls: "first" } }, { id: "desc" }],
-        skip: (f.page - 1) * f.parPage,
-        take: f.parPage,
-      }),
-    ]);
-    res.json({
-      total,
-      page: f.page,
-      parPage: f.parPage,
-      ventes,
-      medias: await Promise.all(lignes.map(async (m) => ({ ...(await versClient(m)), venteSeance: (m.photoUuid && payees.get(m.photoUuid)) || null }))),
-    });
+    res.json(await pageMedias({ lieuId, ...filtresCommuns(f) }, f, { lieuId }));
   })
 );
 
-// GET /api/lieux/:id/medias/resume — compteurs par événement et par type (séances de test exclues)
 mediasLieuRouter.get(
   "/:id/medias/resume",
   voitMedias,
@@ -248,6 +264,32 @@ async function mediaAccessible(req: UtilisateurRequest) {
   }
   return m;
 }
+
+// GET /api/medias?parc=&lieuId=&evenement=&type=&du=&au=&tests=1&vente=&page=&parPage= — les dernières photos de tous les
+// lieux visibles par l'utilisateur (ses lieux pour un commercial, son lieu pour un partenaire), lieux supprimés exclus.
+// Les ventes reliées sont cherchées autour de la période (la page affiche toujours une période).
+const filtresGlobaux = filtresSchema.extend({
+  parc: z.enum(["SELFIZEE", "CLIENT", "TEST"]).optional(),
+  lieuId: z.coerce.number().int().positive().optional(),
+});
+mediasRouter.get(
+  "/",
+  voitMedias,
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const f = filtresGlobaux.parse(req.query);
+    const p = perimetreLieux(req.utilisateur);
+    const lieu: Prisma.LieuWhereInput = {
+      supprimeLe: null,
+      ...(f.parc && !f.lieuId ? { parc: f.parc } : {}),
+      ...(p?.commercialId ? { commercialId: p.commercialId } : {}),
+      ...(p?.lieuId ? { id: p.lieuId } : {}),
+    };
+    const ou = f.lieuId ? { lieuId: f.lieuId } : {};
+    // Une vente peut tomber un peu avant ou après la photo : un jour de marge autour de la période
+    const horodatage = f.du || f.au ? { horodatage: { ...(f.du ? { gte: minuitParis(f.du, -1) } : {}), ...(f.au ? { lt: minuitParis(f.au, 2) } : {}) } } : {};
+    res.json(await pageMedias({ lieu, ...ou, ...filtresCommuns(f) }, f, { lieu, ...ou, ...horodatage }));
+  })
+);
 
 // GET /api/medias/:uuid — détail : la séance, sa vente et son parcours s'ils portent le même photo_uuid
 mediasRouter.get(
