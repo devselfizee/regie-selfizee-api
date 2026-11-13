@@ -6,7 +6,8 @@ import { asynchrone, HttpError } from "../lib/http.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { genererCle } from "../lib/cleBorne.js";
 import { reattribuerTransactions } from "../ingestion/reattribution.js";
-import { estAdminPlateforme, requirePerm } from "../middleware/permissions.js";
+import { requirePerm } from "../middleware/permissions.js";
+import { estSuperAdmin } from "../lib/superAdmin.js";
 
 export const bornesRouter = Router();
 export const affectationsRouter = Router();
@@ -71,12 +72,12 @@ bornesRouter.get(
   })
 );
 
-// DELETE /api/bornes/:id — réservé au super admin (admin de la plateforme) : la borne est marquée supprimée, rien n'est effacé ;
+// DELETE /api/bornes/:id — réservé aux super admins (ADMIN_EMAILS) : la borne est marquée supprimée, rien n'est effacé ;
 // elle sort des listes et ses ventes des chiffres (demande du 13/11)
 bornesRouter.delete(
   "/:id",
   asynchrone<UtilisateurRequest>(async (req, res) => {
-    if (!(await estAdminPlateforme(req))) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer une borne.");
+    if (!estSuperAdmin(req.utilisateur?.email)) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer une borne.");
     await prisma.borne.update({ where: { id: Number(req.params.id), supprimeLe: null }, data: { supprimeLe: new Date(), supprimeParId: req.utilisateur!.id } });
     res.status(204).end();
   })

@@ -8,6 +8,7 @@ import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../m
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { geocoder } from "../lib/geocodage.js";
 import { telephoneE164 } from "../lib/telephone.js";
+import { estSuperAdmin } from "../lib/superAdmin.js";
 import { zoneScolaire } from "../calendrier/calendrier.js";
 import { requirePerm, userCan, estAdminPlateforme } from "../middleware/permissions.js";
 
@@ -202,12 +203,12 @@ lieuxRouter.get(
 
 const hhmm = (d: Date) => d.toISOString().slice(11, 16);
 
-// DELETE /api/lieux/:id — réservé au super admin (admin de la plateforme) : le lieu est marqué supprimé, rien n'est effacé ;
+// DELETE /api/lieux/:id — réservé aux super admins (ADMIN_EMAILS) : le lieu est marqué supprimé, rien n'est effacé ;
 // il sort des listes et des chiffres (demande du 13/11)
 lieuxRouter.delete(
   "/:id",
   asynchrone<UtilisateurRequest>(async (req, res) => {
-    if (!(await estAdminPlateforme(req))) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer un lieu.");
+    if (!estSuperAdmin(req.utilisateur?.email)) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer un lieu.");
     await prisma.lieu.update({ where: { id: Number(req.params.id), supprimeLe: null }, data: { supprimeLe: new Date(), supprimeParId: req.utilisateur!.id } });
     res.status(204).end();
   })
