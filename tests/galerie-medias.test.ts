@@ -12,15 +12,21 @@ import { viderBase } from "./aide.js";
 
 // Galerie des médias PikCloud : liste par lieu et événement, filtres, droits par rôle, fichiers servis derrière le jeton.
 const app = creerApp();
-const en = (email: string | null) => ({
-  post: (url: string) => (email ? request(app).post(url).set("X-Dev-Utilisateur", email) : request(app).post(url)),
-  get: (url: string) => (email ? request(app).get(url).set("X-Dev-Utilisateur", email) : request(app).get(url)),
-});
+// Sans Keycloak : X-Dev-Utilisateur désigne l'utilisateur, X-Dev-Droits simule ses droits Konitys (contrôle actif) ;
+// sans X-Dev-Droits, tout est permis (admin de la plateforme)
+const VOIT_MEDIAS = "app.access,pages.lieux.view,lieux.view_own,medias.view";
+const en = (email: string | null, droits?: string) => {
+  const r = (req: request.Test) => (droits ? req.set("X-Dev-Droits", droits) : req);
+  return {
+    post: (url: string) => r(email ? request(app).post(url).set("X-Dev-Utilisateur", email) : request(app).post(url)),
+    get: (url: string) => r(email ? request(app).get(url).set("X-Dev-Utilisateur", email) : request(app).get(url)),
+  };
+};
 const admin = en(null);
-const alice = en("alice@test.fr");
-const bob = en("bob@test.fr");
-const paul = en("paul@test.fr");
-const tech = en("tech@test.fr");
+const alice = en("alice@test.fr", VOIT_MEDIAS);
+const bob = en("bob@test.fr", VOIT_MEDIAS);
+const paul = en("paul@test.fr", VOIT_MEDIAS);
+const tech = en("tech@test.fr", "app.access,pages.bornes.view,bornes.view"); // sans medias.view
 
 let dossier: string;
 let photoJpeg: Buffer;
@@ -31,6 +37,7 @@ let lieuB: number;
 let evtA: number;
 let evtAPonctuel: number;
 const ids: Record<string, string> = {}; // nom → uuid
+let borneS12: number;
 
 beforeAll(async () => {
   dossier = await mkdtemp(join(tmpdir(), "regie-galerie-"));
@@ -53,6 +60,7 @@ async function media(nom: string, o: { lieuId: number | null; evtId: number | nu
       configEvenementId: o.evtId,
       lieuId: o.lieuId,
       borneIdentifiant: "S12",
+      borneId: borneS12,
       typeMedia: o.type,
       importId: lot.id,
       test: o.test ?? false,
@@ -94,6 +102,8 @@ beforeEach(async () => {
   evtA = (await prisma.configEvenement.create({ data: { lieuId: lieuA, code: "RAAA", motDePasseTableau: "1", reglages: {} } })).id;
   evtAPonctuel = (await prisma.configEvenement.create({ data: { lieuId: lieuA, habituel: false, nom: "Halloween", code: "RAAB", motDePasseTableau: "1", reglages: {} } })).id;
   const evtB = (await prisma.configEvenement.create({ data: { lieuId: lieuB, code: "RBBB", motDePasseTableau: "1", reglages: {} } })).id;
+  const gamme = await prisma.gamme.findUniqueOrThrow({ where: { code: "SPHERIK" } });
+  borneS12 = (await prisma.borne.create({ data: { identifiant: "S12", gammeId: gamme.id } })).id;
 
   await media("photo1", { lieuId: lieuA, evtId: evtA, code: "RAAA", type: "photo", datePhoto: "2026-11-04T21:00:00Z", photoUuid: "3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53", nbTirages: 2 });
   await media("multi2", { lieuId: lieuA, evtId: evtAPonctuel, code: "RAAB", type: "multipose", datePhoto: "2026-11-05T21:00:00Z" });
@@ -103,19 +113,21 @@ beforeEach(async () => {
   await media("b6", { lieuId: lieuB, evtId: evtB, code: "RBBB", type: "photo", datePhoto: "2026-11-02T21:00:00Z" });
   await media("sanslieu7", { lieuId: null, evtId: null, code: "RZZZ", type: "photo", datePhoto: "2026-11-02T21:00:00Z" });
 
-  // La vente de photo1 (même photo_uuid), envoyée par la borne
-  const gamme = await prisma.gamme.findUniqueOrThrow({ where: { code: "SPHERIK" } });
-  const borne = await prisma.borne.create({ data: { identifiant: "S12", gammeId: gamme.id } });
+  // Les ventes de la borne : T1 porte le photo_uuid de photo1 ; T2 et T3 n'ont pas d'identifiant PikCloud
+  // (T2 payée 3 min après la prise de vue de multi2, T3 une heure après : sans séance proche)
   const typeModule = await prisma.typeModulePaiement.findFirstOrThrow();
   const lot = await prisma.importLot.create({ data: { source: "API", type: "TRANSACTIONS", payloadSha256: "1".repeat(64), payload: {}, statut: "OK" } });
-  await prisma.transaction.create({
-    data: {
-      borneId: borne.id, transactionIdModule: "T1", lieuId: lieuA, horodatage: new Date("2026-11-04T21:01:00Z"), offsetMinutes: 60, jourLocal: new Date("2026-11-04T00:00:00Z"),
-      montantTtcCents: 500, tauxTvaBp: 2000, montantHtCents: 417, statut: "ACCEPTEE", typeModuleId: typeModule.id, moyenPaiement: "CB",
-      pikcloudUuid: "3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53", produitCode: "PHOTO", nbTirages: 2, logicielVersion: "1.9.5", importId: lot.id,
-    },
+  const vente = (id: string, horodatage: string, pikcloudUuid: string | null) => ({
+    borneId: borneS12, transactionIdModule: id, lieuId: lieuA, horodatage: new Date(horodatage), offsetMinutes: 60, jourLocal: new Date(horodatage.slice(0, 10) + "T00:00:00Z"),
+    montantTtcCents: 500, tauxTvaBp: 2000, montantHtCents: 417, statut: "ACCEPTEE" as const, typeModuleId: typeModule.id, moyenPaiement: "CB" as const,
+    pikcloudUuid, produitCode: "PHOTO", nbTirages: 2, logicielVersion: "1.9.5", importId: lot.id,
+  });
+  await prisma.transaction.createMany({
+    data: [vente("T1", "2026-11-04T21:01:00Z", "3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53"), vente("T2", "2026-11-05T21:03:00Z", null), vente("T3", "2026-11-05T22:00:00Z", null)],
   });
 });
+
+const venteId = async (id: string) => (await prisma.transaction.findUniqueOrThrow({ where: { borneId_transactionIdModule: { borneId: borneS12, transactionIdModule: id } } })).id.toString();
 
 const noms = (r: { body: { medias: { uuid: string }[] } }) => r.body.medias.map((m) => Object.entries(ids).find(([, u]) => u === m.uuid)?.[0]);
 
@@ -252,5 +264,32 @@ describe("galerie : relance des téléchargements", () => {
     expect((await admin.post(`/api/lieux/${lieuA}/medias/relancer`).expect(200)).body.relances).toBe(2);
     expect(await prisma.media.findUniqueOrThrow({ where: { uuid: ids.photo1 } })).toMatchObject({ dataStatut: "A_TELECHARGER", mediaStatut: "TELECHARGE", tentatives: 0 });
     expect((await admin.get(`/api/lieux/${lieuA}/medias/resume`).expect(200)).body).toMatchObject({ enAttente: 2, enErreur: 0 });
+  });
+});
+
+describe("ventes : photo de la séance", () => {
+  it("par photo_uuid quand la borne l'envoie, sinon par la borne et l'heure de prise de vue", async () => {
+    const t1 = (await admin.get(`/api/ventes/${await venteId("T1")}`).expect(200)).body;
+    expect(t1.media).toMatchObject({ uuid: ids.photo1, video: false });
+    expect(t1.media.approximatif).toBeUndefined();
+    expect(t1.photoUrl).toMatch(/^data:image\/jpeg;base64,/);
+
+    // T2 : pas de photo_uuid, mais multi2 a été prise 3 minutes avant sur la même borne
+    const t2 = (await admin.get(`/api/ventes/${await venteId("T2")}`).expect(200)).body;
+    expect(t2.photoUuid).toBeNull();
+    expect(t2.media).toMatchObject({ uuid: ids.multi2, approximatif: true });
+    expect(t2.photoUrl).toMatch(/^data:image\/jpeg;base64,/);
+
+    // T3 : aucune séance de la borne dans les 10 minutes précédentes
+    const t3 = (await admin.get(`/api/ventes/${await venteId("T3")}`).expect(200)).body;
+    expect(t3.media).toBeNull();
+    expect(t3.photoUrl).toBeNull();
+
+    // Même chose dans la liste des paiements
+    const liste = (await admin.get(`/api/ventes?lieuId=${lieuA}&type=tout&cartes=toutes`).expect(200)).body;
+    const ligne = (id: string) => liste.lignes.find((l: { transactionIdModule: string }) => l.transactionIdModule === id);
+    expect(ligne("T1").photoUrl).toMatch(/^data:image/);
+    expect(ligne("T2").photoUrl).toMatch(/^data:image/);
+    expect(ligne("T3").photoUrl).toBeNull();
   });
 });

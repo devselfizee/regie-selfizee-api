@@ -96,6 +96,8 @@ describe("webhook PikCloud : réception", () => {
       nomFichier: `${FICHIER}.jpg`, // d'après le lien, en attendant le name_photo du JSON
     });
     expect(m.uuid).toMatch(/^[0-9a-f-]{36}$/);
+    // Prise de vue lue dans le nom du fichier (heure Paris → UTC), en attendant le JSON
+    expect(m.datePhoto?.toISOString()).toBe("2026-11-04T20:42:17.000Z");
 
     const lot = await prisma.importLot.findFirstOrThrow({ where: { type: "MEDIAS" }, include: { erreurs: true } });
     expect(lot).toMatchObject({ statut: "OK", borneId, nbRecues: 2, nbCreees: 1, nbDoublons: 0, nbRejetees: 0 });

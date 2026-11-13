@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { sha256Payload } from "../ingestion/journal.js";
 import { echec, succes, type EntreeReponse } from "./codes.js";
 import { hotesAutorises } from "./config.js";
+import { dateDuNomFichier } from "./json-seance.js";
 import { verifierLien } from "./telechargement.js";
 
 // Réception d'un appel du webhook PikCloud (contrat du 04/11/2026) : une ligne `medias` par séance
@@ -154,6 +155,8 @@ export async function recevoirMedia(corps: CorpsWebhook, ipSource: string | unde
           typeMedia: corps.type_media,
           importId: lot.id,
           test: corps.is_fake ?? false,
+          // Prise de vue d'après le nom du fichier, en attendant le JSON : tri de la galerie et rapprochement avec les ventes
+          datePhoto: dateDuNomFichier(corps.filename),
           ...maj,
         },
       });

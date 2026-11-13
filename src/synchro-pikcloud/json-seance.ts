@@ -44,6 +44,15 @@ export function dateLocaleBorne(valeur: string | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : new Date(d.getTime());
 }
 
+/**
+ * Heure de prise de vue lue dans le nom de base du fichier (« 2026_11_13_10_48_25_00003 », heure locale de la
+ * borne) : disponible dès l'annonce du média, avant le JSON. Le JSON, quand il arrive, la remplace par date_photo.
+ */
+export function dateDuNomFichier(filename: string): Date | null {
+  const m = /^(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})(?:_|$)/.exec(filename);
+  return m ? dateLocaleBorne(`${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}`) : null;
+}
+
 /** UUID avec ou sans tirets → forme canonique avec tirets, minuscules ; null si ce n'en est pas un. */
 export function uuidCanonique(valeur: string | undefined): string | null {
   if (!valeur) return null;

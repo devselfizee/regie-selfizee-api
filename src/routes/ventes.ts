@@ -9,7 +9,7 @@ import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { ajouterAuxAgregats } from "../ingestion/agregats.js";
 import { sha256Payload } from "../ingestion/journal.js";
 import { urlPhoto } from "../lib/photos.js";
-import { apercusSeances } from "../lib/apercusMedias.js";
+import { apercusParBorneEtHeure, apercusSeances } from "../lib/apercusMedias.js";
 import { requirePerm, userCan } from "../middleware/permissions.js";
 
 // Recherche de ventes et remboursements (admin). La borne ne rembourse jamais :
@@ -145,7 +145,11 @@ ventesRouter.get(
     ]);
     const nomCarte = new Map(cartesTest.map((c) => [c.derniersChiffres, c.nom]));
     // Aperçu de la photo d'après la table medias (photo_uuid), pour qui voit les médias : ce sont des photos de personnes
-    const apercus = (await userCan(req, "medias.view")) ? await apercusSeances(ventes.map((v) => v.pikcloudUuid)) : new Map();
+    const peutVoirMedias = await userCan(req, "medias.view");
+    const apercus = peutVoirMedias ? await apercusSeances(ventes.map((v) => v.pikcloudUuid)) : new Map<string, never>();
+    // Sans photo_uuid (borne qui ne l'envoie pas, JSON pas encore reçu) : rapprochement par borne et heure de prise de vue
+    const sansPhoto = ventes.filter((v) => v.statut !== "REMBOURSEE" && !(v.pikcloudUuid && apercus.get(v.pikcloudUuid)));
+    const approches = peutVoirMedias ? await apercusParBorneEtHeure(sansPhoto.map((v) => ({ id: v.id, borneId: v.borneId, horodatage: v.horodatage }))) : new Map<bigint, never>();
     res.json({
       total,
       page: f.page,
@@ -165,7 +169,7 @@ ventesRouter.get(
         transactionOrigineId: v.transactionOrigineId?.toString() ?? null,
         rembourseCents: derivees.reduce((s, r) => s + r.montantTtcCents, 0),
         rembourseHtCents: derivees.reduce((s, r) => s + r.montantHtCents, 0),
-        photoUrl: (v.pikcloudUuid && apercus.get(v.pikcloudUuid)?.vignette) || urlPhoto(v.pikcloudUuid),
+        photoUrl: (v.pikcloudUuid && apercus.get(v.pikcloudUuid)?.vignette) || approches.get(v.id)?.vignette || urlPhoto(v.pikcloudUuid),
         carteTest: v.test && v.carteFin ? (nomCarte.get(v.carteFin) ?? "Carte de test") : null,
       })),
     });
@@ -209,7 +213,11 @@ ventesRouter.get(
     ]);
     const photoUuid = v.pikcloudUuid ?? parcours?.photoUuid ?? null;
     // Média de la séance (table medias) : vignette tout de suite, fichier en grand lu par l'écran avec le jeton
-    const media = photoUuid && (await userCan(req, "medias.view")) ? ((await apercusSeances([photoUuid])).get(photoUuid) ?? null) : null;
+    const peutVoirMedias = await userCan(req, "medias.view");
+    const parUuid = photoUuid && peutVoirMedias ? ((await apercusSeances([photoUuid])).get(photoUuid) ?? null) : null;
+    // Sans photo_uuid : le média de la même borne pris juste avant le paiement
+    const media =
+      parUuid ?? (peutVoirMedias && v.statut !== "REMBOURSEE" ? ((await apercusParBorneEtHeure([{ id: v.id, borneId: v.borneId, horodatage: v.horodatage }])).get(v.id) ?? null) : null);
     res.json({
       ...v,
       id: v.id.toString(),

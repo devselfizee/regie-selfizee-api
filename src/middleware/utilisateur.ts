@@ -113,7 +113,8 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
       }
       const u = await prisma.user.findUnique({ where: { email }, select: champs });
       if (!u?.isActive) return res.status(403).json({ error: "ACCES_NON_ACCORDE" });
-      req.utilisateur = { ...u, voitTousLieux: true };
+      // Périmètre comme avec Keycloak : « tous » sans X-Dev-Droits, sinon selon lieux.view_any (droits simulés)
+      req.utilisateur = { ...u, voitTousLieux: await peutVoirTout(req, "lieux.view_any") };
       return next();
     }
 
