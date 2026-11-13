@@ -70,12 +70,13 @@ interface VenteSeance {
 }
 
 /**
- * Séances payées du lieu, par photo_uuid : ventes acceptées et réelles (hors cartes de test), reliées à la
- * séance par le photo_uuid PikCloud que la borne envoie avec la vente.
+ * Séances payées du lieu, par photo_uuid : ventes acceptées, débitées et réelles (hors cartes de test), reliées à la
+ * séance par le photo_uuid PikCloud que la borne envoie avec la vente. Une séance à 0 € (gratuite, code à 100 %,
+ * sans moyen de paiement) n'est pas payée (retour du 13/11 : « Payée · 0,00 € »).
  */
 async function seancesPayees(lieuId: number): Promise<Map<string, VenteSeance>> {
   const ventes = await prisma.transaction.findMany({
-    where: { lieuId, statut: "ACCEPTEE", test: false, pikcloudUuid: { not: null } },
+    where: { lieuId, statut: "ACCEPTEE", test: false, montantTtcCents: { gt: 0 }, moyenPaiement: { not: "AUCUN" }, pikcloudUuid: { not: null } },
     select: { pikcloudUuid: true, montantTtcCents: true, moyenPaiement: true },
     orderBy: { horodatage: "asc" },
   });
