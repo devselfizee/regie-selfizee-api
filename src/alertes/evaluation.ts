@@ -76,13 +76,14 @@ export async function evaluerAlertes(maintenant = new Date()) {
   const ajouter = (a: Alerte | null) => a && creees.push(a);
 
   const lieux = await prisma.lieu.findMany({
-    where: { statut: "ACTIF" },
+    // Ni lieux ni bornes supprimés (super admin, 13/11)
+    where: { statut: "ACTIF", supprimeLe: null },
     include: {
       horaires: true,
       saisons: true,
       fermetures: true,
       affectations: {
-        where: { debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }] },
+        where: { debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }], borne: { supprimeLe: null } },
         include: { borne: true },
       },
     },

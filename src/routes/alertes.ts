@@ -14,6 +14,11 @@ export const alertesRouter = Router();
 const TECHNIQUES: TypeAlerte[] = ["BORNE_MUETTE", "ZERO_VENTE", "TAUX_REFUS", "CONSOMMABLES", "BORNE_NON_AFFECTEE"];
 const COMMERCIALES: TypeAlerte[] = ["BAISSE_CA", "ZERO_VENTE", "PIC_SUSPECT", "VENTE_HORS_HORAIRES", "TAUX_REFUS"];
 
+// Alertes d'un lieu ou d'une borne supprimés (super admin, 13/11) : plus affichées ni comptées
+const SANS_SUPPRIMES: Prisma.AlerteWhereInput = {
+  AND: [{ OR: [{ lieuId: null }, { lieu: { supprimeLe: null } }] }, { OR: [{ borneId: null }, { borne: { supprimeLe: null } }] }],
+};
+
 /** Alertes visibles selon les droits : techniques (alertes.techniques_view) et/ou de vente (alertes.ventes_view). */
 async function perimetre(req: UtilisateurRequest): Promise<Prisma.AlerteWhereInput> {
   const [techniques, ventes] = await Promise.all([userCan(req, "alertes.techniques_view"), userCan(req, "alertes.ventes_view")]);
@@ -33,6 +38,7 @@ alertesRouter.get(
       where: {
         AND: [
           await perimetre(req),
+          SANS_SUPPRIMES,
           statuts ? { statut: { in: statuts } } : {},
           req.query.niveau ? { niveau: req.query.niveau as NiveauAlerte } : {},
           req.query.type ? { type: req.query.type as TypeAlerte } : {},
@@ -57,7 +63,7 @@ alertesRouter.get(
   asynchrone<UtilisateurRequest>(async (req, res) => {
     // Sans droit sur les alertes (partenaire…) : pas de badge
     if (!(await userCan(req, "alertes.techniques_view")) && !(await userCan(req, "alertes.ventes_view"))) return res.json({ nouvelles: 0, critiques: 0 });
-    const where = { AND: [await perimetre(req), { statut: "NOUVELLE" as const }] };
+    const where = { AND: [await perimetre(req), SANS_SUPPRIMES, { statut: "NOUVELLE" as const }] };
     const [nouvelles, critiques] = await Promise.all([
       prisma.alerte.count({ where }),
       prisma.alerte.count({ where: { AND: [...where.AND, { niveau: "CRITIQUE" as const }] } }),

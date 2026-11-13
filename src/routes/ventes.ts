@@ -75,6 +75,8 @@ function whereListe(f: z.infer<typeof filtresListe>, sansType = false): Prisma.T
             ? { OR: [TYPES[type], SANS_ACTION] }
             : TYPES[type],
       f.moyenPaiement?.length ? { moyenPaiement: { in: f.moyenPaiement as Prisma.EnumMoyenPaiementFilter["in"] } } : {},
+      // Lieux et bornes supprimés (super admin, 13/11) : leurs ventes ne s'affichent plus, recherche comprise
+      { borne: { supprimeLe: null }, OR: [{ lieuId: null }, { lieu: { supprimeLe: null } }] },
       f.lieuId ? { lieuId: f.lieuId } : {},
       f.borneId ? { borneId: f.borneId } : {},
       // Une vente suit le parc du lieu (compte client) où elle a été faite

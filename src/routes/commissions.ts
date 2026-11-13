@@ -197,6 +197,8 @@ reversementsRouter.get(
         ...(req.query.au ? { periodeFin: { lte: new Date(`${req.query.au}T00:00:00Z`) } } : {}),
         // Seulement les lieux à qui on reverse une commission (retour de Sébastien du 10/11)
         contrat: { modele: { not: "AUCUNE" } },
+        // Ni lieux supprimés (super admin, 13/11)
+        lieu: { supprimeLe: null },
       },
       include: { lieu: { select: { id: true, enseigne: true, ville: true } } },
       orderBy: [{ periodeDebut: "desc" }, { lieu: { enseigne: "asc" } }],
