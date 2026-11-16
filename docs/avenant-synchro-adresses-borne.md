@@ -51,3 +51,15 @@ Régie va élargir ses colonnes pour accepter les deux formes, et reprendra la v
 | Rappel du webhook quand la fiche JSON est renvoyée modifiée | PikCloud | à confirmer ou à mettre en place (§ 2.1) |
 | Fiche JSON de `RDBT` jamais annoncée en dev | PikCloud | à diagnostiquer (§ 2.3) |
 | Format de `photo_uuid` en 64 caractères : définitif ? même valeur dans les ventes ? | équipe borne | à confirmer (§ 3) |
+
+## 5. Réponse PikCloud du 16/11/2026
+
+Réponse reçue (`pikcloud/docs/REPONSE-AVENANT-ADRESSES-BORNE.md`, branche `feature/platform-kalifun-regie`, pas encore déployée) :
+
+- **§ 2.1 fait** : pour les événements Régie, une fiche JSON renvoyée modifiée (même nom de fichier) remplace le fichier stocké et **rappelle le webhook** avec `data_url` et `media_url`, `source` à `"upload"`, même format que le cas A. Une fiche identique octet pour octet est ignorée. Détection par nom de fichier et code d'événement, `upload_uuid` n'est pas utilisé. Testé en local contre l'API Régie : les deux rappels modifiés ont bien inscrit les adresses.
+- **Nouveau statut PikCloud 1017** « Plateforme de synchro injoignable ou délai dépassé » : un appel sans réponse est tracé et rejoué par le cron, au lieu d'arrêter l'envoi sans trace. Explication probable des fiches jamais annoncées.
+- **`photo_uuid` enregistré tel quel** côté PikCloud, jusqu'à 64 caractères.
+- **§ 2.3 `RDBT`** : mis de côté, à chercher dans l'historique de transfert sur apidev.
+- **§ 3 format de `photo_uuid`** : rien côté PikCloud, la question reste pour l'équipe borne.
+
+Côté Régie, rien à changer : un rappel avec `media_url` pour un média déjà copié répond « Fichier déjà reçu », le JSON est relu et répond « Fichier mis à jour ». Reste à déployer leur branche sur apidev et à refaire l'essai de bout en bout en dev.
