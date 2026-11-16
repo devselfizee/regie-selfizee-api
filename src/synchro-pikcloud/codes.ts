@@ -6,6 +6,8 @@
 export const CODES_SYNCHRO = {
   OK: { code: 200, message: "OK" },
   DEJA_RECU: { code: 200, message: "Fichier déjà reçu" },
+  // JSON de séance annoncé de nouveau : relu, car la borne le renvoie modifié (adresses e-mail tapées après coup)
+  MIS_A_JOUR: { code: 200, message: "Fichier mis à jour" },
   EN_ATTENTE: { code: 200, message: "Fichier enregistré, téléchargement en attente" },
   // Succès quand même (sinon 12 renvois pour rien) : le média est stocké sans événement et signalé dans la file d'erreurs
   EVENEMENT_INCONNU: { code: 4001, message: "Événement inconnu côté Régie" },

@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma.js";
 import { cheminAbsolu, ecrireBuffer, ecrireFlux, supprimer } from "../lib/stockage.js";
 import { CODES_SYNCHRO } from "./codes.js";
 import { JsonSeanceIllisible, lireJsonSeance } from "./json-seance.js";
+import { inscrireDepuisBorne } from "../souvenir/borne.js";
 import { hotesAutorises } from "./config.js";
 
 // Worker de téléchargement des fichiers annoncés par PikCloud (contrat § 7) : lancé après chaque
@@ -93,10 +94,16 @@ async function traiterData(m: Media): Promise<void> {
       datePrint: c.datePrint,
       nbTirages: c.nbTirages,
       test: m.test || c.testMode,
+      numeriqueSeul: c.numeriqueSeul,
       ...(c.nomFichier ? { nomFichier: c.nomFichier } : {}),
       brut: c.brut as Prisma.InputJsonValue,
     },
   });
+  // Adresses tapées sur la borne : une inscription par adresse nouvelle, le mail part par la page souvenir
+  if (c.adressesPartage.length && !(m.test || c.testMode)) {
+    const b = await inscrireDepuisBorne({ codeEvent: m.codeEvent, photoUuid: c.photoUuid, configEvenementId: m.configEvenementId, lieuId: m.lieuId, mediaStatut: m.mediaStatut }, c.adressesPartage);
+    if (b.creees || b.ignorees) console.log(`Médias PikCloud : ${m.codeEvent}/${m.filename}, ${b.creees} adresse(s) inscrite(s) depuis la borne, ${b.ignorees} ignorée(s)`);
+  }
 }
 
 async function traiterMedia(m: Media): Promise<void> {

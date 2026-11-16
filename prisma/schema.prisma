@@ -120,17 +120,17 @@ enum RefCategorie {
 // ─── Lieux (fiche client) ───────────────────────────────────
 
 model Lieu {
-  id          Int        @id @default(autoincrement())
-  crmClientId Int?       @unique @map("crm_client_id")
-  statut      LieuStatut @default(ACTIF)
+  id            Int        @id @default(autoincrement())
+  crmClientId   Int?       @unique @map("crm_client_id")
+  statut        LieuStatut @default(ACTIF)
   // Données de démonstration : effaçables d'un clic (Paramètres), jamais mêlées aux vraies
-  demo        Boolean    @default(false)
+  demo          Boolean    @default(false)
   // Parc du compte client : Selfizee, ou client en location financière (hors des stats Selfizee par défaut).
   // Ses bornes et ses ventes le suivent.
-  parc        Parc       @default(SELFIZEE)
+  parc          Parc       @default(SELFIZEE)
   // Supprimé par un super admin : gardé en base, hors des listes et des chiffres (demande du 13/11/2026)
-  supprimeLe    DateTime? @map("supprime_le") @db.Timestamptz(3)
-  supprimeParId Int?      @map("supprime_par_id")
+  supprimeLe    DateTime?  @map("supprime_le") @db.Timestamptz(3)
+  supprimeParId Int?       @map("supprime_par_id")
 
   // Identité
   raisonSociale String   @map("raison_sociale")
@@ -396,15 +396,15 @@ model ModulePaiement {
 }
 
 model Borne {
-  id          Int         @id @default(autoincrement())
-  identifiant String      @unique // ID qui remonte dans les JSON (borne_id)
-  gammeId     Int         @map("gamme_id")
-  crmId       Int?        @unique @map("crm_id") // lien parc CRM
-  statut      BorneStatut @default(EN_STOCK)
+  id            Int         @id @default(autoincrement())
+  identifiant   String      @unique // ID qui remonte dans les JSON (borne_id)
+  gammeId       Int         @map("gamme_id")
+  crmId         Int?        @unique @map("crm_id") // lien parc CRM
+  statut        BorneStatut @default(EN_STOCK)
   // Supprimée par un super admin : gardée en base, hors des listes et des chiffres (demande du 13/11/2026)
-  supprimeLe    DateTime? @map("supprime_le") @db.Timestamptz(3)
-  supprimeParId Int?      @map("supprime_par_id")
-  demo        Boolean     @default(false) // données de démonstration
+  supprimeLe    DateTime?   @map("supprime_le") @db.Timestamptz(3)
+  supprimeParId Int?        @map("supprime_par_id")
+  demo          Boolean     @default(false) // données de démonstration
 
   // Authentification de l'API d'ingestion : clé propre à la borne.
   // On ne stocke que le hash ; le préfixe permet d'identifier la clé.
@@ -1600,14 +1600,17 @@ model Media {
   importId          BigInt @map("import_id") // appel qui a créé la ligne
 
   // Lus dans le JSON de la séance (null tant qu'il n'est pas téléchargé)
-  photoUuid String?   @map("photo_uuid") @db.Uuid // identifiant PikCloud de la séance, celui du QR imprimé
-  datePhoto DateTime? @map("date_photo") @db.Timestamptz(3) // prise de vue
-  dateSave  DateTime? @map("date_save") @db.Timestamptz(3) // enregistrement sur la borne (rétention)
-  datePrint DateTime? @map("date_print") @db.Timestamptz(3) // premier tirage, null sans tirage
-  nbTirages Int?      @map("nb_tirages")
+  // Identifiant PikCloud de la séance, celui du QR imprimé : UUID, ou empreinte de 64 hexadécimaux (logiciel 2.0 de la borne)
+  photoUuid     String?   @map("photo_uuid") @db.VarChar(64)
+  // digital_only du JSON : achat numérique sans tirage (imprimante bloquée, « Recevoir par e-mail »)
+  numeriqueSeul Boolean   @default(false) @map("numerique_seul")
+  datePhoto     DateTime? @map("date_photo") @db.Timestamptz(3) // prise de vue
+  dateSave      DateTime? @map("date_save") @db.Timestamptz(3) // enregistrement sur la borne (rétention)
+  datePrint     DateTime? @map("date_print") @db.Timestamptz(3) // premier tirage, null sans tirage
+  nbTirages     Int?      @map("nb_tirages")
   // Séance de test (is_fake de l'appel ou testMode du JSON) : hors galerie par défaut
-  test      Boolean   @default(false)
-  brut      Json? // JSON de la séance tel que reçu
+  test          Boolean   @default(false)
+  brut          Json? // JSON de la séance tel que reçu
 
   // Fichier JSON (data)
   dataUrl        String?       @map("data_url")
@@ -1660,32 +1663,41 @@ enum FichierStatut {
 // Inscription « Recevoir mes photos » : plusieurs par séance (photo de groupe). E-mail, prénom, IP et navigateur
 // sont effacés à 90 jours (conservation, CDC § 9.2) sauf opt-in, ou à la demande de l'invité (§ 9.3).
 model SouvenirInscription {
-  id                String    @id @default(uuid()) @db.Uuid
-  codeEvent         String    @map("code_event") @db.VarChar(8)
-  photoUuid         String    @map("photo_uuid") @db.Uuid
-  configEvenementId Int?      @map("config_evenement_id")
-  lieuId            Int?      @map("lieu_id")
+  id                String             @id @default(uuid()) @db.Uuid
+  codeEvent         String             @map("code_event") @db.VarChar(8)
+  photoUuid         String             @map("photo_uuid") @db.VarChar(64)
+  configEvenementId Int?               @map("config_evenement_id")
+  lieuId            Int?               @map("lieu_id")
   email             String? // null une fois anonymisée
   prenom            String?
-  estMoi            Boolean   @map("est_moi")
-  optinLieu         Boolean   @map("optin_lieu")
-  optinSelfizee     Boolean   @map("optin_selfizee")
+  estMoi            Boolean            @map("est_moi")
+  // PAGE : formulaire de la page souvenir ; BORNE : adresse tapée sur la borne (shareWithOthers du JSON de séance)
+  origine           OrigineInscription @default(PAGE)
+  optinLieu         Boolean            @map("optin_lieu")
+  optinSelfizee     Boolean            @map("optin_selfizee")
   // Textes exacts des cases au moment du consentement (preuve, CDC § 4.2)
   textes            Json
-  ipTronquee        String?   @map("ip_tronquee") @db.VarChar(64)
-  userAgent         String?   @map("user_agent") @db.VarChar(400)
-  anonymiseeLe      DateTime? @map("anonymisee_le") @db.Timestamptz(3)
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  ipTronquee        String?            @map("ip_tronquee") @db.VarChar(64)
+  userAgent         String?            @map("user_agent") @db.VarChar(400)
+  anonymiseeLe      DateTime?          @map("anonymisee_le") @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
 
   evenement  ConfigEvenement?    @relation(fields: [configEvenementId], references: [id], onDelete: SetNull)
   lieu       Lieu?               @relation(fields: [lieuId], references: [id], onDelete: SetNull)
   livraisons SouvenirLivraison[]
   carte      SouvenirCarte?
 
+  // Une inscription par adresse et par photo : la fiche de la borne peut revenir avec la même liste
+  @@unique([codeEvent, photoUuid, email])
   @@index([codeEvent, photoUuid])
   @@index([lieuId, createdAt])
   @@index([email])
   @@map("souvenir_inscriptions")
+}
+
+enum OrigineInscription {
+  PAGE
+  BORNE
 }
 
 // État d'une livraison (mail 1, CDC § 6.1)
@@ -1756,7 +1768,7 @@ model SouvenirJournal {
   id        BigInt   @id @default(autoincrement())
   evenement String   @db.VarChar(30) // page_view, registered, scratch_revealed…
   codeEvent String?  @map("code_event") @db.VarChar(8)
-  photoUuid String?  @map("photo_uuid") @db.Uuid
+  photoUuid String?  @map("photo_uuid") @db.VarChar(64)
   lieuId    Int?     @map("lieu_id")
   details   Json?
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)

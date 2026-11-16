@@ -183,7 +183,9 @@ describe("galerie : droits", () => {
     expect((await bob.get(`/api/lieux/${lieuB}/medias`).expect(200)).body.total).toBe(1);
     expect((await paul.get(`/api/lieux/${lieuA}/medias`).expect(200)).body.total).toBe(4);
     await paul.get(`/api/lieux/${lieuB}/medias`).expect(404);
-    await tech.get(`/api/lieux/${lieuA}/medias`).expect(403);
+    // Technicien sans lieux.view_any : le lieu est hors de son périmètre (404, avant même le droit medias.view) ;
+    // un média directement : refus du droit (403)
+    await tech.get(`/api/lieux/${lieuA}/medias`).expect(404);
     await tech.get(`/api/medias/${ids.photo1}/fichier`).expect(403);
   });
 

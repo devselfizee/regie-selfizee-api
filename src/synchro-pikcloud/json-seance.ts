@@ -19,6 +19,10 @@ const schema = z.looseObject({
   type: z.string().optional(),
   name_photo: z.string().optional(),
   filename: z.string().optional(),
+  // Adresses tapées sur la borne (« Recevoir par e-mail ») : un tableau JSON dans une chaîne, parfois un tableau direct
+  shareWithOthers: z.union([z.string(), z.array(z.unknown())]).optional(),
+  // Achat numérique seul, sans tirage
+  digital_only: z.boolean().optional(),
 });
 
 export interface ChampsSeance {
@@ -31,7 +35,48 @@ export interface ChampsSeance {
   type: string | null;
   /** Nom du média avec extension donné par la borne (name_photo, sinon filename du JSON) */
   nomFichier: string | null;
+  /** Adresses e-mail tapées sur la borne, normalisées (minuscules, sans doublon, invalides écartées) */
+  adressesPartage: string[];
+  numeriqueSeul: boolean;
   brut: Record<string, unknown>;
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** shareWithOthers → adresses propres. Chaîne : tableau JSON, à défaut une liste séparée par virgules ou espaces. */
+export function adressesPartage(brut: unknown): string[] {
+  let liste: unknown = brut;
+  if (typeof brut === "string") {
+    try {
+      liste = JSON.parse(brut);
+    } catch {
+      liste = brut.split(/[\s,;]+/);
+    }
+  }
+  if (!Array.isArray(liste)) return [];
+  const vues = new Set<string>();
+  for (const x of liste) {
+    if (typeof x !== "string") continue;
+    const e = x.trim().toLowerCase();
+    if (e.length <= 200 && EMAIL.test(e)) vues.add(e);
+  }
+  return [...vues];
+}
+
+const EMPREINTE = /^[0-9a-f]{64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Vrai pour un UUID canonique : seule forme que les colonnes encore en type uuid (transactions.pikcloud_uuid) acceptent. */
+export const estUuid = (v: string | null | undefined): v is string => !!v && UUID.test(v);
+
+/**
+ * Identifiant de séance tel que la borne l'écrit dans photo_uuid : un UUID (ramené à sa forme canonique), ou
+ * l'empreinte de 64 hexadécimaux du logiciel 2.0, gardée telle quelle en minuscules. C'est la clé du QR imprimé.
+ */
+export function identifiantSeance(valeur: string | undefined): string | null {
+  if (!valeur) return null;
+  const v = valeur.trim().toLowerCase();
+  return EMPREINTE.test(v) ? v : uuidCanonique(v);
 }
 
 /** « AAAA-MM-JJ HH:MM:SS » en heure locale de la borne (Europe/Paris) → instant UTC ; null si absent ou mal formé. */
@@ -74,7 +119,7 @@ export function lireJsonSeance(texte: string): ChampsSeance {
   }
   const d = r.data;
   return {
-    photoUuid: uuidCanonique(d.photo_uuid),
+    photoUuid: identifiantSeance(d.photo_uuid),
     datePhoto: dateLocaleBorne(d.date_photo),
     dateSave: dateLocaleBorne(d.save_date),
     datePrint: dateLocaleBorne(d.print_date),
@@ -82,6 +127,8 @@ export function lireJsonSeance(texte: string): ChampsSeance {
     testMode: d.testMode === true,
     type: d.type ?? null,
     nomFichier: d.name_photo?.trim() || d.filename?.trim() || null,
+    adressesPartage: adressesPartage(d.shareWithOthers),
+    numeriqueSeul: d.digital_only === true,
     brut: d as Record<string, unknown>,
   };
 }

@@ -56,7 +56,8 @@ Ordre d'arrivée : le média peut arriver avant son JSON (cas C du contrat) ; il
 | Code | `success` | Message | Quand |
 |---|---|---|---|
 | 200 | `true` | `OK` | fichier enregistré, téléchargement lancé |
-| 200 | `true` | `Fichier déjà reçu` | renvoi d'un fichier déjà téléchargé : rien n'est refait, aucun doublon |
+| 200 | `true` | `Fichier déjà reçu` | renvoi d'un média déjà téléchargé : rien n'est refait, aucun doublon |
+| 200 | `true` | `Fichier mis à jour` | renvoi d'un JSON de séance déjà lu : relu, car la borne le renvoie modifié (adresses e-mail tapées après coup, voir [avenant](avenant-synchro-adresses-borne.md)) |
 | 200 | `true` | `Fichier enregistré, téléchargement en attente` | renvoi d'un fichier pas encore téléchargé : le lien le plus récent est gardé |
 | 4001 | — | `Événement inconnu côté Régie` | réservé : aujourd'hui un code inconnu est **accepté** (`success: true`), le média est stocké sans lieu et signalé dans la file d'erreurs ; il est rattaché dès qu'un renvoi arrive après la création de l'événement. Refuser provoquerait 12 renvois pour rien. |
 | 4002 | `false` | `Téléchargement du média impossible` | le lien ne répond pas (worker) |
@@ -68,7 +69,8 @@ Un fichier en erreur côté Régie (téléchargement échoué plusieurs fois) es
 ## 5. Règles de traitement
 
 - **Un renvoi ne remplace jamais un fichier déjà reçu** (contrat § 3.2). Les colonnes lues dans le JSON ne sont pas réécrites. Le CDC page souvenir du 21/10/2026 (§ 2.1) prévoyait une mise à jour du JSON après paiement : le contrat du 04/11, plus récent et tiré du code, dit l'inverse, et c'est lui qui est suivi. Le chiffre d'affaires vient de l'ingestion des ventes des bornes, pas des paiements du JSON.
-- **`is_fake` et `testMode`** : la séance est marquée `test` et exclue de la galerie par défaut. Rien n'est déclenché pour le public.
+- **Exception pour le JSON de séance** : la borne le renvoie modifié quand un invité tape son adresse e-mail (« Recevoir par e-mail », champ `shareWithOthers`). Chaque annonce de `data_url` est donc relue, même pour une séance déjà connue ; chaque adresse nouvelle devient une inscription d'origine « borne » dans la page souvenir, livrée par le mail habituel avec le même lien que le QR, une seule fois par adresse et par photo. Détail et questions à PikCloud : [avenant-synchro-adresses-borne.md](avenant-synchro-adresses-borne.md).
+- **`is_fake` et `testMode`** : la séance est marquée `test` et exclue de la galerie par défaut. Rien n'est déclenché pour le public, pas même les adresses de la borne.
 - **Conservation** : PikCloud supprime ses fichiers 90 jours après réception, Régie garde sa copie sur le volume `MEDIAS_DIR`. Une purge horaire supprime fichier et vignette des médias plus anciens que `MEDIAS_RETENTION_JOURS` (la ligne reste, en `PURGE`, avec ses compteurs). Tant que la variable est vide, rien n'est purgé : la durée est à fixer par Selfizee, la page souvenir purge à 90 jours.
 
 ## 6. Essai en local

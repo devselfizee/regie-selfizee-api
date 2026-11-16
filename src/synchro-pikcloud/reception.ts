@@ -102,7 +102,13 @@ export async function recevoirMedia(corps: CorpsWebhook, ipSource: string | unde
     }
     const champ = CHAMPS[type];
     const statut: FichierStatut = existant?.[champ.statut] ?? "ABSENT";
-    if (statut === "TELECHARGE") {
+    if (statut === "TELECHARGE" && type === "data") {
+      // La fiche JSON revient modifiée quand un invité tape son adresse sur la borne (shareWithOthers) : relue à chaque annonce
+      maj[champ.url] = url;
+      maj[champ.statut] = "A_TELECHARGER";
+      aTelecharger = true;
+      reponse[type] = succes("MIS_A_JOUR");
+    } else if (statut === "TELECHARGE") {
       reponse[type] = succes("DEJA_RECU");
       doublons++;
     } else if (statut === "A_TELECHARGER") {

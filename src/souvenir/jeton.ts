@@ -4,7 +4,8 @@ import { uuidCanonique } from "../synchro-pikcloud/json-seance.js";
 // Jeton de la page souvenir (CDC § 3) : code d'événement + photo_uuid de la séance. Format retenu :
 // `<CODE>-<photo_uuid en 32 hexadécimaux>` (RA7K-3f9a…). On accepte aussi le code collé à l'uuid, et
 // l'uuid avec tirets ou en majuscules : c'est la borne qui écrit le lien du QR, autant ne pas dépendre
-// d'un séparateur.
+// d'un séparateur. Le logiciel 2.0 de la borne écrit une empreinte de 64 hexadécimaux à la place de l'uuid :
+// acceptée telle quelle (`<CODE>-<64 hexadécimaux>`).
 
 const CODE = /^[A-Z0-9]{3,8}$/;
 
@@ -17,7 +18,12 @@ export interface JetonSouvenir {
 /** « RA7K-3f9a… » (ou « RA7K3f9a… », uuid avec tirets) → code + photo_uuid ; null si ce n'est pas un jeton possible. */
 export function lireJeton(brut: string): JetonSouvenir | null {
   const t = brut.trim();
-  if (t.length > 60) return null;
+  if (t.length > 80) return null;
+  // Empreinte de 64 hexadécimaux (logiciel 2.0) : gardée telle quelle
+  if (t.length > 64 && /^[0-9a-f]{64}$/i.test(t.slice(-64))) {
+    const code = t.slice(0, -64).replace(/-$/, "").toUpperCase();
+    return CODE.test(code) ? { code, photoUuid: t.slice(-64).toLowerCase() } : null;
+  }
   // L'uuid est à la fin : 36 caractères avec tirets, sinon 32 hexadécimaux
   for (const n of [36, 32]) {
     if (t.length <= n) continue;

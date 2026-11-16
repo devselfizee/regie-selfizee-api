@@ -9,6 +9,7 @@ import { EXTENSIONS_VIDEO, extensionDuChemin, lireBuffer, lireFlux, mimeDe } fro
 import { FUSEAU_METIER } from "../lib/temps.js";
 import { declencherTelechargement } from "../synchro-pikcloud/telechargement.js";
 import { lienPageSouvenir } from "../config-evenement/generation.js";
+import { estUuid } from "../synchro-pikcloud/json-seance.js";
 import { requirePerm, userCan } from "../middleware/permissions.js";
 
 // Galerie des médias reçus de PikCloud (docs/synchronisation-pikcloud.md) : les photos et vidéos des séances
@@ -303,7 +304,8 @@ mediasRouter.get(
     const selectionVente = { id: true, horodatage: true, statut: true, montantTtcCents: true, moyenPaiement: true, nbTirages: true, produitLibelle: true } as const;
     const [parUuid, parcours] = m.photoUuid
       ? await Promise.all([
-          prisma.transaction.findFirst({ where: { pikcloudUuid: m.photoUuid }, select: selectionVente, orderBy: { id: "asc" } }),
+          // transactions.pikcloud_uuid est encore en type uuid : pas de recherche sur une empreinte de 64 hexadécimaux
+          estUuid(m.photoUuid) ? prisma.transaction.findFirst({ where: { pikcloudUuid: m.photoUuid }, select: selectionVente, orderBy: { id: "asc" } }) : Promise.resolve(null),
           prisma.parcours.findFirst({ where: { photoUuid: m.photoUuid }, select: { id: true, issue: true, dureeS: true, tirages: true } }),
         ])
       : [null, null];
@@ -322,6 +324,16 @@ mediasRouter.get(
           })
         : null;
     const vente = parUuid ?? (parHeure ? { ...parHeure, approximatif: true } : null);
+    // E-mails de la séance : inscriptions de la page souvenir et adresses tapées sur la borne, et leurs envois
+    const inscriptions = m.photoUuid
+      ? await prisma.souvenirInscription.findMany({ where: { codeEvent: m.codeEvent, photoUuid: m.photoUuid }, select: { origine: true, livraisons: { select: { etat: true } } } })
+      : [];
+    const envois = {
+      adresses: inscriptions.length,
+      borne: inscriptions.filter((i) => i.origine === "BORNE").length,
+      envoyes: inscriptions.filter((i) => i.livraisons.some((l) => l.etat === "ENVOYE")).length,
+      enAttente: inscriptions.filter((i) => !i.livraisons.some((l) => l.etat === "ENVOYE") && i.livraisons.some((l) => l.etat === "A_ENVOYER" || l.etat === "EN_ATTENTE_MEDIA")).length,
+    };
     // Page souvenir de la séance : la base du QR imprimé, avec le jeton code d'événement + « - » + photo_uuid
     res.json({
       ...(await versClient(m)),
@@ -335,6 +347,8 @@ mediasRouter.get(
       derniereErreur: m.derniereErreur,
       // JSON de la séance : ABSENT (PikCloud n'a envoyé que la photo), A_TELECHARGER, TELECHARGE ou ERREUR
       dataStatut: m.dataStatut,
+      numeriqueSeul: m.numeriqueSeul,
+      envois,
       vente,
       parcours,
     });

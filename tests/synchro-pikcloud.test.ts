@@ -118,15 +118,16 @@ describe("webhook PikCloud : réception", () => {
     });
 
     const r = await envoyer(appel({ data_url: `${dataUrl}?signature=abc`, media_url: mediaUrl }, "force")).expect(200);
-    expect(r.body.data).toMatchObject({ success: true, status: { code: 200, message: "Fichier déjà reçu" } });
+    // Le JSON peut revenir modifié (adresses tapées sur la borne) : relu ; le média, lui, n'est jamais refait
+    expect(r.body.data).toMatchObject({ success: true, status: { code: 200, message: "Fichier mis à jour" } });
     expect(r.body.photo).toMatchObject({ success: true, status: { code: 200, message: "Fichier déjà reçu" } });
 
     expect(await prisma.media.count()).toBe(1);
     const apres = await prisma.media.findFirstOrThrow();
-    expect(apres).toMatchObject({ dataUrl, mediaChemin: "ab/x.jpg", mediaStatut: "TELECHARGE", photoUuid: "3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53" });
+    expect(apres).toMatchObject({ dataUrl: `${dataUrl}?signature=abc`, dataStatut: "A_TELECHARGER", mediaChemin: "ab/x.jpg", mediaStatut: "TELECHARGE", photoUuid: "3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53" });
     const lots = await prisma.importLot.findMany({ where: { type: "MEDIAS" }, orderBy: { id: "asc" } });
     expect(lots).toHaveLength(2);
-    expect(lots[1]).toMatchObject({ nbRecues: 2, nbCreees: 0, nbDoublons: 2 });
+    expect(lots[1]).toMatchObject({ nbRecues: 2, nbCreees: 0, nbDoublons: 1 });
   });
 
   it("renvoi d'un fichier encore en attente : succès, lien le plus récent conservé", async () => {

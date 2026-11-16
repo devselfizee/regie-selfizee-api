@@ -12,6 +12,11 @@ import { dateLocaleBorne, lireJsonSeance, uuidCanonique } from "../src/synchro-p
 import { recevoirMedia, type CorpsWebhook } from "../src/synchro-pikcloud/reception.js";
 import { purgerMedias, telechargerEnAttente } from "../src/synchro-pikcloud/telechargement.js";
 import { viderBase } from "./aide.js";
+import { initialiserReferentiel } from "../src/referentiel/initial.js";
+import { reglagesParDefaut } from "../src/config-evenement/reglages.js";
+import { rattraperLivraisons } from "../src/souvenir/donnees.js";
+import { lireJeton } from "../src/souvenir/jeton.js";
+import { adressesPartage, identifiantSeance } from "../src/synchro-pikcloud/json-seance.js";
 
 // Worker de téléchargement des médias PikCloud : un serveur HTTP local joue PikCloud, le stockage est
 // un dossier temporaire. Pas de réseau.
@@ -258,6 +263,90 @@ describe("vérification des liens à la réception", () => {
     process.env.PIKCLOUD_VERIFIER_LIENS = "1";
     const r = await annoncer();
     expect(r).toMatchObject({ data: { success: true }, photo: { success: true } });
+  });
+});
+
+describe("adresses tapées sur la borne (shareWithOthers)", () => {
+  let lieuId: number;
+  beforeEach(async () => {
+    await initialiserReferentiel();
+    const bar = await prisma.refValeur.findFirstOrThrow({ where: { categorie: "TYPE_LIEU", code: "BAR" } });
+    lieuId = (await prisma.lieu.create({ data: { raisonSociale: "R", enseigne: "La Ruche", typeLieuId: bar.id } })).id;
+    const reglages = reglagesParDefaut({ enseigne: "La Ruche", ville: "Trégueux", dateInstallation: new Date("2026-10-06T00:00:00Z") });
+    await prisma.configEvenement.create({ data: { lieuId, code: "RA7K", motDePasseTableau: "1", reglages } });
+  });
+  const fiche = (shareWithOthers: unknown, extra: Record<string, unknown> = {}) =>
+    ressources.set("/data.json", { corps: Buffer.from(JSON.stringify({ ...JSON_SEANCE, shareWithOthers, ...extra })), type: "application/json" });
+  const inscriptions = () => prisma.souvenirInscription.findMany({ orderBy: { email: "asc" }, include: { livraisons: { orderBy: { id: "asc" } } } });
+
+  it("lit les adresses et le photo_uuid dans tous leurs formats", () => {
+    expect(adressesPartage('["Anna@Exemple.fr", "bob@exemple.fr", "pas-un-mail", "anna@exemple.fr", 12]')).toEqual(["anna@exemple.fr", "bob@exemple.fr"]);
+    expect(adressesPartage(["c@d.fr"])).toEqual(["c@d.fr"]);
+    expect(adressesPartage("e@f.fr, g@h.fr")).toEqual(["e@f.fr", "g@h.fr"]);
+    expect(adressesPartage("")).toEqual([]);
+    expect(adressesPartage(undefined)).toEqual([]);
+    const empreinte = "7EE1227180C5AF6F62348B8F0A1119988CB6C33813D7DEE7A82137854D5FE7AB";
+    expect(identifiantSeance(empreinte)).toBe(empreinte.toLowerCase());
+    expect(identifiantSeance("3F9C2A7E5B1D4C8A9E217D4B0C6A1F53")).toBe("3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53");
+    expect(identifiantSeance("n'importe quoi")).toBeNull();
+    expect(lireJeton(`RA7K-${empreinte}`)).toEqual({ code: "RA7K", photoUuid: empreinte.toLowerCase() });
+    expect(lireJeton("RA7K-3f9c2a7e5b1d4c8a9e217d4b0c6a1f53")).toEqual({ code: "RA7K", photoUuid: "3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53" });
+  });
+
+  it("inscrit chaque adresse une fois, d'origine BORNE ; la livraison attend la photo puis part", async () => {
+    fiche('["Anna@Exemple.fr", "bob@exemple.fr", "pas-un-mail", "anna@exemple.fr"]');
+    await annoncer();
+    await passe();
+    const ins = await inscriptions();
+    expect(ins.map((i) => i.email)).toEqual(["anna@exemple.fr", "bob@exemple.fr"]);
+    expect(ins[0]).toMatchObject({ origine: "BORNE", estMoi: true, optinLieu: false, optinSelfizee: false, codeEvent: "RA7K", photoUuid: "3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53", lieuId });
+    // Le JSON est lu avant la photo (vérification RGPD) : la livraison attend la photo, le rattrapage la débloque
+    expect(ins[0].livraisons.map((l) => l.etat)).toEqual(["EN_ATTENTE_MEDIA"]);
+    expect(await rattraperLivraisons()).toBe(2);
+    expect((await prisma.souvenirLivraison.findMany()).map((l) => l.etat)).toEqual(["A_ENVOYER", "A_ENVOYER"]);
+    expect(await prisma.souvenirJournal.count({ where: { evenement: "registered", photoUuid: "3f9c2a7e-5b1d-4c8a-9e21-7d4b0c6a1f53" } })).toBe(2);
+    expect((await media()).numeriqueSeul).toBe(false);
+  });
+
+  it("fiche renvoyée avec une adresse de plus : une seule inscription nouvelle, rien pour les autres", async () => {
+    fiche('["anna@exemple.fr"]');
+    await annoncer();
+    await passe();
+    expect((await inscriptions()).map((i) => i.email)).toEqual(["anna@exemple.fr"]);
+
+    fiche('["anna@exemple.fr", "bob@exemple.fr"]');
+    const r = await annoncer({ source: "force", media_url: undefined });
+    expect(r.data).toMatchObject({ success: true, status: { message: "Fichier mis à jour" } });
+    expect((await media()).dataStatut).toBe("A_TELECHARGER");
+    expect(await passe()).toEqual({ traites: 1, reussis: 1, echoues: 0 });
+    const ins = await inscriptions();
+    expect(ins.map((i) => i.email)).toEqual(["anna@exemple.fr", "bob@exemple.fr"]);
+    expect(ins[0].livraisons).toHaveLength(1); // anna : pas de second mail
+    expect((await media()).dataStatut).toBe("TELECHARGE");
+
+    // Troisième fiche identique : rien ne bouge
+    await annoncer({ source: "force", media_url: undefined });
+    await passe();
+    expect(await prisma.souvenirLivraison.count()).toBe(2);
+  });
+
+  it("photo_uuid en 64 hexadécimaux et achat numérique seul", async () => {
+    const empreinte = "7EE1227180C5AF6F62348B8F0A1119988CB6C33813D7DEE7A82137854D5FE7AB";
+    fiche('["x@y.fr"]', { photo_uuid: empreinte, digital_only: true });
+    await annoncer();
+    await passe();
+    expect(await media()).toMatchObject({ photoUuid: empreinte.toLowerCase(), numeriqueSeul: true });
+    expect((await inscriptions())[0]).toMatchObject({ email: "x@y.fr", photoUuid: empreinte.toLowerCase() });
+  });
+
+  it("événement inconnu ou séance de test : aucune adresse inscrite", async () => {
+    fiche('["x@y.fr"]');
+    await annoncer({ code_event: "RZZZ" });
+    await passe();
+    expect(await prisma.souvenirInscription.count()).toBe(0);
+    await annoncer({ is_fake: true }, "2026_11_04_21_50_00_00032");
+    await passe();
+    expect(await prisma.souvenirInscription.count()).toBe(0);
   });
 });
 
