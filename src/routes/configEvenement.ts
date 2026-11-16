@@ -173,6 +173,54 @@ configEvenementRouter.get(
   })
 );
 
+// GET /api/lieux/:id/evenements/installations — pour chaque événement du lieu (par code) et chaque borne installée dans
+// le lieu : sa dernière étape (demandé, envoyé, téléchargé, installé, échec) et la dernière version installée, d'après le
+// journal des téléchargements (retour de Sébastien du 16/11 : savoir si la mise à jour est arrivée sur la borne).
+configEvenementRouter.get(
+  "/:id/evenements/installations",
+  voir,
+  asynchrone(async (req, res) => {
+    const lieuId = Number(req.params.id);
+    const maintenant = new Date();
+    const [affectations, derniers, installes] = await Promise.all([
+      prisma.affectationBorne.findMany({
+        where: { lieuId, debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }], borne: { supprimeLe: null } },
+        select: { borne: { select: { id: true, identifiant: true } } },
+        orderBy: { borne: { identifiant: "asc" } },
+      }),
+      prisma.$queryRaw<{ borne_id: number; code: string; version: number; etat: string; message: string | null; created_at: Date }[]>`
+        SELECT DISTINCT ON (borne_id, code) borne_id, code, version, etat::text, message, created_at
+        FROM installations_evenement WHERE lieu_id = ${lieuId} ORDER BY borne_id, code, id DESC`,
+      prisma.$queryRaw<{ borne_id: number; code: string; version: number; created_at: Date }[]>`
+        SELECT DISTINCT ON (borne_id, code) borne_id, code, version, created_at
+        FROM installations_evenement WHERE lieu_id = ${lieuId} AND etat = 'INSTALLE' ORDER BY borne_id, code, id DESC`,
+    ]);
+    const codes = [...new Set(derniers.map((d) => d.code))];
+    res.json({
+      bornes: affectations.map((a) => a.borne),
+      // { [code]: { [borneId]: { dernier, installe } } }
+      parCode: Object.fromEntries(
+        codes.map((code) => [
+          code,
+          Object.fromEntries(
+            affectations.map(({ borne }) => {
+              const d = derniers.find((x) => x.borne_id === borne.id && x.code === code);
+              const i = installes.find((x) => x.borne_id === borne.id && x.code === code);
+              return [
+                borne.id,
+                {
+                  dernier: d ? { etat: d.etat, version: d.version, le: d.created_at, message: d.message } : null,
+                  installe: i ? { version: i.version, le: i.created_at } : null,
+                },
+              ];
+            })
+          ),
+        ])
+      ),
+    });
+  })
+);
+
 // POST /api/lieux/:id/evenements-ponctuels { nom, dateDebut, dateFin, heureDebut?, heureFin? } — crée un événement ponctuel : il
 // reprend les réglages de l'événement habituel (ou ceux par défaut) et les tarifs du lieu, sans aucun format
 // (on ajoute ceux qu'on personnalise ; « Dupliquer » sert à repartir d'un événement avec ses formats)

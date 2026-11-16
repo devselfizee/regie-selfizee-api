@@ -111,7 +111,7 @@ codesRemiseRouter.get(
     const colonnes: Colonne<L>[] = [
       { entete: "Code", valeur: (l) => l.code },
       { entete: "Remise", valeur: (l) => (l.type === "OFFERT" ? "Impressions offertes" : `${l.pourcentage} % de remise`), largeur: 20 },
-      { entete: "Impressions", valeur: (l) => l.quantite, format: "nombre" },
+      { entete: "Impressions ou utilisations (%)", valeur: (l) => l.quantite, format: "nombre", largeur: 18 },
       { entete: "Utilisées", valeur: (l) => l.utilise, format: "nombre" },
       { entete: "Restantes", valeur: (l) => l.restant, format: "nombre" },
       { entete: "État", valeur: (l) => ETATS[l.etat], largeur: 16 },
@@ -215,12 +215,14 @@ const corpsLot = z
     nbCodes: z.number().int().min(1).max(1000),
     libelle: z.string().trim().max(120).optional(),
     type: z.enum(["OFFERT", "POURCENTAGE"]),
-    quantite: z.number().int().min(1).max(100),
+    // Impressions offertes par code, ou nombre d’utilisations d’un code en % (remise sur toute la commande)
+    quantite: z.number().int().min(1).max(1000),
     pourcentage: z.number().int().min(1).max(99).optional(),
     lieuId: z.number().int().nullable().optional(),
     seulementLieu: z.boolean().default(false),
     expireLe: z.iso.date(),
   })
+  .refine((d) => d.type !== "OFFERT" || d.quantite <= 100, { message: "100 impressions offertes au plus par code", path: ["quantite"] })
   .refine((d) => d.type !== "POURCENTAGE" || d.pourcentage !== undefined, { message: "Pourcentage de remise attendu", path: ["pourcentage"] })
   .refine((d) => !d.seulementLieu || !!d.lieuId, { message: "Choisir le lieu pour un code valable dans ce lieu seulement", path: ["lieuId"] });
 

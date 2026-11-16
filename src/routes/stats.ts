@@ -490,6 +490,8 @@ statsRouter.get(
         papierRestant: b.papier === null || b.papier === undefined ? null : n(b.papier),
         papierLe: (b.papier_le as Date | null) ?? null,
       })),
+      // Dernières ventes du lieu sur la période (retour de Sébastien du 16/11), comme sur le tableau de bord
+      dernieresVentes: await dernieresVentes(f, await userCan(req, "medias.view")),
     });
   })
 );

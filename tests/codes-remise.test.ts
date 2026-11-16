@@ -6,7 +6,8 @@ describe("libellés des lots de codes", () => {
   it("décrit la remise", () => {
     expect(libelleRemise({ type: "OFFERT", quantite: 1, pourcentage: null })).toBe("1 impression offerte");
     expect(libelleRemise({ type: "OFFERT", quantite: 3, pourcentage: null })).toBe("3 impressions offertes");
-    expect(libelleRemise({ type: "POURCENTAGE", quantite: 2, pourcentage: 30 })).toBe("−30 % sur 2 impressions");
+    expect(libelleRemise({ type: "POURCENTAGE", quantite: 2, pourcentage: 30 })).toBe("−30 % sur la commande, 2 utilisations");
+    expect(libelleRemise({ type: "POURCENTAGE", quantite: 1, pourcentage: 30 })).toBe("−30 % sur la commande");
   });
 
   it("résume la création d'un lot pour la timeline du lieu", () => {

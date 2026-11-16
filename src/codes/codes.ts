@@ -51,16 +51,18 @@ export const descriptionCode = (c: CodeAvecLot, restant: number) => ({
   code: c.code,
   type: c.lot.type === "OFFERT" ? ("offert" as const) : ("pourcentage" as const),
   pourcentage: c.lot.type === "POURCENTAGE" ? c.lot.pourcentage : null,
+  // Ce que comptent quantite et restant : des impressions offertes, ou des utilisations du code en % (sur toute la commande)
+  sur: c.lot.type === "OFFERT" ? ("impressions" as const) : ("commande" as const),
   quantite: c.lot.quantite,
   restant,
   expire_le: c.lot.expireLe.toISOString().slice(0, 10),
 });
 
 /** Lieu où la borne est installée maintenant */
-/** « 1 impression offerte », « −30 % sur 2 impressions » */
+/** « 1 impression offerte », « −30 % sur la commande » (code en % : sur toute la commande, quantite = utilisations) */
 export function libelleRemise(l: Pick<LotCodesRemise, "type" | "quantite" | "pourcentage">): string {
-  const imp = `${l.quantite} impression${l.quantite > 1 ? "s" : ""}`;
-  return l.type === "OFFERT" ? `${imp} offerte${l.quantite > 1 ? "s" : ""}` : `−${l.pourcentage ?? 0} % sur ${imp}`;
+  if (l.type === "POURCENTAGE") return `−${l.pourcentage ?? 0} % sur la commande${l.quantite > 1 ? `, ${l.quantite} utilisations` : ""}`;
+  return `${l.quantite} impression${l.quantite > 1 ? "s" : ""} offerte${l.quantite > 1 ? "s" : ""}`;
 }
 
 /** Ligne de timeline d'un lot : « 10 codes de remise créés (1 impression offerte, lot « Offre lancement », valables jusqu'au 03/11/2027, ce lieu seulement) » */
@@ -99,6 +101,7 @@ export async function utiliserCode(borneId: number, saisi: string, demandees: nu
       const deja = await db.utilisationCodeRemise.findUnique({ where: { borneId_utilisationId: { borneId, utilisationId } } });
       if (deja) {
         const restant = Math.max(0, c.lot.quantite - c.utilise);
+        if (c.lot.type === "POURCENTAGE") return reponseCommande(c.lot.pourcentage ?? 0, deja.demandees, restant, true);
         return reponseUtilisation(deja.demandees, deja.accordees, restant, true);
       }
     }
@@ -106,12 +109,28 @@ export async function utiliserCode(borneId: number, saisi: string, demandees: nu
     const e = etatCode(c, lieuId);
     if (!e.valide) return { ok: false, accordees: 0, demandees, restant: 0, raison: e.raison, message: MESSAGES_REFUS[e.raison] };
 
+    // Remise en % : sur toute la commande (retour de Sébastien du 16/11), une utilisation de moins quel que soit le nombre d'impressions
+    if (c!.lot.type === "POURCENTAGE") {
+      await db.codeRemise.update({ where: { id: c!.id }, data: { utilise: { increment: 1 } } });
+      await db.utilisationCodeRemise.create({ data: { codeId: c!.id, borneId, lieuId, demandees, accordees: demandees, utilisationId } });
+      return reponseCommande(c!.lot.pourcentage ?? 0, demandees, e.restant - 1, false);
+    }
     const accordees = Math.min(e.restant, demandees);
     await db.codeRemise.update({ where: { id: c!.id }, data: { utilise: { increment: accordees } } });
     await db.utilisationCodeRemise.create({ data: { codeId: c!.id, borneId, lieuId, demandees, accordees, utilisationId } });
     return reponseUtilisation(demandees, accordees, e.restant - accordees, false);
   });
 }
+
+/** Réponse d'un code en % : toute la commande est remisée ; restant = utilisations restantes */
+const reponseCommande = (pourcentage: number, impressions: number, restant: number, dejaEnregistree: boolean) => ({
+  ok: true,
+  accordees: impressions,
+  demandees: impressions,
+  restant,
+  ...(dejaEnregistree ? { deja_enregistree: true } : {}),
+  message: `Remise de ${pourcentage} % sur la commande (${impressions} impression${impressions > 1 ? "s" : ""})`,
+});
 
 const reponseUtilisation = (demandees: number, accordees: number, restant: number, dejaEnregistree: boolean) => ({
   ok: accordees === demandees,

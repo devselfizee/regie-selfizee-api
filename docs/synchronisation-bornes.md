@@ -317,7 +317,7 @@ Un **parcours** décrit une séance du kit nightlife, de la première page aprè
 
 ## 4 ter. Codes de remise (impressions offertes ou remisées)
 
-Les codes sont générés dans la Régie (Codes de remise) par lots : **5 caractères**, chiffres et majuscules, sans `0`, `O`, `1`, `I` ni `L`. Un code donne soit des **impressions offertes**, soit une **remise en %** sur un nombre d'impressions ; il a une date de fin de validité et peut être réservé aux bornes d'un lieu. Contrairement aux ventes, ces appels se font **en direct**, pendant la séance (pas de file d'attente) : sans réseau, la borne refuse le code.
+Les codes sont générés dans la Régie (Codes de remise) par lots : **5 caractères**, chiffres et majuscules, sans `0`, `O`, `1`, `I` ni `L`. Un code donne soit des **impressions offertes**, soit une **remise en %** sur **toute la commande**, utilisable un nombre de fois choisi (16/11/2026) ; il a une date de fin de validité et peut être réservé aux bornes d'un lieu. Contrairement aux ventes, ces appels se font **en direct**, pendant la séance (pas de file d'attente) : sans réseau, la borne refuse le code.
 
 Même authentification que les ventes (`Authorization: Bearer rgs_…`), `borne_id` dans le corps. La borne peut envoyer le code tel que tapé (minuscules, espaces et tirets acceptés).
 
@@ -330,10 +330,11 @@ Même authentification que les ventes (`Authorization: Bearer rgs_…`), `borne_
 Réponse `200`, code utilisable :
 
 ```json
-{ "valide": true, "code": "K7PX2", "type": "offert", "pourcentage": null, "quantite": 4, "restant": 3, "expire_le": "2027-11-03" }
+{ "valide": true, "code": "K7PX2", "type": "offert", "pourcentage": null, "sur": "impressions", "quantite": 4, "restant": 3, "expire_le": "2027-11-03" }
+{ "valide": true, "code": "P3RT8", "type": "pourcentage", "pourcentage": 30, "sur": "commande", "quantite": 5, "restant": 4, "expire_le": "2027-11-03" }
 ```
 
-`type` : `offert` (impressions gratuites) ou `pourcentage` (remise de `pourcentage` % sur chaque impression couverte). `restant` : impressions encore disponibles. `expire_le` : dernier jour de validité, inclus (heure de Paris).
+`type` : `offert` (impressions gratuites) ou `pourcentage` (remise de `pourcentage` % sur **toute la commande**, quel que soit le nombre d'impressions). `sur` dit ce que comptent `quantite` et `restant` : `impressions` (offertes) pour `offert`, `commande` pour `pourcentage` (nombre d'utilisations du code, une par commande). `expire_le` : dernier jour de validité, inclus (heure de Paris).
 
 Réponse `200`, code refusé : `{ "valide": false, "raison": "EXPIRE", "message": "Code expiré" }`. Raisons : `INCONNU`, `DESACTIVE`, `EXPIRE`, `EPUISE` (déjà entièrement utilisé), `AUTRE_LIEU` (réservé à un autre lieu).
 
@@ -354,7 +355,9 @@ Réponse `200` :
 { "ok": true, "accordees": 2, "demandees": 2, "restant": 1, "message": "2 impressions accordées" }
 ```
 
-S'il reste **moins** d'impressions que demandé, la Régie accorde ce qu'il reste et le dit : `{ "ok": false, "accordees": 1, "demandees": 2, "restant": 0, "message": "Il ne restait que 1 impression sur ce code : 1 accordée sur 2 demandées" }`. La borne n'applique la remise qu'aux `accordees` impressions. Code refusé : `{ "ok": false, "accordees": 0, "raison": "…", "message": "…" }`, mêmes raisons que la vérification.
+Code en % : `nb` = impressions de la commande, toutes remisées ; une utilisation est décomptée : `{ "ok": true, "accordees": 3, "demandees": 3, "restant": 4, "message": "Remise de 30 % sur la commande (3 impressions)" }` (`restant` : utilisations restantes).
+
+Impressions offertes : s'il reste **moins** d'impressions que demandé, la Régie accorde ce qu'il reste et le dit : `{ "ok": false, "accordees": 1, "demandees": 2, "restant": 0, "message": "Il ne restait que 1 impression sur ce code : 1 accordée sur 2 demandées" }`. La borne n'applique la remise qu'aux `accordees` impressions. Code refusé : `{ "ok": false, "accordees": 0, "raison": "…", "message": "…" }`, mêmes raisons que la vérification.
 
 Chaque utilisation est enregistrée (borne, lieu, date, impressions) et visible dans la Régie. La vente elle-même continue d'arriver par `/transactions` : une impression remisée est une vente au montant remisé, une impression offerte une séance à 0 €.
 
