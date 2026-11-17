@@ -122,7 +122,7 @@ describe("routes", () => {
     const type = await prisma.refValeur.create({ data: { categorie: "TYPE_LIEU", code: "BAR", libelle: "Bar" } });
     prix = (await prisma.refValeur.create({ data: { categorie: "TYPE_EVENEMENT", code: "PRIX", libelle: "Changement de prix" } })).id;
     lieuId = (await prisma.lieu.create({ data: { raisonSociale: "SAS", enseigne: "Bar du Port", typeLieuId: type.id, codePostal: "44500", latitude: 47.28, longitude: -2.39 } })).id;
-    await prisma.user.create({ data: { email: "part@test.fr", nom: "P", prenom: "P", role: "PARTENAIRE", lieuId } });
+    await prisma.user.create({ data: { email: "part@test.fr", nom: "P", prenom: "P", role: "PARTENAIRE", accesLieux: { create: { lieuId } } } });
   });
 
   it("journal d'événements : saisie, droits, impact", async () => {

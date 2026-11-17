@@ -87,6 +87,46 @@ Profils suggérés : « Régie – administrateur », « Régie – technicien �
 
 Un partenaire ne voit que son lieu, rattaché dans la page Utilisateurs de la Régie (donnée propre à la Régie).
 
+## Clients : accès à un ou plusieurs lieux (demande du 17/11/2026)
+
+Un client (le gérant d'un lieu, un groupe qui en a plusieurs) se rattache à **un ou plusieurs lieux** dans la page
+Utilisateurs de la Régie : c'est son périmètre (« ses lieux », clé `lieux.view_own`). **Ce qu'il peut y faire** se
+règle, comme pour tout le monde, par son profil dans l'Admin Panel. Trois profils à créer, du plus léger au plus complet :
+
+| Clé | Client – chiffres | Client – complet | Client – événements |
+|---|:-:|:-:|:-:|
+| `app.access` | ✓ | ✓ | ✓ |
+| `lieux.view_own` | ✓ | ✓ | ✓ |
+| `ventes.view` | ✓ | ✓ | ✓ |
+| `ventes.export` |  | ✓ | ✓ |
+| `paiements.view` |  | ✓ | ✓ |
+| `medias.view` |  | ✓ | ✓ |
+| `souvenir.contacts_view` |  | ✓ | ✓ |
+| `commissions.view` |  | ✓ | ✓ |
+| `evenements.view` |  | ✓ | ✓ |
+| `evenements.edit` |  |  | ✓ |
+
+« Client – chiffres » : les statistiques de ses lieux, rien d'autre. « Client – complet » : en plus les ventes une à une,
+les photos, les contacts laissés par les invités, ses reversements, et la configuration de ses bornes en lecture.
+« Client – événements » : il crée et publie lui-même les événements de ses bornes.
+Ne jamais cocher `lieux.view_any` pour un client : il verrait tous les lieux. Le menu du client se limite à
+« Mon lieu » (un lieu) ou « Mes lieux » (un lien par lieu) tant qu'il n'a pas `pages.lieux.view`.
+
+## Apporteurs d'affaires (demande du 17/11/2026)
+
+Un apporteur (un ami, une antenne, n'importe qui qui a recommandé un lieu) touche un % des ventes des lieux qu'il a
+apportés. Il se rattache à ses lieux, avec son taux, dans la page **Apporteurs** de la Régie (droit `apporteurs.manage`).
+Son accès est très léger : la page « Mes apports » (chiffre généré par chaque lieu et sa commission, mois par mois),
+et rien d'autre — ni photos, ni fiches lieux.
+
+| Clé | Apporteur d'affaires |
+|---|:-:|
+| `app.access` | ✓ |
+| `pages.mes_apports.view` | ✓ |
+| `apporteurs.view_own` | ✓ |
+
+Pour ceux qui gèrent les apporteurs (administrateur) : `pages.apporteurs.view` et `apporteurs.manage`.
+
 Destinataires des alertes : ils ne dépendent plus d'un rôle. Dans la page Utilisateurs de la Régie, deux cases par personne :
 « E-mails des alertes » (alertes Warning et Critique, et récapitulatif quotidien) et « SMS des alertes » (alertes critiques).
 À la bascule, les anciens admins et techniciens sont abonnés aux e-mails. Le commercial responsable d'un lieu reçoit en plus

@@ -127,7 +127,9 @@ Seuils et niveaux réglables (page Paramètres → Règles d'alerte). Une anomal
 
 Tout compte du realm Keycloak `konitys` entre dans la Régie : son compte est créé à sa première connexion (identité reprise de Keycloak). **Ce qu'il peut faire vient des droits Konitys** : la Régie déclare ses droits (schéma public `GET /adminpanel/permissions-schema`, clé d'app `regie`), l'admin les coche dans des profils (Admin Panel → Profils & Droits), et l'API les lit sur le gateway (`GET <GATEWAY_URL>/api/permissions/me`, cache 30 s) : `requirePerm('clé')` sur les routes. Les admins Keycloak passent partout. Voir `docs/PERMISSIONS_APP_INTEGRATION.md` et, pour passer des anciens rôles aux droits, `docs/droits-correspondance-roles.md`.
 
-Le périmètre des lieux (`lieux.view_any` : tous ; sinon les siens, son lieu pour un partenaire) est décidé en mode fermé : sans réponse du gateway, chacun ne voit que les siens. La page **Utilisateurs** ne gère plus que l'ajout, la désactivation, le lieu d'un partenaire et les SMS des alertes.
+Le périmètre des lieux (`lieux.view_any` : tous ; sinon les siens : les lieux rattachés pour un client, ceux dont il est responsable pour un commercial) est décidé en mode fermé : sans réponse du gateway, chacun ne voit que les siens. La page **Utilisateurs** ne gère plus que l'ajout, la désactivation, les lieux d'un client (un ou plusieurs, demande du 17/11/2026) et les SMS des alertes ; ce qu'un client peut faire sur ses lieux (chiffres seuls, tout voir, gérer ses événements) vient de son profil Konitys (`docs/droits-correspondance-roles.md`).
+
+Les **apporteurs d'affaires** (demande du 17/11/2026) sont rattachés à leurs lieux avec leur taux dans la page **Apporteurs** (`apporteurs.manage`) ; chacun voit son point mensuel (CA généré par ses lieux, sa commission) dans « Mes apports » (`apporteurs.view_own`), calculé à la volée sur `agg_jour` (`src/apporteurs/calcul.ts`), rien d'autre.
 
 En local sans Keycloak, l'API considère l'appelant comme admin et tout est autorisé ; l'en-tête `X-Dev-Utilisateur: <email>` choisit l'utilisateur (ignoré en production).
 

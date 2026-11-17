@@ -98,7 +98,7 @@ beforeEach(async () => {
   ]);
   lieuA = (await prisma.lieu.create({ data: { raisonSociale: "A", enseigne: "Le A", typeLieuId: bar.id, commercialId: a.id } })).id;
   lieuB = (await prisma.lieu.create({ data: { raisonSociale: "B", enseigne: "Le B", typeLieuId: bar.id, commercialId: b.id } })).id;
-  await prisma.user.create({ data: { email: "paul@test.fr", nom: "Partenaire", prenom: "Paul", role: "PARTENAIRE", lieuId: lieuA } });
+  await prisma.user.create({ data: { email: "paul@test.fr", nom: "Partenaire", prenom: "Paul", role: "PARTENAIRE", accesLieux: { create: { lieuId: lieuA } } } });
   evtA = (await prisma.configEvenement.create({ data: { lieuId: lieuA, code: "RAAA", motDePasseTableau: "1", reglages: {} } })).id;
   evtAPonctuel = (await prisma.configEvenement.create({ data: { lieuId: lieuA, habituel: false, nom: "Halloween", code: "RAAB", motDePasseTableau: "1", reglages: {} } })).id;
   const evtB = (await prisma.configEvenement.create({ data: { lieuId: lieuB, code: "RBBB", motDePasseTableau: "1", reglages: {} } })).id;

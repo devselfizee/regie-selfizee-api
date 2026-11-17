@@ -135,7 +135,7 @@ lieuxRouter.get(
     const perimetre = perimetreLieux(req.utilisateur);
     const where: Prisma.LieuWhereInput = {
       supprimeLe: null,
-      ...(perimetre?.lieuId !== undefined ? { id: perimetre.lieuId } : {}),
+      ...(perimetre?.lieuIds ? { id: { in: perimetre.lieuIds } } : {}),
       ...(req.query.statut ? { statut: req.query.statut as LieuStatut } : { statut: { not: "PROSPECT" } }),
       ...(req.query.typeLieuId ? { typeLieuId: Number(req.query.typeLieuId) } : {}),
       ...(req.query.commercialId ? { commercialId: Number(req.query.commercialId) } : {}),

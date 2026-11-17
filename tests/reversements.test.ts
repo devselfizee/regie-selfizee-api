@@ -174,7 +174,7 @@ describe("statuts, droits et export", () => {
   it("le partenaire voit ses reversements, pas le commercial ; export compta des validés", async () => {
     await api.post(`/api/commissions/lieux/${lieuId}/contrats`).send(contratSeuil).expect(201);
     await calculerReversements({ jusquA: FIN_SEPTEMBRE });
-    await prisma.user.create({ data: { email: "p@test.fr", nom: "P", prenom: "", role: "PARTENAIRE", lieuId } });
+    await prisma.user.create({ data: { email: "p@test.fr", nom: "P", prenom: "", role: "PARTENAIRE", accesLieux: { create: { lieuId } } } });
     await prisma.user.create({ data: { email: "c@test.fr", nom: "C", prenom: "", role: "COMMERCIAL" } });
 
     const vus = (await api.get("/api/reversements").set("X-Dev-Utilisateur", "p@test.fr").expect(200)).body;
@@ -233,7 +233,7 @@ describe("relevé PDF et envoi par e-mail", () => {
     expect(res.headers["content-disposition"]).toContain("releve_camping_2026-08.pdf");
     expect((res.body as Buffer).subarray(0, 5).toString()).toBe("%PDF-");
 
-    await prisma.user.create({ data: { email: "p@test.fr", nom: "P", prenom: "", role: "PARTENAIRE", lieuId } });
+    await prisma.user.create({ data: { email: "p@test.fr", nom: "P", prenom: "", role: "PARTENAIRE", accesLieux: { create: { lieuId } } } });
     await api.get(`/api/reversements/${aout.id}/releve.pdf`).set("X-Dev-Utilisateur", "p@test.fr").expect(200);
   });
 

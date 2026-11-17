@@ -286,7 +286,7 @@ mediasRouter.get(
       supprimeLe: null,
       ...(f.parc && !f.lieuId ? { parc: f.parc } : {}),
       ...(p?.commercialId ? { commercialId: p.commercialId } : {}),
-      ...(p?.lieuId ? { id: p.lieuId } : {}),
+      ...(p?.lieuIds ? { id: { in: p.lieuIds } } : {}),
     };
     const ou = f.lieuId ? { lieuId: f.lieuId } : {};
     // Une vente peut tomber un peu avant ou après la photo : un jour de marge autour de la période

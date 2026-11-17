@@ -192,7 +192,7 @@ reversementsRouter.get(
       where: {
         ...(statuts ? { statut: { in: statuts } } : {}),
         ...(req.query.lieuId ? { lieuId: Number(req.query.lieuId) } : {}),
-        ...(p?.lieuId !== undefined ? { lieuId: p.lieuId } : {}),
+        ...(p?.lieuIds ? { lieuId: { in: p.lieuIds } } : {}),
         ...(req.query.du ? { periodeDebut: { gte: new Date(`${req.query.du}T00:00:00Z`) } } : {}),
         ...(req.query.au ? { periodeFin: { lte: new Date(`${req.query.au}T00:00:00Z`) } } : {}),
         // Seulement les lieux à qui on reverse une commission (retour de Sébastien du 10/11)

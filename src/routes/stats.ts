@@ -18,7 +18,12 @@ export function filtresAutorises(req: UtilisateurRequest): Filtres {
   const f = lireFiltres(req.query);
   const p = perimetreLieux(req.utilisateur);
   if (p?.commercialId !== undefined) f.commercialId = [p.commercialId];
-  if (p?.lieuId !== undefined) f.lieuId = [p.lieuId];
+  // Client : ses lieux ; s'il en a choisi, seulement ceux-là (un lieu hors périmètre ne donne rien : id impossible)
+  if (p?.lieuIds) {
+    const siens = p.lieuIds;
+    const choisis = f.lieuId?.filter((id) => siens.includes(id)) ?? [];
+    f.lieuId = f.lieuId?.length ? (choisis.length ? choisis : [-1]) : siens;
+  }
   return f;
 }
 

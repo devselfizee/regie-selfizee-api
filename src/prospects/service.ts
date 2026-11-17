@@ -84,13 +84,14 @@ export async function references(jour = aujourdhui()) {
 }
 
 /** Score des prospects (tous, ou ceux donnés). `visible` : lieux que l'utilisateur peut nommer. */
-export async function scorerProspects(options: { ids?: number[]; commercialId?: number; visible: (lieu: { id: number; commercialId: number | null }) => boolean }) {
+export async function scorerProspects(options: { ids?: number[]; commercialId?: number; lieuIds?: number[]; visible: (lieu: { id: number; commercialId: number | null }) => boolean }) {
   const jour = aujourdhui();
   const [{ refs, rang }, prospects] = await Promise.all([references(jour), chargerLieux("PROSPECT", options.ids)]);
   const anneeProchaine = new Date(jour.getTime() + 364 * JOUR);
   const prec = precision(refs);
   const resultats = prospects
     .filter((p) => options.commercialId === undefined || p.commercialId === options.commercialId)
+    .filter((p) => options.lieuIds === undefined || options.lieuIds.includes(p.id))
     .map((p) => {
       const pr = profil(p, rang);
       const e = estimer(pr, refs);

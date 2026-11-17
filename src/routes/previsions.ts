@@ -60,7 +60,7 @@ previsionsRouter.get(
       where: {
         id: { in: retenus },
         ...(p?.commercialId ? { commercialId: p.commercialId } : {}),
-        ...(p?.lieuId !== undefined ? { AND: [{ id: p.lieuId }] } : {}),
+        ...(p?.lieuIds ? { AND: [{ id: { in: p.lieuIds } }] } : {}),
       },
       select: { id: true, enseigne: true, ville: true, codePostal: true, saisonnalite: true, horaires: true, saisons: true, fermetures: true },
     });

@@ -32,13 +32,15 @@ const GROUPES: Groupe[] = [
       { key: "pages.rentabilite.view", label: "Voir la rentabilité" },
       { key: "pages.utilisateurs.view", label: "Voir les utilisateurs" },
       { key: "pages.parametres.view", label: "Voir les paramètres" },
+      { key: "pages.apporteurs.view", label: "Voir la page des apporteurs d'affaires" },
+      { key: "pages.mes_apports.view", label: "Voir « Mes apports » (tableau de bord d'un apporteur d'affaires)" },
     ],
   },
   {
     key: "lieux",
     label: "Lieux",
     permissions: [
-      { key: "lieux.view_own", label: "Voir ses lieux", description: "Ceux dont il est le commercial responsable ; pour un partenaire, son lieu." },
+      { key: "lieux.view_own", label: "Voir ses lieux", description: "Ceux dont il est le commercial responsable ; pour un client, le ou les lieux rattachés dans la page Utilisateurs." },
       { key: "lieux.view_any", label: "Voir tous les lieux" },
       { key: "lieux.create", label: "Créer un lieu" },
       { key: "lieux.edit", label: "Modifier un lieu", description: "Fiche, horaires, contacts, saisons et fermetures." },
@@ -122,6 +124,14 @@ const GROUPES: Groupe[] = [
     ],
   },
   {
+    key: "apporteurs",
+    label: "Apporteurs d'affaires",
+    permissions: [
+      { key: "apporteurs.view_own", label: "Voir ses propres apports", description: "Chiffre généré par les lieux qu'il a apportés et sa commission, mois par mois. Rien d'autre (ni photos, ni fiches)." },
+      { key: "apporteurs.manage", label: "Gérer les apporteurs d'affaires", description: "Rattacher un apporteur à des lieux, régler son taux de commission, voir ce que chacun touche." },
+    ],
+  },
+  {
     key: "commercial",
     label: "Commercial",
     permissions: [
@@ -136,7 +146,7 @@ const GROUPES: Groupe[] = [
     key: "administration",
     label: "Administration",
     permissions: [
-      { key: "utilisateurs.manage", label: "Gérer les utilisateurs de la Régie", description: "Ajout, lieu d'un partenaire, SMS des alertes, désactivation." },
+      { key: "utilisateurs.manage", label: "Gérer les utilisateurs de la Régie", description: "Ajout, lieux d'un client, SMS des alertes, désactivation." },
       { key: "referentiel.edit", label: "Modifier les listes et réglages (paramètres)" },
       { key: "cartes_test.edit", label: "Gérer les cartes bancaires de test" },
       { key: "demo.manage", label: "Charger ou effacer les données de démonstration" },
@@ -145,7 +155,7 @@ const GROUPES: Groupe[] = [
 ];
 
 export function buildPermissionsSchema() {
-  return { app: APP_KEY, label: "Régie Selfizee", version: 3, groups: GROUPES };
+  return { app: APP_KEY, label: "Régie Selfizee", version: 4, groups: GROUPES };
 }
 
 /** Toutes les clés du schéma (contrôle des fautes de frappe dans les tests) */

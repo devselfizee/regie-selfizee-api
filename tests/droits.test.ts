@@ -22,6 +22,7 @@ const en = (email: string, droits = DROITS.admin) => {
     post: (url: string, body: object) => r(request(app).post(url)).send(body),
     put: (url: string, body: object) => r(request(app).put(url)).send(body),
     patch: (url: string, body: object) => r(request(app).patch(url)).send(body),
+    delete: (url: string) => r(request(app).delete(url)),
   };
 };
 const admin = en("admin@test.fr");
@@ -49,7 +50,7 @@ beforeEach(async () => {
   ]);
   camping = (await prisma.lieu.create({ data: { raisonSociale: "C", enseigne: "Camping", typeLieuId: typeId, commercialId: a.id } })).id;
   bar = (await prisma.lieu.create({ data: { raisonSociale: "B", enseigne: "Bar", typeLieuId: typeId, commercialId: b.id } })).id;
-  await prisma.user.create({ data: { email: "camping@test.fr", nom: "Gérant", prenom: "", lieuId: camping } });
+  await prisma.user.create({ data: { email: "camping@test.fr", nom: "Gérant", prenom: "", accesLieux: { create: { lieuId: camping } } } });
 
   // Des ventes au camping et au bar
   const gamme = await prisma.gamme.create({ data: { code: "MT", libelle: "Ma Trombine" } });
@@ -143,6 +144,57 @@ describe("partenaire (son lieu, en lecture)", () => {
     await part.get(`/api/stats/lieux/${bar}${PERIODE}`).expect(404);
     expect((await part.get(`/api/stats/global${PERIODE}`)).body.kpis.courant.caTtcCents).toBe(1300);
     await part.put(`/api/lieux/${camping}`, { raisonSociale: "C", enseigne: "Camping", typeLieuId: typeId }).expect(403);
+  });
+});
+
+describe("client : un ou plusieurs lieux (demande du 17/11)", () => {
+  it("voit ses lieux et leur chiffre, pas les autres ; la liste se règle dans Utilisateurs", async () => {
+    const gerant = await prisma.user.findUniqueOrThrow({ where: { email: "camping@test.fr" } });
+    await admin.patch(`/api/utilisateurs/${gerant.id}`, { lieuIds: [camping, bar] }).expect(200);
+    const lieux = (await part.get("/api/lieux").expect(200)).body;
+    expect(lieux.map((l: { id: number }) => l.id).sort()).toEqual([camping, bar].sort());
+    expect((await part.get(`/api/stats/global${PERIODE}`)).body.kpis.courant.caTtcCents).toBe(2600);
+    expect((await part.get(`/api/stats/global${PERIODE}&lieuId=${bar}`)).body.kpis.courant.caTtcCents).toBe(1300);
+    const moi = (await part.get("/api/utilisateurs/moi").expect(200)).body;
+    expect(moi.lieux.map((l: { enseigne: string }) => l.enseigne)).toEqual(["Bar", "Camping"]);
+    // La liste envoyée remplace l'ancienne ; un lieu inconnu est refusé
+    await admin.patch(`/api/utilisateurs/${gerant.id}`, { lieuIds: [bar] }).expect(200);
+    await part.get(`/api/lieux/${camping}`).expect(404);
+    await part.get(`/api/lieux/${bar}`).expect(200);
+    await admin.patch(`/api/utilisateurs/${gerant.id}`, { lieuIds: [999_999] }).expect(400);
+  });
+});
+
+describe("apporteur d'affaires (demande du 17/11)", () => {
+  it("touche un % des ventes de ses lieux, mois par mois, et ne voit rien d'autre", async () => {
+    const ami = await prisma.user.create({ data: { email: "ami@test.fr", nom: "Ami", prenom: "" } });
+    const apporteur = en("ami@test.fr", "app.access,pages.mes_apports.view,apporteurs.view_own");
+    await apporteur.get("/api/apporteurs").expect(403);
+    await apporteur.get(`/api/stats/global${PERIODE}`).expect(403);
+    expect((await apporteur.get("/api/lieux").expect(200)).body).toEqual([]);
+
+    const regle = (await admin.post("/api/apporteurs/regles", { userId: ami.id, lieuId: camping, tauxBp: 1000, dateDebut: "2026-10-01" }).expect(201)).body;
+    expect(regle.taux).toBe("10 %");
+    await admin.post("/api/apporteurs/regles", { userId: ami.id, lieuId: camping, tauxBp: 500, dateDebut: "2026-10-01" }).expect(409);
+    await admin.post("/api/apporteurs/regles", { userId: 999_999, lieuId: camping, tauxBp: 500, dateDebut: "2026-10-01" }).expect(400);
+
+    // Octobre 2026 : 1 300 € de ventes au camping → 130 € de commission ; le bar n'y est pas
+    const mes = (await apporteur.get("/api/apporteurs/moi").expect(200)).body;
+    expect(mes.lieux.map((l: { enseigne: string }) => l.enseigne)).toEqual(["Camping"]);
+    expect(mes.mois.find((m: { mois: string }) => m.mois === "2026-10")).toMatchObject({ baseCents: 1300, commissionCents: 130, nbVentes: 2 });
+    expect(mes.totaux.nbLieux).toBe(1);
+
+    const liste = (await admin.get("/api/apporteurs").expect(200)).body;
+    expect(liste).toHaveLength(1);
+    expect(liste[0].apporteur.email).toBe("ami@test.fr");
+    expect(liste[0].regles).toHaveLength(1);
+    expect((await admin.get(`/api/apporteurs/${ami.id}/tableau`).expect(200)).body.totaux.totalCents).toBe(130);
+
+    await admin.patch(`/api/apporteurs/regles/${regle.id}`, { tauxBp: 2000 }).expect(200);
+    expect((await apporteur.get("/api/apporteurs/moi")).body.mois.find((m: { mois: string }) => m.mois === "2026-10").commissionCents).toBe(260);
+    await alice.delete(`/api/apporteurs/regles/${regle.id}`).expect(403);
+    await admin.delete(`/api/apporteurs/regles/${regle.id}`).expect(204);
+    expect((await apporteur.get("/api/apporteurs/moi")).body.lieux).toEqual([]);
   });
 });
 

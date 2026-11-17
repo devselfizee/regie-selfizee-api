@@ -6,12 +6,13 @@ import { scorerProspects } from "../prospects/service.js";
 // Score de potentiel des lieux prospectés (CDC V3)
 export const prospectsRouter = Router();
 
-/** Le commercial ne voit que ses prospects, et les lieux voisins qui ne sont pas à lui sont anonymisés. */
+/** Le commercial ne voit que ses prospects (un client : ses lieux), et les lieux voisins qui ne sont pas à lui sont anonymisés. */
 function perimetre(req: UtilisateurRequest) {
   const p = perimetreLieux(req.utilisateur);
   return {
     commercialId: p?.commercialId,
-    visible: (l: { commercialId: number | null }) => !p || l.commercialId === p.commercialId,
+    lieuIds: p?.lieuIds,
+    visible: (l: { id: number; commercialId: number | null }) => !p || (p.lieuIds ? p.lieuIds.includes(l.id) : l.commercialId === p.commercialId),
   };
 }
 

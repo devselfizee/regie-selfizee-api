@@ -36,7 +36,7 @@ telechargementsEvenementsRouter.get(
     const f = filtres.parse(req.query);
     const p = perimetreLieux(req.utilisateur);
     // Périmètre et parc portent sur le lieu de l'événement : sans l'un ni l'autre, aucune jointure de filtre
-    const lieu = p || (f.parc && !f.lieuId) ? { ...(f.parc && !f.lieuId ? { parc: f.parc } : {}), ...(p?.commercialId ? { commercialId: p.commercialId } : {}), ...(p?.lieuId ? { id: p.lieuId } : {}) } : undefined;
+    const lieu = p || (f.parc && !f.lieuId) ? { ...(f.parc && !f.lieuId ? { parc: f.parc } : {}), ...(p?.commercialId ? { commercialId: p.commercialId } : {}), ...(p?.lieuIds ? { id: { in: p.lieuIds } } : {}) } : undefined;
     res.json(
       await lireJournal({
         lieuId: f.lieuId,

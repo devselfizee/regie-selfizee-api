@@ -38,12 +38,15 @@ model User {
   profilsHub       Int[]     @default([]) @map("profils_hub") // profils Konitys (Admin Panel), relevés à la connexion ; affichage seulement
   adminPlateforme  Boolean   @default(false) @map("admin_plateforme") // admin de la plateforme (jeton) ; affichage seulement
   profilsRelevesLe DateTime? @map("profils_releves_le") @db.Timestamptz(3)
-  lieuId           Int?      @map("lieu_id") // rôle PARTENAIRE uniquement (V2)
   isActive         Boolean   @default(true) @map("is_active")
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  lieu             Lieu?                   @relation("PartenaireLieu", fields: [lieuId], references: [id])
+  // Client : les lieux auxquels il a accès (son périmètre sans lieux.view_any) ; ce qu'il y fait vient de son profil Konitys
+  accesLieux       AccesLieu[]
+  // Apporteur d'affaires : les lieux qu'il a apportés, avec sa commission
+  apports          ApporteurLieu[]         @relation("Apporteur")
+  apportsCrees     ApporteurLieu[]         @relation("ApportCreePar")
   lieuxCommercial  Lieu[]                  @relation("LieuCommercial")
   contratsCrees    ContratCommission[]
   ajustements      ReversementAjustement[]
@@ -74,6 +77,48 @@ enum UserRole {
 // ─── Listes administrables ──────────────────────────────────
 // Une seule table pour toutes les listes de valeurs de la fiche lieu :
 // ajout d'une valeur = pas de développement, et chaque champ reste filtrable.
+
+// ─── Accès client et apporteurs d'affaires (demande du 17/11/2026) ──────────────
+
+// Un client voit un ou plusieurs lieux (son périmètre « ses lieux ») ; ses droits (chiffres seuls, tout, ses
+// événements…) viennent de son profil Konitys. Remplace l'ancien users.lieu_id (un seul lieu par partenaire).
+model AccesLieu {
+  userId    Int      @map("user_id")
+  lieuId    Int      @map("lieu_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lieu Lieu @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+
+  @@id([userId, lieuId])
+  @@index([lieuId])
+  @@map("acces_lieux")
+}
+
+// Apporteur d'affaires (un ami, une antenne…) : un % des ventes du lieu qu'il a apporté, selon la personne et le
+// contrat. Point mensuel calculé à la volée sur agg_jour (src/apporteurs/calcul.ts) : rien n'est figé pour le moment.
+model ApporteurLieu {
+  id                Int        @id @default(autoincrement())
+  userId            Int        @map("user_id")
+  lieuId            Int        @map("lieu_id")
+  tauxBp            Int        @map("taux_bp") // points de base : 500 = 5 %
+  base              BaseCalcul @default(TTC)
+  netRemboursements Boolean    @default(true) @map("net_remboursements")
+  dateDebut         DateTime   @map("date_debut") @db.Date // premier jour commissionné
+  dateFin           DateTime?  @map("date_fin") @db.Date // dernier jour commissionné (null : sans fin)
+  notes             String?
+  creeParId         Int?       @map("cree_par_id")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user    User  @relation("Apporteur", fields: [userId], references: [id], onDelete: Cascade)
+  lieu    Lieu  @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  creePar User? @relation("ApportCreePar", fields: [creeParId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, lieuId])
+  @@index([lieuId])
+  @@map("apporteurs_lieux")
+}
 
 model RefValeur {
   id        Int          @id @default(autoincrement())
@@ -228,7 +273,9 @@ model Lieu {
   // Photos d'illustration du client, reprises par tous les événements du lieu (« Photos du client »)
   illustrations    IllustrationLieu[]
   meteo            MeteoJour[]
-  partenaires      User[]              @relation("PartenaireLieu")
+  // Clients qui ont accès à ce lieu, et apporteurs d'affaires commissionnés sur ses ventes
+  accesClients     AccesLieu[]
+  apporteurs       ApporteurLieu[]
   aggJours         AggJour[]
   aggHeures        AggHeure[]
 

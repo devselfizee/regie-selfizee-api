@@ -383,7 +383,6 @@ export async function effacerDemo() {
       await db.intervention.deleteMany({ where: { borneId: { in: B } } });
       await db.modulePaiement.deleteMany({ where: { borneId: { in: B } } });
       await db.affectationBorne.deleteMany({ where: { OR: [{ borneId: { in: B } }, { lieuId: { in: L } }] } });
-      await db.user.updateMany({ where: { lieuId: { in: L } }, data: { lieuId: null } });
       await db.borne.deleteMany({ where: { id: { in: B } } });
       // Contacts, horaires, saisons, fermetures, événements et météo suivent en cascade
       await db.lieu.deleteMany({ where: { id: { in: L } } });
