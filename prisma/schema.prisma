@@ -58,6 +58,7 @@ model User {
 
   photosCles     LieuPhotoCles[] @relation("PhotosClesAuteur")
   evenementsLieu EvenementLieu[] @relation("EvenementsLieuAuteur")
+  evenementsBooth EvenementBooth[] @relation("EvenementBoothCreePar")
   modelesMail    ModeleMail[]
 
   @@map("users")
@@ -221,6 +222,8 @@ model Lieu {
   evenements       EvenementLieu[]
   // Événements de la borne : l'habituel du lieu et les ponctuels (Halloween, une soirée…)
   configsEvenement ConfigEvenement[]
+  // Créneaux d'événements booth programmés sur le lieu (code transmis tel quel à la borne)
+  evenementsBooth  EvenementBooth[]
   cadresEvenement  CadreEvenement[]
   // Photos d'illustration du client, reprises par tous les événements du lieu (« Photos du client »)
   illustrations    IllustrationLieu[]
@@ -1835,4 +1838,31 @@ model InstallationEvenement {
   @@index([configEvenementId, id])
   @@index([createdAt])
   @@map("installations_evenement")
+}
+
+// Créneau d'événement booth programmé sur un lieu (avenant de l'équipe borne du 18/11/2026) : la Régie ne connaît
+// que le code, saisi sans vérification, et le transmet tel quel dans le programme de la borne (origine « booth »,
+// version 0, status « complete ») ; c'est la borne qui le charge par booth. Pas de réglages, de cadres ni de zip.
+// Le même code booth peut être programmé sur plusieurs lieux : pas d'unicité.
+model EvenementBooth {
+  id         Int      @id @default(autoincrement())
+  lieuId     Int      @map("lieu_id")
+  // Code booth tel que saisi (majuscules, 3 à 8 caractères alphanumériques)
+  code       String   @db.VarChar(8)
+  // Libellé pour la Régie (facultatif : « Soirée privée Dupont »)
+  nom        String?  @db.VarChar(80)
+  // Programmation, jours en heure de Paris ; heures « HH:mm », null : début ou fin de journée
+  dateDebut  DateTime @map("date_debut") @db.Date
+  dateFin    DateTime @map("date_fin") @db.Date
+  heureDebut String?  @map("heure_debut") @db.VarChar(5)
+  heureFin   String?  @map("heure_fin") @db.VarChar(5)
+  creeParId  Int?     @map("cree_par_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lieu    Lieu  @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  creePar User? @relation("EvenementBoothCreePar", fields: [creeParId], references: [id], onDelete: SetNull)
+
+  @@index([lieuId, dateDebut])
+  @@map("evenements_booth")
 }

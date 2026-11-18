@@ -11,21 +11,27 @@ import { etatDuZip, lieuDeLaBorne, selectionZip } from "./zipBorne.js";
 // - versions : la version publiée de plusieurs codes à la fois (comme getEventLastUpdate du booth) ;
 // - installation : ce qu'elle a téléchargé ou installé, pour que la Régie sache quelle version tourne où.
 // Le zip lui-même se demande ensuite par /statut (URL signée) puis se télécharge (zipBorne.ts).
+// Avenant du 18/11/2026 : un créneau peut désigner un événement booth (table evenements_booth). La Régie transmet son
+// code tel quel, avec origine « booth », version 0 et status « complete » : la borne le charge par booth, sans zip.
 
 /** Combien de jours de programmation à venir la borne reçoit (de quoi précharger les zips). */
 const HORIZON_JOURS = 14;
 const MAX_PROCHAINS = 10;
 
 export type EtatZip = "complete" | "incomplete" | "obsolete";
+export type OrigineEvenement = "regie" | "booth";
 
 export interface EvenementBorne {
   code: string;
+  /** « regie » : événement de la Régie (zip) ; « booth » : code booth à charger par la borne elle-même */
+  origine: OrigineEvenement;
   /** null pour l'événement par défaut */
   nom: string | null;
   parDefaut: boolean;
-  /** Version publiée (0 : jamais publié) et date de publication */
+  /** Version publiée (0 : jamais publié, et toujours 0 pour un événement booth) et date de publication */
   version: number;
   publieLe: string | null;
+  /** État du zip ; un événement booth est toujours « complete » (rien à télécharger chez la Régie) */
   status: EtatZip;
 }
 
@@ -40,7 +46,7 @@ export interface ProgrammeBorne {
 }
 
 /** « 2026-11-13 » + « 20:00 » (heure de Paris ; null = début ou fin de journée) → instant. */
-function instantParis(jour: string, heure: string | null, fin: boolean): Date {
+export function instantParis(jour: string, heure: string | null, fin: boolean): Date {
   const [a, m, j] = jour.split("-").map(Number);
   if (heure === null) return new Date(new TZDate(a, m - 1, j + (fin ? 1 : 0), 0, 0, 0, FUSEAU_METIER).getTime());
   const [h, mi] = heure.split(":").map(Number);
@@ -54,9 +60,16 @@ type Ligne = Awaited<ReturnType<typeof chargerEvenements>>[number];
 const chargerEvenements = (lieuId: number) =>
   prisma.configEvenement.findMany({ where: { lieuId }, select: { ...selectionZip, id: true, nom: true, habituel: true, reglages: true } });
 
+/** Jour d'une colonne @db.Date → « AAAA-MM-JJ ». */
+export const jourIso = (d: Date) => d.toISOString().slice(0, 10);
+
+const chargerBooth = (lieuId: number) =>
+  prisma.evenementBooth.findMany({ where: { lieuId }, select: { id: true, code: true, nom: true, dateDebut: true, dateFin: true, heureDebut: true, heureFin: true } });
+
 async function versBorne(e: Ligne): Promise<EvenementBorne> {
   return {
     code: e.code,
+    origine: "regie",
     nom: e.habituel ? null : e.nom,
     parDefaut: e.habituel,
     version: e.version,
@@ -67,13 +80,18 @@ async function versBorne(e: Ligne): Promise<EvenementBorne> {
 
 /**
  * Programme de la borne. L'événement actuel suit la règle de l'onglet Configuration : parmi les événements
- * personnalisés en cours, celui qui a commencé le plus tard ; sinon le par défaut. Un événement dont le zip n'est pas
- * prêt (jamais publié, ou à republier) est sauté : la borne garde ce qui marche (le par défaut).
+ * personnalisés en cours (Régie ou booth), celui qui a commencé le plus tard ; sinon le par défaut. Un événement dont
+ * le zip n'est pas prêt (jamais publié, ou à republier) est sauté : la borne garde ce qui marche (le par défaut).
+ * Un créneau booth est toujours prêt : la Régie n'a rien à lui fournir.
  */
 export async function programmePourBorne(borne: Pick<Borne, "id">, maintenant = new Date()): Promise<ProgrammeBorne> {
   const lieuId = await lieuDeLaBorne(borne.id, maintenant);
   if (lieuId === null) return { lieu: null, maintenant: isoParis(maintenant), actuel: null, prochains: [] };
-  const [lieu, evenements] = await Promise.all([prisma.lieu.findUnique({ where: { id: lieuId }, select: { id: true, enseigne: true } }), chargerEvenements(lieuId)]);
+  const [lieu, evenements, booth] = await Promise.all([
+    prisma.lieu.findUnique({ where: { id: lieuId }, select: { id: true, enseigne: true } }),
+    chargerEvenements(lieuId),
+    chargerBooth(lieuId),
+  ]);
 
   const t = maintenant.getTime();
   const horizon = t + HORIZON_JOURS * 86_400_000;
@@ -84,9 +102,16 @@ export async function programmePourBorne(borne: Pick<Borne, "id">, maintenant = 
     if (!r.success) console.error(`Programme des bornes : réglages illisibles pour l'événement ${e.code}, ignoré`);
     return r.success ? [{ e, l: r.data.lieu }] : [];
   });
-  const ponctuels = await Promise.all(
-    lisibles.map(async ({ e, l }) => ({ e, b: await versBorne(e), debut: instantParis(l.dateDebut, l.heureDebut, false), fin: instantParis(l.dateFin, l.heureFin, true) }))
-  );
+  const ponctuels = [
+    ...(await Promise.all(
+      lisibles.map(async ({ e, l }) => ({ b: await versBorne(e), debut: instantParis(l.dateDebut, l.heureDebut, false), fin: instantParis(l.dateFin, l.heureFin, true) }))
+    )),
+    ...booth.map((e) => ({
+      b: { code: e.code, origine: "booth", nom: e.nom, parDefaut: false, version: 0, publieLe: null, status: "complete" } satisfies EvenementBorne,
+      debut: instantParis(jourIso(e.dateDebut), e.heureDebut, false),
+      fin: instantParis(jourIso(e.dateFin), e.heureFin, true),
+    })),
+  ];
   const defaut = evenements.find((e) => e.habituel);
   const bDefaut = defaut ? await versBorne(defaut) : null;
 
@@ -128,8 +153,8 @@ export function declencheurDe(borneId: number, code: string, annonce?: "auto" | 
 }
 
 /**
- * Versions publiées de plusieurs codes (comme getEventLastUpdate du booth) : seulement les événements du lieu où la
- * borne est installée ; les autres codes sont « unknown ».
+ * Versions publiées de plusieurs codes (comme getEventLastUpdate du booth) : seulement les événements Régie du lieu
+ * où la borne est installée ; les autres codes, dont les codes booth, sont « unknown ».
  */
 export async function versionsPourBorne(borne: Pick<Borne, "id">, codes: string[], maintenant = new Date()) {
   const lieuId = await lieuDeLaBorne(borne.id, maintenant);
@@ -156,7 +181,11 @@ export async function noterEtape(borneId: number, d: { code: string; version: nu
     const trouve = await prisma.configEvenement.findUnique({ where: { code: d.code }, select: { id: true, lieuId: true } });
     // Rattaché à l'événement seulement s'il est du lieu de la borne : une borne ne peut pas écrire dans le journal d'un
     // autre lieu en déclarant son code (la ligne est gardée, sans lien, comme un code inconnu)
-    const e = trouve && trouve.lieuId === (await lieuDeLaBorne(borneId, new Date())) ? trouve : null;
+    const lieuBorne = await lieuDeLaBorne(borneId, new Date());
+    const e = trouve && trouve.lieuId === lieuBorne ? trouve : null;
+    // Un code booth programmé sur le lieu de la borne : rattaché au lieu, sans événement Régie (l'onglet Configuration
+    // retrouve ses installations par le code)
+    const booth = !e && lieuBorne !== null ? await prisma.evenementBooth.findFirst({ where: { code: d.code, lieuId: lieuBorne }, select: { lieuId: true } }) : null;
     let declencheur = d.declencheur ?? null;
     if (!declencheur) {
       const demande = await prisma.installationEvenement.findFirst({
@@ -167,7 +196,7 @@ export async function noterEtape(borneId: number, d: { code: string; version: nu
       declencheur = demande?.declencheur ?? null;
     }
     await prisma.installationEvenement.create({
-      data: { borneId, configEvenementId: e?.id ?? null, lieuId: e?.lieuId ?? null, code: d.code, version: d.version, etat: d.etat, declencheur, message: d.message?.slice(0, 500) ?? null },
+      data: { borneId, configEvenementId: e?.id ?? null, lieuId: e?.lieuId ?? booth?.lieuId ?? null, code: d.code, version: d.version, etat: d.etat, declencheur, message: d.message?.slice(0, 500) ?? null },
     });
   } catch (err) {
     console.error("Journal des téléchargements :", err);

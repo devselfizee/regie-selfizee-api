@@ -14,6 +14,7 @@ const b = vi.hoisted(() => ({
   borne: null as null | Record<string, unknown>,
   affectations: [] as { borneId: number; lieuId: number; debut: Date; fin: Date | null }[],
   evenements: [] as Record<string, unknown>[],
+  booth: [] as Record<string, unknown>[],
   installations: [] as Record<string, unknown>[],
   rejets: [] as unknown[],
 }));
@@ -34,6 +35,10 @@ vi.mock("../src/lib/prisma.js", () => {
       configEvenement: {
         findUnique: async ({ where }: { where: { code: string } }) => b.evenements.find((e) => e.code === where.code) ?? null,
         findMany: async ({ where }: { where: Record<string, unknown> }) => b.evenements.filter((e) => correspond(e, where)),
+      },
+      evenementBooth: {
+        findMany: async ({ where }: { where: Record<string, unknown> }) => b.booth.filter((e) => correspond(e, where)),
+        findFirst: async ({ where }: { where: Record<string, unknown> }) => b.booth.find((e) => correspond(e, where)) ?? null,
       },
       installationEvenement: {
         create: async ({ data }: { data: Record<string, unknown> }) => b.installations.push({ id: BigInt(b.installations.length + 1), createdAt: new Date(), ...data }),
@@ -73,6 +78,11 @@ function evenement(code: string, d: { habituel?: boolean; nom?: string; version?
   };
 }
 
+/** Créneau booth programmé sur le lieu : seulement un code et des dates (avenant du 18/11/2026). */
+function booth(code: string, d: { nom?: string; debut: string; fin?: string; hDebut?: string | null; hFin?: string | null; lieuId?: number }) {
+  return { id: code.charCodeAt(0) * 100 + code.charCodeAt(1), lieuId: d.lieuId ?? 7, code, nom: d.nom ?? null, dateDebut: new Date(`${d.debut}T00:00:00Z`), dateFin: new Date(`${d.fin ?? d.debut}T00:00:00Z`), heureDebut: d.hDebut ?? null, heureFin: d.hFin ?? null };
+}
+
 const appel = (chemin: string, corps: Record<string, unknown> = {}) =>
   request(app).post(`/ingest/v1/evenements/${chemin}`).set("Authorization", `Bearer ${cle.cle}`).send({ borne_id: "SZ-001", ...corps });
 
@@ -89,6 +99,7 @@ beforeEach(async () => {
     evenement("ROLD", { nom: "Passé", debut: "2026-10-01" }),
     evenement("RAUT", { nom: "Autre lieu", debut: "2026-11-12", fin: "2026-11-30", lieuId: 9 }),
   ];
+  b.booth = [];
   b.installations = [];
   b.rejets = [];
   for (const e of b.evenements) if (e.zipChemin) await rangerZip(String(e.code), Number(e.version), ZIP);
@@ -99,7 +110,7 @@ describe("programme de la borne", () => {
     const r = (await appel("programme").expect(200)).body;
     expect(r.lieu).toEqual({ id: 7, nom: "La Ruche" });
     expect(r.maintenant).toBe("2026-11-13T15:00:00.000+01:00");
-    expect(r.actuel).toMatchObject({ code: "RHAL", nom: "Halloween", parDefaut: false, version: 1, status: "complete", jusqua: "2026-11-15T00:00:00.000+01:00" });
+    expect(r.actuel).toMatchObject({ code: "RHAL", origine: "regie", nom: "Halloween", parDefaut: false, version: 1, status: "complete", jusqua: "2026-11-15T00:00:00.000+01:00" });
     expect(r.prochains.map((p: { code: string }) => p.code)).toEqual(["RBRO", "RNOE"]);
     expect(r.prochains[0]).toMatchObject({ status: "incomplete", version: 0 });
     expect(r.prochains[1]).toMatchObject({ debut: "2026-11-20T20:00:00.000+01:00", fin: "2026-11-21T06:00:00.000+01:00", status: "complete" });
@@ -111,6 +122,38 @@ describe("programme de la borne", () => {
     const r = (await appel("programme").expect(200)).body;
     vi.useRealTimers();
     expect(r.actuel).toMatchObject({ code: "RDEF", nom: null, parDefaut: true, version: 3, status: "complete", jusqua: "2026-11-20T20:00:00.000+01:00" });
+  });
+
+  it("créneau booth en cours : transmis tel quel, origine booth, version 0, complete, sans zip", async () => {
+    b.evenements = b.evenements.filter((e) => e.code !== "RHAL");
+    b.booth = [booth("AB12", { nom: "Soirée privée", debut: "2026-11-13", hDebut: "14:00", hFin: "23:00" }), booth("ZZ99", { debut: "2026-11-25", lieuId: 9 })];
+    const r = (await appel("programme").expect(200)).body;
+    vi.useRealTimers();
+    expect(r.actuel).toEqual({ code: "AB12", origine: "booth", nom: "Soirée privée", parDefaut: false, version: 0, publieLe: null, status: "complete", jusqua: "2026-11-13T23:00:00.000+01:00" });
+    // Le créneau d'un autre lieu n'est pas dans les prochains
+    expect(r.prochains.map((p: { code: string }) => p.code)).toEqual(["RBRO", "RNOE"]);
+    expect(r.prochains.every((p: { origine: string }) => p.origine === "regie")).toBe(true);
+  });
+
+  it("booth et Régie qui se chevauchent : celui qui a commencé le plus tard ; booth à venir dans les prochains", async () => {
+    // Halloween a commencé le 12, le booth le 13 à 10 h : le booth l'emporte jusqu'à sa fin, puis Halloween reprend
+    b.booth = [booth("AB12", { debut: "2026-11-13", hDebut: "10:00", hFin: "18:00" }), booth("CD34", { nom: "Mariage", debut: "2026-11-21", fin: "2026-11-22" })];
+    const r = (await appel("programme").expect(200)).body;
+    vi.useRealTimers();
+    expect(r.actuel).toMatchObject({ code: "AB12", origine: "booth", nom: null, version: 0, status: "complete", jusqua: "2026-11-13T18:00:00.000+01:00" });
+    expect(r.prochains.map((p: { code: string; origine: string }) => [p.code, p.origine])).toEqual([["RBRO", "regie"], ["RNOE", "regie"], ["CD34", "booth"]]);
+    expect(r.prochains[2]).toMatchObject({ nom: "Mariage", version: 0, publieLe: null, status: "complete", debut: "2026-11-21T00:00:00.000+01:00", fin: "2026-11-23T00:00:00.000+01:00" });
+  });
+
+  it("le par défaut tourne jusqu'au prochain créneau booth ; versions et statut ignorent un code booth (unknown)", async () => {
+    b.evenements = b.evenements.filter((e) => e.code !== "RHAL");
+    b.booth = [booth("AB12", { debut: "2026-11-14", hDebut: "19:00" })];
+    const r = (await appel("programme").expect(200)).body;
+    expect(r.actuel).toMatchObject({ code: "RDEF", origine: "regie", parDefaut: true, jusqua: "2026-11-14T19:00:00.000+01:00" });
+    const v = (await appel("versions", { codes: ["AB12", "RDEF"] }).expect(200)).body;
+    expect(v.evenements).toEqual([{ code: "AB12", status: "unknown" }, expect.objectContaining({ code: "RDEF", origine: "regie", version: 3 })]);
+    expect((await appel("statut", { code: "AB12" }).expect(200)).body).toEqual({ status: "unknown" });
+    vi.useRealTimers();
   });
 
   it("borne non affectée : ni lieu ni événement ; clé fausse : 401", async () => {
@@ -126,7 +169,7 @@ describe("versions et installations", () => {
     const r = (await appel("versions", { codes: ["rdef", "RNOE", "RAUT", "RZZZ", "RBRO"] }).expect(200)).body;
     vi.useRealTimers();
     expect(r.evenements).toEqual([
-      { code: "RDEF", nom: null, parDefaut: true, version: 3, publieLe: "2026-11-10T09:00:00.000Z", status: "complete" },
+      { code: "RDEF", origine: "regie", nom: null, parDefaut: true, version: 3, publieLe: "2026-11-10T09:00:00.000Z", status: "complete" },
       expect.objectContaining({ code: "RNOE", version: 1, status: "complete" }),
       { code: "RAUT", status: "unknown" },
       { code: "RZZZ", status: "unknown" },
@@ -145,6 +188,17 @@ describe("versions et installations", () => {
     ]);
     await appel("installation", { code: "RHAL", version: 1, etat: "FINI" }).expect(400);
     expect(b.rejets).toHaveLength(1);
+  });
+
+  it("installation d'un code booth en version 0 : acceptée, rattachée au lieu si le créneau y est programmé", async () => {
+    b.booth = [booth("AB12", { debut: "2026-11-13" })];
+    await appel("installation", { code: "ab12", version: 0, etat: "INSTALLE", declencheur: "auto" }).expect(200);
+    await appel("installation", { code: "XX77", version: 0, etat: "ECHEC", message: "BadEventCode" }).expect(200);
+    vi.useRealTimers();
+    expect(b.installations).toEqual([
+      expect.objectContaining({ borneId: 1, configEvenementId: null, lieuId: 7, code: "AB12", version: 0, etat: "INSTALLE", declencheur: "AUTO" }),
+      expect.objectContaining({ borneId: 1, configEvenementId: null, lieuId: null, code: "XX77", version: 0, etat: "ECHEC", message: "BadEventCode" }),
+    ]);
   });
 });
 

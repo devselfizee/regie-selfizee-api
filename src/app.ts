@@ -40,6 +40,7 @@ import { historiqueRouter } from "./routes/historique.js";
 import { mediasLieuRouter, mediasRouter } from "./routes/medias.js";
 import { souvenirLieuRouter } from "./routes/souvenirLieu.js";
 import { configEvenementRouter } from "./routes/configEvenement.js";
+import { evenementsBoothRouter } from "./routes/evenementsBooth.js";
 import { listeEvenementsRouter } from "./routes/listeEvenements.js";
 import { exigerSuperAdmin } from "./lib/superAdmin.js";
 import { cadresEvenementRouter } from "./routes/cadresEvenement.js";
@@ -151,6 +152,8 @@ export function creerApp() {
   app.use("/api/lieux", accesLieuRouter);
   app.use("/api/lieux", evenementsLieuRouter);
   app.use("/api/lieux", configEvenementRouter);
+  // Créneaux d'événements booth programmés sur un lieu (avenant du 18/11/2026)
+  app.use("/api/lieux", evenementsBoothRouter);
   app.use("/api/lieux", cadresEvenementRouter);
   app.use("/api/lieux", illustrationsEvenementRouter);
   app.use("/api/illustrations-series", illustrationsSeriesRouter);
