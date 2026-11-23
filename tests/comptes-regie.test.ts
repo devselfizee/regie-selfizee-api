@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Request } from "express";
 import { realmDeLEmetteur } from "../src/middleware/auth.js";
 import { estAdminPlateforme, peutVoirTout, userCan } from "../src/middleware/permissions.js";
-import { droitsDuProfil, grantsRegie, libellesDe, profilsClientsAutorises, profilsInclus, viderCacheProfils } from "../src/permissions/droitsProfils.js";
+import { droitsDuProfil, grantsRegie, libellesDe, profilsClientsAutorises, viderCacheProfils } from "../src/permissions/droitsProfils.js";
 import { lieuxDuCompteRegie, perimetreLieux } from "../src/middleware/utilisateur.js";
 import { utilisateurSuperAdmin } from "../src/lib/superAdmin.js";
 import { sorteConnexion } from "../src/routes/connexion.js";
@@ -63,29 +63,31 @@ describe("droits d'un compte régie : refus par défaut", () => {
 describe("droits d'un profil de l'Admin Panel", () => {
   afterEach(() => viderCacheProfils());
 
-  it("lit les droits « regie » sous plusieurs formes, seulement les valeurs vraies", () => {
-    expect(grantsRegie({ app_key: "regie", grants: { "ventes.view": true, "paiements.view": false } })).toEqual({ "ventes.view": true });
-    expect(grantsRegie({ data: [{ app_key: "bornes", grants: { x: true } }, { app_key: "regie", grants: { "app.access": true } }] })).toEqual({ "app.access": true });
-    expect(grantsRegie({ apps: { regie: { "ventes.view": true } } })).toEqual({ "ventes.view": true });
-    expect(grantsRegie({ regie: { "ventes.view": true } })).toEqual({ "ventes.view": true });
+  // Forme confirmée par la plateforme le 23/11/2026 : data.direct (true | false) et data.inherited (listes de profils source)
+  const reponse = {
+    data: {
+      direct: { regie: { "app.access": true, "paiements.view": false }, bornes: { x: true } },
+      inherited: { regie: { "ventes.view": [{ id: 12, name: "Client – chiffres" }], "exports.view": [] }, bornes: { y: [{ id: 1, name: "?" }] } },
+    },
+  };
+
+  it("droits effectifs : vrais en direct ou présents en hérité, seulement l'app regie", () => {
+    expect(grantsRegie(reponse)).toEqual({ "app.access": true, "ventes.view": true });
+    // Profil inexistant : direct {} sans 404 → aucun droit ; réponses inattendues : aucun droit
+    expect(grantsRegie({ data: { direct: {}, inherited: {} } })).toEqual({});
+    expect(grantsRegie({ data: [] })).toEqual({});
     expect(grantsRegie(null)).toEqual({});
   });
 
-  it("profils inclus : ids ou objets", () => {
-    expect(profilsInclus({ data: [3, { id: 4 }, { child_id: 5 }, "6", -1] })).toEqual([3, 4, 5, 6]);
-    expect(profilsInclus({ profiles: [{ profile_id: 7 }] })).toEqual([7]);
-    expect(profilsInclus({})).toEqual([]);
-  });
-
-  it("additionne les profils inclus, sans boucler", async () => {
-    const reponses: Record<string, unknown> = {
-      "/api/permissions/profiles/1/permissions?app_key=regie": { app_key: "regie", grants: { "app.access": true } },
-      "/api/permissions/profiles/1/composition": [2],
-      "/api/permissions/profiles/2/permissions?app_key=regie": { app_key: "regie", grants: { "ventes.view": true } },
-      "/api/permissions/profiles/2/composition": [1],
+  it("lit le profil une fois (les hérités sont déjà calculés par le gateway) et garde en cache", async () => {
+    const appels: string[] = [];
+    const lire = async (c: string) => {
+      appels.push(c);
+      return reponse;
     };
-    const droits = await droitsDuProfil(1, async (c) => reponses[c] ?? []);
-    expect(droits).toEqual({ "app.access": true, "ventes.view": true });
+    expect(await droitsDuProfil(1, lire)).toEqual({ "app.access": true, "ventes.view": true });
+    expect(await droitsDuProfil(1, lire)).toEqual({ "app.access": true, "ventes.view": true });
+    expect(appels).toEqual(["/api/permissions/profiles/1/permissions"]);
   });
 
   it("droits illisibles : null (le compte n'a alors aucun droit)", async () => {

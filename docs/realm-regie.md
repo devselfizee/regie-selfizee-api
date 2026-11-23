@@ -72,18 +72,23 @@ Les comptes clients n'existent pas dans le realm `konitys` : le gateway ne peut 
 | Client authentication | on ; Service accounts : on ; Standard flow : off |
 | Rôles | aucun rôle d'écriture (surtout pas `admin`) |
 
-### 2.2 Question à la plateforme (bloquante pour la recette)
-Le gateway accepte-t-il le jeton de ce compte de service, en **lecture seule**, sur ces routes ?
+### 2.2 Lecture des droits sur le gateway (réponse de la plateforme du 23/11/2026)
+Le jeton du compte de service est **accepté** : sur ces routes le gateway vérifie seulement la signature (clés du realm
+`konitys`) et l'émetteur (`iss`). Aucun rôle n'est demandé.
 
 | Route | Usage par la Régie |
 |---|---|
 | `GET /api/permissions/profiles` | nom des profils (choix du profil d'un compte client) |
-| `GET /api/permissions/profiles/:id/permissions?app_key=regie` | droits `regie` du profil |
-| `GET /api/permissions/profiles/:id/composition` | profils inclus (leurs droits s'ajoutent) |
+| `GET /api/permissions/profiles/:id/permissions` | droits du profil, **hérités compris** (`?app_key=` est ignoré, on lit `data.direct.regie` et `data.inherited.regie`) |
+| `GET /api/permissions/profiles/:id/composition` | profils inclus directs `{ id, nom, alias }` (information seulement : les hérités sont déjà dans `/permissions`) |
 
-Si ce n'est pas le cas, il faut soit l'ouvrir pour ce compte de service, soit nous donner une route équivalente.
-Merci de nous confirmer aussi **la forme exacte des réponses** : la Régie accepte déjà `{ app_key, grants: { clé: true } }`
-(ou une liste de ces objets) pour les droits, et une liste d'ids (ou d'objets `{ id }`) pour la composition.
+Forme de `/permissions` : `{ data: { direct: { regie: { clé: true | false } }, inherited: { regie: { clé: [ { id, name } ] } } } }`.
+Un droit est effectif s'il vaut `true` dans `direct` ou s'il est présent dans `inherited`. `:id` est l'id numérique du
+profil ; un profil inexistant répond `direct: {}` (pas de 404), donc aucun droit.
+
+**Émetteur du jeton** : le jeton doit être demandé à l'**adresse publique** de Keycloak (celle de `KEYCLOAK_URL`, la même
+que le front), jamais au nom interne du conteneur : l'`iss` serait différent et le gateway répondrait 401. Il dure 5 min ;
+la Régie le garde en cache et le renouvelle 30 s avant l'expiration.
 
 **Sécurité** : si le gateway ne répond pas ou refuse, le compte client n'a **aucun droit** (refus par défaut). Les
 salariés gardent le comportement actuel.
