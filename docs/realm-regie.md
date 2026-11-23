@@ -33,7 +33,7 @@ Même serveur Keycloak que les salariés (`KEYCLOAK_URL`), nouveau realm.
 | Durées de session | comme `konitys` |
 
 ### 1.2 Client public `regie-selfizee` (dans le realm `regie`)
-Le front s'y connecte quand on choisit « Je suis client ».
+Le front s'y connecte quand l'e-mail tapé à l'accueil a un compte client actif.
 
 | Réglage | Valeur |
 |---|---|
@@ -124,14 +124,14 @@ compte client, par Selfizee comme par un client admin).
 ### Front (build)
 | Variable | Valeur |
 |---|---|
-| `NEXT_PUBLIC_KEYCLOAK_REGIE_REALM` | `regie` (vide : pas de bouton « Je suis client ») |
+| `NEXT_PUBLIC_KEYCLOAK_REGIE_REALM` | `regie` (vide : l'accueil envoie tout le monde vers la connexion salarié) |
 
 ---
 
 ## 4. Recette (DEV)
 1. *Entreprises* → nouvelle entreprise, deux lieux.
 2. Nouveau compte (profil « Client régie – admin »), e-mail d'invitation reçu, mot de passe choisi.
-3. Page d'accueil → « Je suis client » → connexion : seuls les deux lieux, seules les pages du profil.
+3. Page d'accueil → e-mail du client → connexion client : seuls les deux lieux, seules les pages du profil.
 4. Avec ce compte, ouvrir une autre app Konitys : refus (pas de session `konitys`).
 5. *Mon entreprise* → inviter un collègue limité à un lieu ; il ne voit que ce lieu.
 6. Désactiver l'entreprise : plus aucun de ses comptes n'entre.

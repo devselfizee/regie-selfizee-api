@@ -5,6 +5,7 @@ import { estAdminPlateforme, peutVoirTout, userCan } from "../src/middleware/per
 import { droitsDuProfil, grantsRegie, libellesDe, profilsClientsAutorises, profilsInclus, viderCacheProfils } from "../src/permissions/droitsProfils.js";
 import { lieuxDuCompteRegie, perimetreLieux } from "../src/middleware/utilisateur.js";
 import { utilisateurSuperAdmin } from "../src/lib/superAdmin.js";
+import { sorteConnexion } from "../src/routes/connexion.js";
 
 // Comptes clients de la Régie, realm « regie » (option 2 du 20/11/2026)
 
@@ -115,5 +116,14 @@ describe("périmètre d'un compte régie", () => {
     const u = { id: 1, email: "chef@selfizee.fr", nom: "", prenom: "", role: "ADMIN" as const, voitTousLieux: false, lieuIds: [] };
     expect(utilisateurSuperAdmin({ ...u, compte: "KONITYS" }, "chef@selfizee.fr")).toBe(true);
     expect(utilisateurSuperAdmin({ ...u, compte: "REGIE" }, "chef@selfizee.fr")).toBe(false);
+  });
+});
+
+describe("accueil : connexion d'après l'e-mail", () => {
+  it("client seulement avec un compte client actif, choix si l'adresse est aussi salariée", () => {
+    expect(sorteConnexion({ clientsActifs: true, client: true, salarie: false })).toBe("client");
+    expect(sorteConnexion({ clientsActifs: true, client: true, salarie: true })).toBe("choix");
+    expect(sorteConnexion({ clientsActifs: true, client: false, salarie: false })).toBe("salarie");
+    expect(sorteConnexion({ clientsActifs: false, client: true, salarie: false })).toBe("salarie");
   });
 });

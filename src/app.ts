@@ -3,6 +3,7 @@ import cors from "cors";
 import { authMiddleware, estCompteRegie } from "./middleware/auth.js";
 import { entreprisesRouter } from "./routes/entreprises.js";
 import { monEntrepriseRouter } from "./routes/monEntreprise.js";
+import { connexionRouter } from "./routes/connexion.js";
 import { ingestionRouter } from "./routes/ingestion.js";
 import { importsRouter } from "./routes/imports.js";
 import { referentielRouter } from "./routes/referentiel.js";
@@ -97,6 +98,14 @@ export function creerApp() {
     cors({ origin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? "*" }),
     express.json({ limit: "2kb" }),
     mesPhotosRouter
+  );
+
+  // Accueil du front : vers quelle connexion (salarié ou client) envoyer cet e-mail ; limité en fréquence
+  app.use(
+    "/public/v1/connexion",
+    cors({ origin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? "*" }),
+    express.json({ limit: "2kb" }),
+    connexionRouter
   );
 
   // Page souvenir (myevent.selfizee.fr) : séances et codes pour son serveur (secret partagé), visuels sur URL signée
