@@ -28,6 +28,7 @@ const GROUPES: Groupe[] = [
       { key: "pages.commissions.view", label: "Voir les commissions" },
       { key: "pages.paiements.view", label: "Voir les paiements" },
       { key: "pages.codes_remise.view", label: "Voir les codes de remise" },
+      { key: "pages.cartes_lieu.view", label: "Voir les cartes sans contact des lieux" },
       { key: "pages.rapprochement.view", label: "Voir le rapprochement" },
       { key: "pages.rentabilite.view", label: "Voir la rentabilité" },
       { key: "pages.utilisateurs.view", label: "Voir les utilisateurs" },
@@ -123,6 +124,8 @@ const GROUPES: Groupe[] = [
       { key: "rentabilite.edit", label: "Saisir le coût d'achat et l'amortissement des bornes" },
       { key: "codes_remise.view", label: "Voir les codes de remise" },
       { key: "codes_remise.edit", label: "Générer, désactiver et supprimer des codes de remise" },
+      { key: "cartes_lieu.view", label: "Voir les cartes sans contact des lieux", description: "UID, solde, plafonds et historique des cartes Mifare présentées aux bornes." },
+      { key: "cartes_lieu.edit", label: "Gérer les cartes sans contact des lieux", description: "Enregistrer une carte, la recharger ou en retirer du crédit, régler ses plafonds, la désactiver." },
     ],
   },
   {
@@ -167,7 +170,7 @@ const GROUPES: Groupe[] = [
 ];
 
 export function buildPermissionsSchema() {
-  return { app: APP_KEY, label: "Régie Selfizee", version: 5, groups: GROUPES };
+  return { app: APP_KEY, label: "Régie Selfizee", version: 6, groups: GROUPES };
 }
 
 /** Toutes les clés du schéma (contrôle des fautes de frappe dans les tests) */

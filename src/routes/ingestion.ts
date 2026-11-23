@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { utiliserCode, verifierCode } from "../codes/codes.js";
+import { annulerUtilisation, normaliserUid, utiliserCarte } from "../cartes/cartesLieu.js";
 import { asynchrone } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { cheminAbsolu, existe } from "../lib/stockage.js";
@@ -83,7 +84,7 @@ ingestionRouter.post(
 
 const corpsCode = z.object({ borne_id: z.string(), code: z.string().trim().min(1).max(20) });
 
-const invalide = async (req: BorneRequest, res: import("express").Response, err: z.ZodError, type: "CODES" | "CONFIG" = "CODES") => {
+const invalide = async (req: BorneRequest, res: import("express").Response, err: z.ZodError, type: "CODES" | "CONFIG" | "CARTES" = "CODES") => {
   const message = err.issues.map((i) => `${i.path.join(".") || "corps"} : ${i.message}`).join(" ; ");
   await journaliserRejet(req, type, "SCHEMA_INVALIDE", message, req.borne!.id);
   res.status(400).json({ error: "SCHEMA_INVALIDE", message });
@@ -111,6 +112,59 @@ ingestionRouter.post(
       .safeParse(req.body);
     if (!c.success) return invalide(req, res, c.error);
     res.json(await utiliserCode(req.borne!.id, c.data.code, c.data.nb, c.data.utilisation_id ?? null));
+  })
+);
+
+// ─── Cartes sans contact du lieu (Mifare, avenant du 23/11/2026, docs/avenant-cartes-lieu.md) ───
+// La borne rend l'UID lu par le terminal, la Régie décide. Réponse 200 avec ok à false quand la carte est refusée.
+
+const utilisationId = z.string().trim().min(1).max(128);
+
+// POST /ingest/v1/cartes/utiliser { borne_id, uid, type_carte, montant_centimes, nb, utilisation_id, session_code?,
+// evenement_code? } — vérifie et utilise la carte dans le même appel ; un renvoi du même utilisation_id ne débite pas.
+ingestionRouter.post(
+  "/cartes/utiliser",
+  authBorne("CARTES"),
+  asynchrone<BorneRequest>(async (req, res) => {
+    const c = z
+      .object({
+        borne_id: z.string(),
+        uid: z.string().transform((v, ctx) => normaliserUid(v) ?? (ctx.addIssue({ code: "custom", message: "UID hexadécimal de 8, 14 ou 20 caractères attendu" }), z.NEVER)),
+        type_carte: z.string().trim().max(2).nullable().optional(),
+        montant_centimes: z.number().int().min(0).max(1_000_000),
+        nb: z.number().int().min(1).max(100),
+        utilisation_id: utilisationId,
+        session_code: z.string().trim().max(32).nullable().optional(),
+        evenement_code: z.string().trim().max(16).nullable().optional(),
+      })
+      .safeParse(req.body);
+    if (!c.success) return invalide(req, res, c.error, "CARTES");
+    res.setHeader("Cache-Control", "no-store");
+    res.json(
+      await utiliserCarte(req.borne!.id, {
+        uid: c.data.uid,
+        typeCarte: c.data.type_carte || null,
+        montantCents: c.data.montant_centimes,
+        nb: c.data.nb,
+        utilisationId: c.data.utilisation_id,
+        sessionCode: c.data.session_code || null,
+        evenementCode: c.data.evenement_code?.toUpperCase() || null,
+      })
+    );
+  })
+);
+
+// POST /ingest/v1/cartes/annuler { borne_id, utilisation_id, raison } — rend le montant à la carte. Idempotente :
+// utilisation inconnue ou déjà annulée → { ok: true, annulee: false }, ce n'est pas une erreur.
+ingestionRouter.post(
+  "/cartes/annuler",
+  authBorne("CARTES"),
+  asynchrone<BorneRequest>(async (req, res) => {
+    const c = z
+      .object({ borne_id: z.string(), utilisation_id: utilisationId, raison: z.enum(["tirage_non_sorti", "sans_reponse", "reponse_tardive"]) })
+      .safeParse(req.body);
+    if (!c.success) return invalide(req, res, c.error, "CARTES");
+    res.json(await annulerUtilisation(req.borne!.id, c.data.utilisation_id, c.data.raison));
   })
 );
 

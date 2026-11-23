@@ -70,6 +70,8 @@ export interface TransactionJson {
   /** Code de remise servi pour la vente et utilisation_id de /codes/utiliser (avenant ventes n° 4, 13/11/2026) */
   code_remise?: string;
   code_utilisation_id?: string;
+  /** utilisation_id envoyé à /cartes/utiliser pour cette vente (carte sans contact du lieu, avenant du 23/11/2026) */
+  carte_utilisation_id?: string;
   produit: { code: string; libelle?: string; nb_tirages: number };
 }
 

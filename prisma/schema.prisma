@@ -66,6 +66,8 @@ model User {
   grillesTarifs    GrilleTarifs[]
   cartesTest       CarteTest[]
   lotsCodesRemise  LotCodesRemise[]
+  cartesLieuCreees CarteLieu[]             @relation("CarteLieuCreePar")
+  mouvementsCartes MouvementCarteLieu[]    @relation("MouvementCarteLieuPar")
 
   photosCles      LieuPhotoCles[]  @relation("PhotosClesAuteur")
   evenementsLieu  EvenementLieu[]  @relation("EvenementsLieuAuteur")
@@ -318,6 +320,8 @@ model Lieu {
   commentaires           CommentaireLieu[]
   lotsCodesRemise        LotCodesRemise[]
   utilisationsCodeRemise UtilisationCodeRemise[]
+  cartesLieu             CarteLieu[]
+  utilisationsCarteLieu  UtilisationCarteLieu[]
   grilleTarifs           GrilleTarifs?
   medias                 Media[]
   souvenirInscriptions   SouvenirInscription[]
@@ -526,6 +530,7 @@ model Borne {
 
   parcours               Parcours[]
   utilisationsCodeRemise UtilisationCodeRemise[]
+  utilisationsCarteLieu  UtilisationCarteLieu[]
   medias                 Media[]
   installationsEvenement InstallationEvenement[]
 
@@ -614,6 +619,7 @@ enum ImportType {
   CODES // codes de remise saisis sur la borne (journal des refus)
   MEDIAS // médias des séances envoyés par PikCloud (webhook de synchro, 04/11/2026)
   CONFIG // zip de l'événement demandé par la borne (journal des refus)
+  CARTES // cartes sans contact du lieu présentées à la borne (journal des refus, avenant du 23/11/2026)
 }
 
 enum ImportStatut {
@@ -684,6 +690,8 @@ model Transaction {
   codeRemise         String?       @map("code_remise") @db.VarChar(32)
   // utilisation_id envoyé à /codes/utiliser pour cette vente (avenant ventes n° 4) : la ligne d'utilisation exacte
   codeUtilisationId  String?       @map("code_utilisation_id") @db.VarChar(128)
+  // utilisation_id envoyé à /cartes/utiliser pour cette vente (carte sans contact du lieu, avenant du 23/11/2026)
+  carteUtilisationId String?       @map("carte_utilisation_id") @db.VarChar(128)
   // Payée avec une carte de test (CarteTest) : hors chiffres réels (agrégats, stats, commissions, exports)
   test               Boolean       @default(false)
 
@@ -1948,4 +1956,95 @@ model EvenementBooth {
 
   @@index([lieuId, dateDebut])
   @@map("evenements_booth")
+}
+
+// Cartes sans contact du lieu (Mifare), avenant du 23/11/2026 (docs/avenant-cartes-lieu.md) : la borne lit l'UID et la
+// Régie décide tout. Une carte débite un solde (DEBITE) ou offre les tirages (OFFERT, personnel, carte cadeau).
+enum EffetCarteLieu {
+  DEBITE
+  OFFERT
+}
+
+model CarteLieu {
+  id                 Int            @id @default(autoincrement())
+  // UID rendu par le terminal, hexadécimal majuscule (8 caractères pour 4 octets, 14 pour 7)
+  uid                String         @unique @db.VarChar(20)
+  // Lieu de la carte : refusée sur les bornes installées ailleurs
+  lieuId             Int            @map("lieu_id")
+  libelle            String?
+  effet              EffetCarteLieu
+  // Carte DEBITE : crédit restant ; modifié par les débits, les annulations et les mouvements saisis dans la Régie
+  soldeCents         Int            @default(0) @map("solde_cents")
+  // Plafonds par jour (heure de Paris), facultatifs : en euros pour DEBITE, en tirages pour OFFERT
+  plafondJourCents   Int?           @map("plafond_jour_cents")
+  plafondJourTirages Int?           @map("plafond_jour_tirages")
+  // Dernier jour de validité (inclus, heure de Paris)
+  expireLe           DateTime?      @map("expire_le") @db.Date
+  desactiveLe        DateTime?      @map("desactive_le") @db.Timestamptz(3)
+  notes              String?
+  creeParId          Int?           @map("cree_par_id")
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lieu         Lieu                   @relation(fields: [lieuId], references: [id])
+  creePar      User?                  @relation("CarteLieuCreePar", fields: [creeParId], references: [id], onDelete: SetNull)
+  utilisations UtilisationCarteLieu[]
+  mouvements   MouvementCarteLieu[]
+
+  @@index([lieuId])
+  @@map("cartes_lieu")
+}
+
+// Chaque présentation d'une carte à une borne (POST ingest/v1/cartes/utiliser), acceptée ou refusée. carteId vide :
+// carte inconnue (l'UID est gardé pour l'enregistrer), ou annulation reçue avant l'utilisation (ligne qui la bloque).
+model UtilisationCarteLieu {
+  id                 BigInt          @id @default(autoincrement())
+  carteId            Int?            @map("carte_id")
+  uid                String?         @db.VarChar(20)
+  typeCarte          String?         @map("type_carte") @db.VarChar(2)
+  borneId            Int             @map("borne_id")
+  lieuId             Int?            @map("lieu_id")
+  // Unique par présentation (borne) : un renvoi rend la première réponse sans débiter à nouveau
+  utilisationId      String          @map("utilisation_id") @db.VarChar(128)
+  montantCents       Int             @map("montant_cents")
+  nb                 Int
+  sessionCode        String?         @map("session_code") @db.VarChar(32)
+  evenementCode      String?         @map("evenement_code") @db.VarChar(16)
+  accepte            Boolean
+  effet              EffetCarteLieu?
+  montantDebiteCents Int             @default(0) @map("montant_debite_cents")
+  soldeApresCents    Int?            @map("solde_apres_cents")
+  // Refus : INCONNUE, DESACTIVEE, EXPIREE, LIEU, PLAFOND, SOLDE_INSUFFISANT, ANNULEE
+  raison             String?         @db.VarChar(32)
+  // Annulation par la borne (POST ingest/v1/cartes/annuler) : montant rendu à la carte
+  annuleeLe          DateTime?       @map("annulee_le") @db.Timestamptz(3)
+  annulationRaison   String?         @map("annulation_raison") @db.VarChar(32)
+  horodatage         DateTime        @default(now()) @db.Timestamptz(3)
+
+  carte CarteLieu? @relation(fields: [carteId], references: [id], onDelete: SetNull)
+  borne Borne      @relation(fields: [borneId], references: [id])
+  lieu  Lieu?      @relation(fields: [lieuId], references: [id], onDelete: SetNull)
+
+  @@unique([borneId, utilisationId])
+  @@index([carteId, horodatage])
+  @@index([uid])
+  @@map("utilisations_carte_lieu")
+}
+
+// Crédits et corrections du solde saisis dans la Régie (rechargement payé au lieu, geste commercial, erreur)
+model MouvementCarteLieu {
+  id              Int      @id @default(autoincrement())
+  carteId         Int      @map("carte_id")
+  // Signé : positif = crédit, négatif = retrait
+  montantCents    Int      @map("montant_cents")
+  soldeApresCents Int      @map("solde_apres_cents")
+  note            String?
+  parId           Int?     @map("par_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  carte CarteLieu @relation(fields: [carteId], references: [id], onDelete: Cascade)
+  par   User?     @relation("MouvementCarteLieuPar", fields: [parId], references: [id], onDelete: SetNull)
+
+  @@index([carteId, createdAt])
+  @@map("mouvements_carte_lieu")
 }

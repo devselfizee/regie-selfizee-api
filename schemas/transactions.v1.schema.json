@@ -238,6 +238,12 @@
           "minLength": 1,
           "maxLength": 128,
           "description": "utilisation_id envoyé à /codes/utiliser pour cette vente : rattache la vente à la ligne d'utilisation exacte. Jamais sans code_remise (avenant ventes n° 4)."
+        },
+        "carte_utilisation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "utilisation_id envoyé à /cartes/utiliser pour cette vente : la carte sans contact du lieu qui l'a payée (debite) ou offerte (offert), avenant du 23/11/2026."
         }
       },
       "dependentRequired": {

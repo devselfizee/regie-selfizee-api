@@ -111,6 +111,7 @@ export const completer = (
   si("pikcloudUuid", e.pikcloudUuid, c.t.pikcloud_uuid);
   si("codeRemise", e.codeRemise, c.t.code_remise ? normaliserCode(c.t.code_remise) : undefined);
   si("codeUtilisationId", e.codeUtilisationId, c.t.code_utilisation_id);
+  si("carteUtilisationId", e.carteUtilisationId, c.t.carte_utilisation_id);
   si("moduleId", e.moduleId, moduleId);
   si("produitLibelle", e.produitLibelle, c.t.produit.libelle);
   // Un moyen devenu connu rend la vente rapprochable (sauf si elle est déjà rapprochée)
@@ -316,6 +317,7 @@ export async function ingererLotTransactions(
         carteFin: c.t.carte_derniers_chiffres ?? c.t.carte_fin ?? null,
         codeRemise: c.t.code_remise ? normaliserCode(c.t.code_remise) : null,
         codeUtilisationId: c.t.code_utilisation_id ?? null,
+        carteUtilisationId: c.t.carte_utilisation_id ?? null,
         test: estTest(c.t.carte_derniers_chiffres ?? c.t.carte_fin),
         produitCode: c.t.produit.code,
         produitLibelle: c.t.produit.libelle ?? null,
