@@ -4,7 +4,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { APP_KEY } from "../permissions/schema.js";
 import { estCompteRegie } from "./auth.js";
-import { droitsDuProfil, libellesDe } from "../permissions/droitsProfils.js";
+import { droitsDuProfil, libellesDe, lireDroitsDuProfil, type RaisonDroitsNonLus } from "../permissions/droitsProfils.js";
 
 const CACHE_TTL_MS = 30_000;
 // Même passerelle que la photo, l'ID Hub et les notifications : une seule variable, KONITYS_GATEWAY_URL
@@ -77,6 +77,29 @@ async function moiRegie(req: Request): Promise<DroitsMoi> {
   const profilId = (req as Request & { utilisateur?: { profilId?: number | null } }).utilisateur?.profilId;
   const droits = profilId ? await droitsDuProfil(profilId) : null;
   return { apps: { [APP_KEY]: droits ?? {} }, enforcement: { globally_enabled: true }, profiles: profilId ? [profilId] : [] };
+}
+
+/** Pourquoi un compte client n'a pas accès à la Régie : affiché sur l'écran « Accès non accordé » */
+export interface DiagnosticAcces {
+  code: "SANS_PROFIL" | "PROFIL_SANS_ACCES" | RaisonDroitsNonLus;
+  profilId?: number;
+  /** Nombre de droits « regie » lus sur le profil (PROFIL_SANS_ACCES) */
+  nbDroits?: number;
+  detail?: string;
+}
+
+/** Diagnostic d'un compte client sans app.access ; null s'il a l'accès */
+export async function diagnosticAcces(req: Request): Promise<DiagnosticAcces | null> {
+  const profilId = (req as Request & { utilisateur?: { profilId?: number | null } }).utilisateur?.profilId ?? null;
+  if (sansKeycloak()) {
+    const cles = await clesAccordees(req);
+    return cles.includes("app.access") ? null : { code: "PROFIL_SANS_ACCES", profilId: profilId ?? undefined, nbDroits: cles.length, detail: "sans Keycloak : droits lus dans X-Dev-Droits" };
+  }
+  if (!profilId) return { code: "SANS_PROFIL" };
+  const lecture = await lireDroitsDuProfil(profilId);
+  if (!lecture.droits) return { code: lecture.raison, profilId, detail: lecture.detail };
+  if (lecture.droits["app.access"] === true) return null;
+  return { code: "PROFIL_SANS_ACCES", profilId, nbDroits: Object.values(lecture.droits).filter(Boolean).length };
 }
 
 /**

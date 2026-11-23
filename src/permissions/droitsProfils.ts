@@ -37,32 +37,43 @@ async function lireJson(chemin: string, jeton: string): Promise<unknown> {
   return r.json();
 }
 
+/** Pourquoi les droits d'un profil n'ont pas pu être lus (le compte n'a alors aucun droit) */
+export type RaisonDroitsNonLus = "GATEWAY_NON_CONFIGURE" | "JETON_NON_OBTENU" | "LECTURE_ECHOUEE";
+export type LectureDroits = { droits: Record<string, boolean>; raison?: undefined; detail?: undefined } | { droits: null; raison: RaisonDroitsNonLus; detail?: string };
+
 /**
- * Droits « regie » accordés par ce profil (hérités compris), ou null si on ne peut pas les lire : la Régie refuse
- * alors tout au compte. `lecteur` remplaçable pour les tests.
+ * Droits « regie » accordés par ce profil (hérités compris), ou la raison pour laquelle on ne peut pas les lire :
+ * la Régie refuse alors tout au compte, et l'écran « Accès non accordé » explique pourquoi. `lecteur` remplaçable
+ * pour les tests.
  */
-export async function droitsDuProfil(
+export async function lireDroitsDuProfil(
   profilId: number,
   lecteur?: (chemin: string) => Promise<unknown>,
   maintenant = Date.now()
-): Promise<Record<string, boolean> | null> {
+): Promise<LectureDroits> {
   const enCache = cache.get(profilId);
-  if (enCache && maintenant - enCache.at < TTL_MS) return enCache.droits;
+  if (enCache && maintenant - enCache.at < TTL_MS) return { droits: enCache.droits };
   let lire = lecteur;
   if (!lire) {
-    if (!GATEWAY_URL()) return null;
-    const jeton = await jetonService(serviceDroits());
-    if (!jeton) return null;
+    if (!GATEWAY_URL()) return { droits: null, raison: "GATEWAY_NON_CONFIGURE" };
+    const identifiants = serviceDroits();
+    const jeton = await jetonService(identifiants);
+    if (!jeton) return { droits: null, raison: "JETON_NON_OBTENU", detail: identifiants ? "Keycloak a refusé ou n'a pas répondu" : "KONITYS_DROITS_CLIENT_ID / _SECRET absents" };
     lire = (chemin) => lireJson(chemin, jeton);
   }
   try {
     const droits = grantsRegie(await lire(`/api/permissions/profiles/${profilId}/permissions`));
     cache.set(profilId, { at: maintenant, droits });
-    return droits;
+    return { droits };
   } catch (e) {
     console.warn(`[perms] droits du profil ${profilId} non lus (compte régie : aucun droit) :`, (e as Error).message);
-    return null;
+    return { droits: null, raison: "LECTURE_ECHOUEE", detail: (e as Error).message };
   }
+}
+
+/** Droits du profil, ou null si on ne peut pas les lire (voir lireDroitsDuProfil) */
+export async function droitsDuProfil(profilId: number, lecteur?: (chemin: string) => Promise<unknown>, maintenant = Date.now()): Promise<Record<string, boolean> | null> {
+  return (await lireDroitsDuProfil(profilId, lecteur, maintenant)).droits;
 }
 
 /** Libellés des profils (id → nom) lus avec le compte de service ; vide si indisponible */

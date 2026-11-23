@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Request } from "express";
 import { realmDeLEmetteur } from "../src/middleware/auth.js";
 import { estAdminPlateforme, peutVoirTout, userCan } from "../src/middleware/permissions.js";
-import { droitsDuProfil, grantsRegie, libellesDe, profilsClientsAutorises, viderCacheProfils } from "../src/permissions/droitsProfils.js";
+import { droitsDuProfil, grantsRegie, libellesDe, lireDroitsDuProfil, profilsClientsAutorises, viderCacheProfils } from "../src/permissions/droitsProfils.js";
 import { lieuxDuCompteRegie, perimetreLieux } from "../src/middleware/utilisateur.js";
 import { utilisateurSuperAdmin } from "../src/lib/superAdmin.js";
 import { sorteConnexion } from "../src/routes/connexion.js";
@@ -90,8 +90,9 @@ describe("droits d'un profil de l'Admin Panel", () => {
     expect(appels).toEqual(["/api/permissions/profiles/1/permissions"]);
   });
 
-  it("droits illisibles : null (le compte n'a alors aucun droit)", async () => {
+  it("droits illisibles : null (le compte n'a alors aucun droit), avec la raison pour l'écran de refus", async () => {
     expect(await droitsDuProfil(9, async () => Promise.reject(new Error("HTTP 401")))).toBeNull();
+    expect(await lireDroitsDuProfil(9, async () => Promise.reject(new Error("HTTP 401")))).toEqual({ droits: null, raison: "LECTURE_ECHOUEE", detail: "HTTP 401" });
   });
 
   it("noms des profils et profils autorisés pour les clients", () => {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
-import { requirePerm, libellesProfils, clesAccordees } from "../middleware/permissions.js";
+import { requirePerm, libellesProfils, clesAccordees, diagnosticAcces } from "../middleware/permissions.js";
 import { utilisateurSuperAdmin } from "../lib/superAdmin.js";
 import { estCompteRegie } from "../middleware/auth.js";
 import { creerCompteClient } from "../comptes/comptesRegie.js";
@@ -28,7 +28,7 @@ utilisateursRouter.get(
       compte: regie ? "REGIE" : "KONITYS",
       lieux,
       superAdmin: utilisateurSuperAdmin(u),
-      ...(regie ? { entreprise, droits: await clesAccordees(req) } : {}),
+      ...(regie ? { entreprise, droits: await clesAccordees(req), diagnostic: await diagnosticAcces(req) } : {}),
     });
   })
 );
