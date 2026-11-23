@@ -3,6 +3,8 @@
 // applique le réglage « contrôle d'accès », fail-open — sauf le périmètre des données (peutVoirTout, mode fermé).
 import type { NextFunction, Request, Response } from "express";
 import { APP_KEY } from "../permissions/schema.js";
+import { estCompteRegie } from "./auth.js";
+import { droitsDuProfil, libellesDe } from "../permissions/droitsProfils.js";
 
 const CACHE_TTL_MS = 30_000;
 // Même passerelle que la photo, l'ID Hub et les notifications : une seule variable, KONITYS_GATEWAY_URL
@@ -34,6 +36,8 @@ const cache = new Map<string, { at: number; data: DroitsMoi }>(); // jeton → d
  */
 function moiSimule(req: Request): DroitsMoi | undefined {
   const h = req.header("x-dev-droits");
+  // Compte client de la Régie (X-Dev-Compte: regie) : refus par défaut, jamais admin
+  if (estCompteRegie(req)) return { apps: { [APP_KEY]: Object.fromEntries((h ?? "").split(",").map((k) => k.trim()).filter((k) => k && k !== "*").map((k) => [k, true])) }, enforcement: { globally_enabled: true } };
   if (h === undefined) return undefined;
   if (h.trim() === "*") return { is_admin: true };
   const cles = h.split(",").map((k) => k.trim()).filter(Boolean);
@@ -62,6 +66,34 @@ export async function getMe(token: string): Promise<DroitsMoi | null> {
   const data = await chargerMoi(token);
   if (data) cache.set(token, { at: now, data });
   return data;
+}
+
+/**
+ * Droits d'un compte client de la Régie (realm « regie ») : ceux du profil de l'Admin Panel attribué au compte
+ * (users.profil_id), lus par la Régie avec son compte de service. Le gateway ne connaît pas ces comptes : pas de
+ * /me. Refus par défaut : sans profil ou sans réponse, aucun droit ; jamais admin ; contrôle toujours actif.
+ */
+async function moiRegie(req: Request): Promise<DroitsMoi> {
+  const profilId = (req as Request & { utilisateur?: { profilId?: number | null } }).utilisateur?.profilId;
+  const droits = profilId ? await droitsDuProfil(profilId) : null;
+  return { apps: { [APP_KEY]: droits ?? {} }, enforcement: { globally_enabled: true }, profiles: profilId ? [profilId] : [] };
+}
+
+/**
+ * Droits de la requête : salarié → /me du gateway (null s'il ne répond pas : fail-open) ; compte régie → son profil
+ * (jamais null : refus par défaut).
+ */
+async function moiDe(req: Request): Promise<{ me: DroitsMoi | null; ouvert: boolean }> {
+  if (estCompteRegie(req)) return { me: await moiRegie(req), ouvert: false };
+  const token = tokenOf(req);
+  const me = await getMe(token);
+  return { me, ouvert: me === null && !!token };
+}
+
+/** Clés accordées à un compte régie (pour le front, qui n'a pas le SDK du gateway) */
+export async function clesAccordees(req: Request): Promise<string[]> {
+  const me = sansKeycloak() ? moiSimule(req) : await moiRegie(req);
+  return Object.entries(me?.apps?.[APP_KEY] ?? {}).filter(([, v]) => v === true).map(([k]) => k).sort();
 }
 
 export function tokenOf(req: Request): string {
@@ -97,9 +129,8 @@ export function requirePerm(permKey: string) {
       if (!s || canForApp(s, APP_KEY, permKey)) return next();
       return res.status(403).json(REFUS);
     }
-    const token = tokenOf(req);
-    const me = await getMe(token);
-    if (me === null && token) return next(); // gateway injoignable → fail-open
+    const { me, ouvert } = await moiDe(req);
+    if (ouvert) return next(); // gateway injoignable → fail-open (salariés seulement)
     if (canForApp(me, APP_KEY, permKey)) return next();
     console.log(`[perms] ${APP_KEY}:${permKey} → REFUS (user=${email(req)})`);
     return res.status(403).json(REFUS);
@@ -114,9 +145,8 @@ export function requireAnyPerm(...permKeys: string[]) {
       if (!s || permKeys.some((k) => canForApp(s, APP_KEY, k))) return next();
       return res.status(403).json(REFUS);
     }
-    const token = tokenOf(req);
-    const me = await getMe(token);
-    if (me === null && token) return next();
+    const { me, ouvert } = await moiDe(req);
+    if (ouvert) return next();
     if (permKeys.some((k) => canForApp(me, APP_KEY, k))) return next();
     console.log(`[perms] ${APP_KEY}:[${permKeys.join("|")}] → REFUS (user=${email(req)})`);
     return res.status(403).json(REFUS);
@@ -129,14 +159,15 @@ export async function userCan(req: Request, permKey: string): Promise<boolean> {
     const s = moiSimule(req);
     return !s || canForApp(s, APP_KEY, permKey);
   }
-  const token = tokenOf(req);
-  const me = await getMe(token);
-  if (me === null && token) return true;
+  const { me, ouvert } = await moiDe(req);
+  if (ouvert) return true;
   return canForApp(me, APP_KEY, permKey);
 }
 
 /** Périmètre (3.8) : vrai seulement si le gateway a répondu ET (admin OU droit accordé). Jamais de fail-open. */
 export async function peutVoirTout(req: Request, permKey: string): Promise<boolean> {
+  // Un compte régie ne voit jamais « tous » les lieux : seulement ceux de son entreprise qui lui sont ouverts
+  if (estCompteRegie(req)) return false;
   if (sansKeycloak()) {
     const s = moiSimule(req);
     return !s || droitPerimetre(s, permKey);
@@ -158,12 +189,13 @@ export async function estAdminPlateforme(req: Request): Promise<boolean> {
     const s = moiSimule(req);
     return s ? !!s.is_admin : true;
   }
+  if (estCompteRegie(req)) return false;
   return !!(await getMe(tokenOf(req)))?.is_admin;
 }
 
 /** Profils et statut admin de l'utilisateur connecté, d'après /me ; null si le gateway n'a pas répondu (rien à relever) */
 export async function profilsDuJeton(req: Request): Promise<{ profils: number[]; admin: boolean } | null> {
-  if (sansKeycloak()) return null;
+  if (sansKeycloak() || estCompteRegie(req)) return null;
   const me = await getMe(tokenOf(req));
   if (!me) return null;
   return { profils: [...new Set((me.profiles ?? []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b), admin: !!me.is_admin };
@@ -177,10 +209,7 @@ export async function libellesProfils(req: Request): Promise<Record<number, stri
   try {
     const r = await fetch(`${gateway}/api/permissions/profiles`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) });
     if (!r.ok) return {};
-    const corps = (await r.json()) as { data?: unknown } | unknown[];
-    const liste = (Array.isArray(corps) ? corps : Array.isArray((corps as { data?: unknown }).data) ? (corps as { data: unknown[] }).data : []) as Record<string, unknown>[];
-    const nom = (p: Record<string, unknown>) => [p.libelle, p.label, p.nom, p.name, p.titre].find((v) => typeof v === "string" && v.trim()) as string | undefined;
-    return Object.fromEntries(liste.filter((p) => Number.isInteger(Number(p.id)) && nom(p)).map((p) => [Number(p.id), nom(p)!]));
+    return libellesDe(await r.json());
   } catch {
     return {};
   }

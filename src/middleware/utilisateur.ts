@@ -11,12 +11,23 @@ export interface UtilisateurRequest extends AuthRequest {
    * `role` n'autorise plus rien (colonne gardée, plus mise à jour). `voitTousLieux` : droit lieux.view_any (mode fermé).
    * `lieuIds` : les lieux auxquels un client a accès (page Utilisateurs) ; son périmètre sans lieux.view_any.
    */
-  utilisateur?: Pick<User, "id" | "email" | "nom" | "prenom" | "role"> & { voitTousLieux: boolean; lieuIds: number[] };
+  utilisateur?: Pick<User, "id" | "email" | "nom" | "prenom" | "role"> & {
+    voitTousLieux: boolean;
+    lieuIds: number[];
+    /** KONITYS : salarié ; REGIE : client de la Régie (realm « regie »), limité aux lieux de son entreprise */
+    compte?: User["compte"];
+    entrepriseId?: number | null;
+    /** Compte régie : profil de l'Admin Panel qui fait ses droits */
+    profilId?: number | null;
+  };
 }
 
 export const authDesactivee = () => !process.env.KEYCLOAK_URL && process.env.NODE_ENV !== "production";
 
-const champs = { id: true, email: true, nom: true, prenom: true, telephone: true, role: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true, profilsHub: true, adminPlateforme: true, accesLieux: { select: { lieuId: true } } } as const;
+const champs = {
+  id: true, email: true, nom: true, prenom: true, telephone: true, role: true, isActive: true, keycloakSub: true, photoVerifieeLe: true, plateformeUserId: true,
+  profilsHub: true, adminPlateforme: true, accesLieux: { select: { lieuId: true } }, compte: true, entrepriseId: true, profilId: true,
+} as const;
 
 /** L'utilisateur de la requête : ses lieux (accès client) à plat, et son périmètre */
 const avecPerimetre = <U extends { accesLieux?: { lieuId: number }[] }>(u: U, voitTousLieux: boolean) => {
@@ -111,7 +122,7 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
       if (!email) {
         // Utilisateur réel en base : les actions tracées (corrections, contrats) y font référence
         const dev = await prisma.user.upsert({
-          where: { email: "dev@local" },
+          where: { compte_email: { compte: "KONITYS", email: "dev@local" } },
           update: {},
           create: { email: "dev@local", nom: "Développeur", prenom: "", role: "ADMIN" },
           select: champs,
@@ -119,12 +130,15 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
         req.utilisateur = avecPerimetre(dev, true);
         return next();
       }
-      const u = await prisma.user.findUnique({ where: { email }, select: champs });
+      if (req.realm === "regie") return await compteRegie(req, res, next, email);
+      const u = await prisma.user.findUnique({ where: { compte_email: { compte: "KONITYS", email } }, select: champs });
       if (!u?.isActive) return res.status(403).json({ error: "ACCES_NON_ACCORDE" });
       // Périmètre comme avec Keycloak : « tous » sans X-Dev-Droits, sinon selon lieux.view_any (droits simulés)
       req.utilisateur = avecPerimetre(u, await peutVoirTout(req, "lieux.view_any"));
       return next();
     }
+
+    if (req.realm === "regie") return await compteRegie(req, res, next);
 
     const sub = req.user?.sub;
     // Sans le scope "email" sur le client Keycloak, le jeton n'a pas de champ email :
@@ -133,11 +147,11 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
     const email = (req.user?.email ?? (identifiant?.includes("@") ? identifiant : undefined))?.toLowerCase();
     if (!sub) return res.status(401).json({ error: "Token invalide" });
 
-    let u = await prisma.user.findUnique({ where: { keycloakSub: sub }, select: champs });
+    let u = await prisma.user.findUnique({ where: { compte_keycloakSub: { compte: "KONITYS", keycloakSub: sub } }, select: champs });
 
     // Première connexion : rattachement par e-mail à un utilisateur ajouté par un admin, sinon création
     if (!u && email) {
-      const parEmail = await prisma.user.findUnique({ where: { email }, select: champs });
+      const parEmail = await prisma.user.findUnique({ where: { compte_email: { compte: "KONITYS", email } }, select: champs });
       if (parEmail && !parEmail.keycloakSub) {
         u = await prisma.user.update({ where: { id: parEmail.id }, data: { keycloakSub: sub }, select: champs });
       } else if (!parEmail) {
@@ -189,6 +203,52 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
 }
 
 /**
+ * Lieux ouverts à un compte régie : ceux cochés pour lui parmi les lieux de son entreprise ; aucun coché = tous les
+ * lieux de l'entreprise. Un lieu retiré de l'entreprise n'est plus visible, même s'il reste coché.
+ */
+export function lieuxDuCompteRegie(cochés: number[], lieuxEntreprise: number[]): number[] {
+  const entreprise = new Set(lieuxEntreprise);
+  return cochés.length ? cochés.filter((id) => entreprise.has(id)) : [...entreprise];
+}
+
+const REFUS_REGIE = {
+  error: "ACCES_NON_ACCORDE",
+  message: "Votre compte client n'a pas (ou plus) accès à la Régie. Contactez l'administrateur de votre entreprise ou Selfizee.",
+};
+
+/**
+ * Compte client de la Régie (realm « regie », option 2 du 20/11/2026). Jamais créé à la connexion : seulement les
+ * comptes invités depuis la Régie (entreprise ou client admin). Rattaché par e-mail à sa première connexion. Pas de
+ * photo, de profils ni de notifications de la plateforme : le gateway ne connaît pas ces comptes.
+ */
+async function compteRegie(req: UtilisateurRequest, res: Response, next: NextFunction, emailDev?: string) {
+  const sub = req.user?.sub;
+  const identifiant = req.user?.preferred_username;
+  const email = (emailDev ?? req.user?.email ?? (identifiant?.includes("@") ? identifiant : undefined))?.toLowerCase();
+  const select = { ...champs, entreprise: { select: { actif: true, lieux: { where: { supprimeLe: null }, select: { id: true } } } } } as const;
+  let u = sub ? await prisma.user.findUnique({ where: { compte_keycloakSub: { compte: "REGIE", keycloakSub: sub } }, select }) : null;
+  if (!u && email) {
+    u = await prisma.user.findUnique({ where: { compte_email: { compte: "REGIE", email } }, select });
+    if (u && sub && !u.keycloakSub) u = await prisma.user.update({ where: { id: u.id }, data: { keycloakSub: sub }, select });
+    else if (u && sub && u.keycloakSub !== sub) u = null; // e-mail déjà rattaché à un autre compte Keycloak
+  }
+  if (!u || !u.isActive || !u.entreprise?.actif) {
+    console.warn(`Accès client refusé à ${email ?? "(pas d'e-mail)"} : ${!u ? "compte inconnu" : !u.isActive ? "compte désactivé" : "entreprise inactive ou absente"}`);
+    return res.status(403).json({ ...REFUS_REGIE, email });
+  }
+  if (!emailDev) {
+    const identite = identiteKeycloak(req.user);
+    if ((Object.keys(identite) as (keyof typeof identite)[]).some((k) => u![k] !== identite[k])) {
+      await prisma.user.update({ where: { id: u.id }, data: identite });
+      Object.assign(u, identite);
+    }
+  }
+  const { entreprise, accesLieux, ...reste } = u;
+  req.utilisateur = { ...reste, voitTousLieux: false, lieuIds: lieuxDuCompteRegie(accesLieux.map((a) => a.lieuId), entreprise.lieux.map((l) => l.id)) };
+  next();
+}
+
+/**
  * Périmètre des lieux visibles par l'utilisateur (droits lieux.view_any / lieux.view_own, 3.8) :
  * null = tous ; sinon « les siens » : les lieux auxquels il a accès (client, un ou plusieurs lieux rattachés
  * dans la page Utilisateurs) s'il en a, sinon ceux dont il est le commercial.
@@ -196,6 +256,8 @@ export async function utilisateurCourant(req: UtilisateurRequest, res: Response,
 export function perimetreLieux(u: UtilisateurRequest["utilisateur"]): { commercialId?: number; lieuIds?: number[] } | null {
   if (!u) throw new HttpError(401, "NON_AUTHENTIFIE");
   if (u.voitTousLieux) return null;
+  // Compte régie : ses lieux seulement, même s'il n'en a aucun (jamais « ceux dont il est le commercial »)
+  if (u.compte === "REGIE") return { lieuIds: u.lieuIds };
   return u.lieuIds.length ? { lieuIds: u.lieuIds } : { commercialId: u.id };
 }
 

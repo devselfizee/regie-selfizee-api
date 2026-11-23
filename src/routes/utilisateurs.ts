@@ -3,8 +3,10 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
-import { requirePerm, libellesProfils } from "../middleware/permissions.js";
-import { estSuperAdmin } from "../lib/superAdmin.js";
+import { requirePerm, libellesProfils, clesAccordees } from "../middleware/permissions.js";
+import { utilisateurSuperAdmin } from "../lib/superAdmin.js";
+import { estCompteRegie } from "../middleware/auth.js";
+import { creerCompteClient } from "../comptes/comptesRegie.js";
 
 export const utilisateursRouter = Router();
 
@@ -17,8 +19,17 @@ utilisateursRouter.get(
     const lieux = u.lieuIds.length
       ? await prisma.lieu.findMany({ where: { id: { in: u.lieuIds }, supprimeLe: null }, select: { id: true, enseigne: true }, orderBy: { enseigne: "asc" } })
       : [];
-    // superAdmin : e-mail dans ADMIN_EMAILS, seul à pouvoir supprimer un lieu ou une borne
-    res.json({ ...u, lieux, superAdmin: estSuperAdmin(u.email) });
+    // Compte client (realm « regie ») : son entreprise, et ses droits (le front n'a pas le SDK du gateway pour lui)
+    const regie = estCompteRegie(req);
+    const entreprise = regie && u.entrepriseId ? await prisma.entreprise.findUnique({ where: { id: u.entrepriseId }, select: { id: true, nom: true } }) : null;
+    // superAdmin : e-mail dans ADMIN_EMAILS (salarié), seul à pouvoir supprimer un lieu ou une borne
+    res.json({
+      ...u,
+      compte: regie ? "REGIE" : "KONITYS",
+      lieux,
+      superAdmin: utilisateurSuperAdmin(u),
+      ...(regie ? { entreprise, droits: await clesAccordees(req) } : {}),
+    });
   })
 );
 
@@ -42,7 +53,8 @@ utilisateursRouter.get(
   requirePerm("utilisateurs.manage"),
   asynchrone(async (req, res) => {
     const [users, libelles] = await Promise.all([
-      prisma.user.findMany({ orderBy: [{ isActive: "desc" }, { nom: "asc" }], select }),
+      // Salariés et anciens clients Konitys ; les comptes clients de la Régie sont dans leur entreprise
+      prisma.user.findMany({ where: { compte: "KONITYS" }, orderBy: [{ isActive: "desc" }, { nom: "asc" }], select }),
       libellesProfils(req),
     ]);
     res.json(
@@ -92,7 +104,7 @@ utilisateursRouter.patch(
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const id = Number(req.params.id);
     const { lieuIds, ...patch } = z.object({ ...base, isActive: z.boolean().optional(), alertesSms: z.boolean().optional(), alertesEmail: z.boolean().optional() }).parse(req.body);
-    await prisma.user.findUniqueOrThrow({ where: { id }, select: { id: true } });
+    await prisma.user.findFirstOrThrow({ where: { id, compte: "KONITYS" }, select: { id: true } });
 
     // Éviter de se couper soi-même l'accès
     if (id === req.utilisateur?.id && patch.isActive === false) {
@@ -107,5 +119,33 @@ utilisateursRouter.patch(
       select,
     });
     res.json(presenter(u));
+  })
+);
+
+// POST /api/utilisateurs/:id/passer-client — un ancien client Konitys (realm konitys, avec des lieux) devient un compte
+// client de la Régie : compte créé dans l'entreprise avec les mêmes lieux (rattachés à l'entreprise s'ils n'en ont
+// pas), invitation envoyée, ancien compte désactivé. Option 2 du 20/11/2026.
+utilisateursRouter.post(
+  "/:id/passer-client",
+  requirePerm("utilisateurs.manage"),
+  requirePerm("entreprises.manage"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const id = Number(req.params.id);
+    const d = z.object({ entrepriseId: z.number().int().positive(), profilId: z.number().int().positive() }).parse(req.body);
+    const ancien = await prisma.user.findFirst({
+      where: { id, compte: "KONITYS" },
+      select: { id: true, email: true, nom: true, prenom: true, accesLieux: { select: { lieu: { select: { id: true, enseigne: true, entrepriseId: true } } } } },
+    });
+    if (!ancien) throw new HttpError(404, "INTROUVABLE");
+    if (id === req.utilisateur?.id) throw new HttpError(400, "AUTO_RETRAIT", "Vous ne pouvez pas convertir votre propre compte.");
+    const lieux = ancien.accesLieux.map((a) => a.lieu);
+    const ailleurs = lieux.find((l) => l.entrepriseId && l.entrepriseId !== d.entrepriseId);
+    if (ailleurs) throw new HttpError(409, "LIEU_AUTRE_ENTREPRISE", `${ailleurs.enseigne} appartient déjà à une autre entreprise.`);
+    await prisma.lieu.updateMany({ where: { id: { in: lieux.map((l) => l.id) }, entrepriseId: null }, data: { entrepriseId: d.entrepriseId } });
+    // Le nom tient lieu d'e-mail tant que la personne ne s'est jamais connectée : on ne le recopie pas
+    const nom = ancien.nom && ancien.nom !== ancien.email ? ancien.nom : ancien.email.split("@")[0];
+    const compteId = await creerCompteClient(d.entrepriseId, { email: ancien.email, prenom: ancien.prenom || "-", nom, profilId: d.profilId, lieuIds: lieux.map((l) => l.id) });
+    await prisma.user.update({ where: { id }, data: { isActive: false } });
+    res.status(201).json({ id: compteId });
   })
 );

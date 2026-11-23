@@ -108,7 +108,7 @@ describe("commercial limité à ses lieux (lieux.view_own sans lieux.view_any)",
   });
 
   it("crée un lieu dont il devient le commercial, sans pouvoir l'attribuer à un autre (lieux.commercial_edit)", async () => {
-    const bobId = (await prisma.user.findUniqueOrThrow({ where: { email: "bob@test.fr" } })).id;
+    const bobId = (await prisma.user.findFirstOrThrow({ where: { email: "bob@test.fr" } })).id;
     const res = await alice.post("/api/lieux", { raisonSociale: "N", enseigne: "Nouveau", typeLieuId: typeId, commercialId: bobId }).expect(201);
     const lieu = await prisma.lieu.findUniqueOrThrow({ where: { id: res.body.id } });
     expect(lieu.commercialId).not.toBe(bobId);
@@ -149,7 +149,7 @@ describe("partenaire (son lieu, en lecture)", () => {
 
 describe("client : un ou plusieurs lieux (demande du 17/11)", () => {
   it("voit ses lieux et leur chiffre, pas les autres ; la liste se règle dans Utilisateurs", async () => {
-    const gerant = await prisma.user.findUniqueOrThrow({ where: { email: "camping@test.fr" } });
+    const gerant = await prisma.user.findFirstOrThrow({ where: { email: "camping@test.fr" } });
     await admin.patch(`/api/utilisateurs/${gerant.id}`, { lieuIds: [camping, bar] }).expect(200);
     const lieux = (await part.get("/api/lieux").expect(200)).body;
     expect(lieux.map((l: { id: number }) => l.id).sort()).toEqual([camping, bar].sort());
@@ -212,7 +212,7 @@ describe("administration des utilisateurs", () => {
   });
 
   it("empêche de désactiver son propre compte", async () => {
-    const moi = await prisma.user.findUniqueOrThrow({ where: { email: "admin@test.fr" } });
+    const moi = await prisma.user.findFirstOrThrow({ where: { email: "admin@test.fr" } });
     const res = await admin.patch(`/api/utilisateurs/${moi.id}`, { isActive: false }).expect(400);
     expect(res.body.error).toBe("AUTO_RETRAIT");
   });

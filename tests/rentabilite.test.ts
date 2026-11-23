@@ -91,7 +91,7 @@ describe("rentabilité par borne", () => {
     await prisma.user.create({ data: { email: "tech@t.fr", nom: "T", prenom: "", role: "TECHNICIEN" } });
     const tech = (r: request.Test) => r.set("X-Dev-Utilisateur", "tech@t.fr");
     const i = (await tech(api.post(`/api/bornes/${b}/interventions`)).send({ date: "2026-10-02T09:00:00+02:00", motif: "Nettoyage" }).expect(201)).body;
-    const technicien = await prisma.user.findUniqueOrThrow({ where: { email: "tech@t.fr" } });
+    const technicien = await prisma.user.findFirstOrThrow({ where: { email: "tech@t.fr" } });
     expect(i.technicienId).toBe(technicien.id);
     await tech(api.post(`/api/bornes/${b}/couts`)).send({ date: "2026-10-02", categorie: "DEPLACEMENT", montantCents: 4000 }).expect(201);
     await tech(api.get("/api/rentabilite")).expect(403);
@@ -108,7 +108,7 @@ describe("rentabilité par borne", () => {
     expect(r.cases[0].stats.margeNette).toMatchObject({ n: 1, mediane: attendu });
 
     await prisma.user.create({ data: { email: "com@t.fr", nom: "C", prenom: "", role: "COMMERCIAL" } });
-    await prisma.lieu.update({ where: { id: lieuId }, data: { commercial: { connect: { email: "com@t.fr" } } } });
+    await prisma.lieu.update({ where: { id: lieuId }, data: { commercial: { connect: { compte_email: { compte: "KONITYS", email: "com@t.fr" } } } } });
     const vuParCommercial = (await api.get("/api/stats/segments?du=2026-09-01&au=2026-09-30&x=typeLieu").set("X-Dev-Utilisateur", "com@t.fr").expect(200)).body;
     expect(vuParCommercial.lieux[0].margeNette).toBeNull();
   });

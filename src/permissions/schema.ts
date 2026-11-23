@@ -34,6 +34,8 @@ const GROUPES: Groupe[] = [
       { key: "pages.parametres.view", label: "Voir les paramètres" },
       { key: "pages.apporteurs.view", label: "Voir la page des apporteurs d'affaires" },
       { key: "pages.mes_apports.view", label: "Voir « Mes apports » (tableau de bord d'un apporteur d'affaires)" },
+      { key: "pages.entreprises.view", label: "Voir les entreprises clientes (comptes clients de la Régie)" },
+      { key: "pages.mon_entreprise.view", label: "Voir « Mon entreprise » (client admin : les comptes de son entreprise)" },
     ],
   },
   {
@@ -147,6 +149,16 @@ const GROUPES: Groupe[] = [
     label: "Administration",
     permissions: [
       { key: "utilisateurs.manage", label: "Gérer les utilisateurs de la Régie", description: "Ajout, lieux d'un client, SMS des alertes, désactivation." },
+      {
+        key: "entreprises.manage",
+        label: "Gérer les entreprises clientes et leurs comptes",
+        description: "Créer une entreprise, lui rattacher des lieux, créer et inviter ses comptes clients (connexion séparée des salariés), choisir leur profil.",
+      },
+      {
+        key: "comptes_entreprise.manage",
+        label: "Gérer les comptes de son entreprise (client admin)",
+        description: "Pour un client : inviter des collègues, choisir leur profil et les lieux qu'ils voient, parmi ceux de son entreprise.",
+      },
       { key: "referentiel.edit", label: "Modifier les listes et réglages (paramètres)" },
       { key: "cartes_test.edit", label: "Gérer les cartes bancaires de test" },
       { key: "demo.manage", label: "Charger ou effacer les données de démonstration" },
@@ -155,7 +167,7 @@ const GROUPES: Groupe[] = [
 ];
 
 export function buildPermissionsSchema() {
-  return { app: APP_KEY, label: "Régie Selfizee", version: 4, groups: GROUPES };
+  return { app: APP_KEY, label: "Régie Selfizee", version: 5, groups: GROUPES };
 }
 
 /** Toutes les clés du schéma (contrôle des fautes de frappe dans les tests) */

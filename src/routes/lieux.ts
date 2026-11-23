@@ -8,7 +8,7 @@ import { perimetreLieux, verifierAccesLieu, type UtilisateurRequest } from "../m
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { geocoder } from "../lib/geocodage.js";
 import { telephoneE164 } from "../lib/telephone.js";
-import { estSuperAdmin } from "../lib/superAdmin.js";
+import { utilisateurSuperAdmin } from "../lib/superAdmin.js";
 import { zoneScolaire } from "../calendrier/calendrier.js";
 import { requirePerm, userCan, estAdminPlateforme } from "../middleware/permissions.js";
 
@@ -208,7 +208,7 @@ const hhmm = (d: Date) => d.toISOString().slice(11, 16);
 lieuxRouter.delete(
   "/:id",
   asynchrone<UtilisateurRequest>(async (req, res) => {
-    if (!estSuperAdmin(req.utilisateur?.email)) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer un lieu.");
+    if (!utilisateurSuperAdmin(req.utilisateur)) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer un lieu.");
     await prisma.lieu.update({ where: { id: Number(req.params.id), supprimeLe: null }, data: { supprimeLe: new Date(), supprimeParId: req.utilisateur!.id } });
     res.status(204).end();
   })
@@ -227,6 +227,8 @@ lieuxRouter.get(
         emplacementZone: true, eclairage: true, origineLead: true,
         concurrent: { select: { id: true, nom: true, typeMateriel: true } },
         commercial: { select: { id: true, nom: true, prenom: true } },
+        // Entreprise cliente propriétaire (comptes clients de la Régie)
+        entreprise: { select: { id: true, nom: true } },
         contacts: { orderBy: { id: "asc" } },
         clienteles: { include: { refValeur: true } },
         horaires: { orderBy: [{ jourSemaine: "asc" }, { ouverture: "asc" }] },

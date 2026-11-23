@@ -1,6 +1,8 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
-import { authMiddleware } from "./middleware/auth.js";
+import { authMiddleware, estCompteRegie } from "./middleware/auth.js";
+import { entreprisesRouter } from "./routes/entreprises.js";
+import { monEntrepriseRouter } from "./routes/monEntreprise.js";
 import { ingestionRouter } from "./routes/ingestion.js";
 import { importsRouter } from "./routes/imports.js";
 import { referentielRouter } from "./routes/referentiel.js";
@@ -135,11 +137,17 @@ export function creerApp() {
     // Relevés monétiques envoyés en texte CSV dans le JSON : quelques Mo
     express.json({ limit: "20mb" }),
     authMiddleware,
-    utilisateurCourant
+    utilisateurCourant,
+    // Compte client de la Régie (realm « regie ») : refus par défaut ; il lui faut au moins l'accès à l'application
+    // (sauf /utilisateurs/moi, qui dit au front qui il est et ce qu'il peut faire)
+    (req: Request, res: Response, next: NextFunction) => (estCompteRegie(req) && req.path !== "/utilisateurs/moi" ? requirePerm("app.access")(req, res, next) : next())
   );
   // Droits Konitys (docs/PERMISSIONS_APP_INTEGRATION.md) : lecture du domaine au montage, une clé par route d'écriture
   // dans les routeurs. Les lieux, stats et exports filtrent en plus selon le périmètre (lieux.view_any / view_own).
   app.use("/api/utilisateurs", utilisateursRouter);
+  // Entreprises clientes et leurs comptes (option 2 du 20/11/2026)
+  app.use("/api/entreprises", entreprisesRouter);
+  app.use("/api/mon-entreprise", monEntrepriseRouter);
   app.use("/api/referentiel", referentielRouter);
   // Périmètre (commercial, partenaire) : toute route d'un lieu, y compris ses événements, ses cadres et son studio,
   // répond 404 hors des lieux de l'utilisateur. Les routeurs ne vérifiaient que le droit, pas le lieu.

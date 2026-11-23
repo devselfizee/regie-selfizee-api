@@ -17,8 +17,13 @@ export function estSuperAdmin(email: string | null | undefined, valeur = process
     .includes(e);
 }
 
+/** Super admin : un salarié (realm konitys) dont l'e-mail est dans ADMIN_EMAILS ; jamais un compte client de la Régie */
+export function utilisateurSuperAdmin(u: UtilisateurRequest["utilisateur"], valeur = process.env.ADMIN_EMAILS): boolean {
+  return !!u && u.compte !== "REGIE" && estSuperAdmin(u.email, valeur);
+}
+
 /** Route réservée aux super admins : 403 pour tous les autres, admins Konitys compris */
 export const exigerSuperAdmin: RequestHandler = (req, _res, next) => {
-  if (!estSuperAdmin((req as UtilisateurRequest).utilisateur?.email)) return next(new HttpError(403, "SUPER_ADMIN_REQUIS", "Réservé aux super admins."));
+  if (!utilisateurSuperAdmin((req as UtilisateurRequest).utilisateur)) return next(new HttpError(403, "SUPER_ADMIN_REQUIS", "Réservé aux super admins."));
   next();
 };

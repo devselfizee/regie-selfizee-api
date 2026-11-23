@@ -7,7 +7,7 @@ import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { genererCle } from "../lib/cleBorne.js";
 import { reattribuerTransactions } from "../ingestion/reattribution.js";
 import { requirePerm } from "../middleware/permissions.js";
-import { estSuperAdmin } from "../lib/superAdmin.js";
+import { utilisateurSuperAdmin } from "../lib/superAdmin.js";
 
 export const bornesRouter = Router();
 export const affectationsRouter = Router();
@@ -77,7 +77,7 @@ bornesRouter.get(
 bornesRouter.delete(
   "/:id",
   asynchrone<UtilisateurRequest>(async (req, res) => {
-    if (!estSuperAdmin(req.utilisateur?.email)) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer une borne.");
+    if (!utilisateurSuperAdmin(req.utilisateur)) throw new HttpError(403, "SUPER_ADMIN_REQUIS", "Seul un super admin peut supprimer une borne.");
     await prisma.borne.update({ where: { id: Number(req.params.id), supprimeLe: null }, data: { supprimeLe: new Date(), supprimeParId: req.utilisateur!.id } });
     res.status(204).end();
   })

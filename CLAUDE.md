@@ -17,6 +17,7 @@ Règles :
 - Ne JAMAIS supprimer ni renommer une clé du schéma (droits orphelins en base). Fonction retirée → la clé reste ; signale-le.
 - Jamais de contrôle codé en dur (`if (user.id === 141)`, test d'e-mail…). Les admins Keycloak passent déjà partout.
 - Jamais de rôle propre à l'app, ni de rôle Keycloak autre que `admin` pour décider d'un accès : un droit du schéma à la place.
+- Comptes clients de la Régie (realm Keycloak `regie`, option 2 du 20/11/2026, `docs/realm-regie.md`) : leurs droits viennent aussi de l'Admin Panel, via le profil attribué au compte (`users.profil_id`, choisi dans la Régie). Ils n'ont pas de `/me` : `requirePerm` / `userCan` lisent les droits du profil et **refusent par défaut** (jamais de fail-open, jamais admin, jamais « tous les lieux »). Ne jamais tester un compte client autrement que par ces helpers ; `estCompteRegie(req)` sert seulement à choisir le chemin.
 - Périmètre des données (« les siens » / « tous ») : toujours via `peutVoirTout()` (mode fermé), jamais via `userCan()` ni via un rôle.
 - Si l'API et le front sont dans deux dépôts : le schéma vit dans l'API ; une nouvelle page ou un nouveau bouton du front y ajoute sa clé.
 - Ne jamais afficher la clé d'un droit à l'utilisateur ; le message de refus reste neutre.
