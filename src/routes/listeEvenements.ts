@@ -29,13 +29,15 @@ listeEvenementsRouter.get(
     const telecharges = new Map(
       (await prisma.media.groupBy({ by: ["configEvenementId"], where: { configEvenementId: { not: null }, mediaStatut: "TELECHARGE" }, _count: { _all: true } })).map((m) => [m.configEvenementId!, m._count._all])
     );
-    // Séances dont la photo téléchargée retrouve sa vente (photo_uuid du JSON PikCloud = pikcloud_uuid envoyé par la borne)
+    // Séances dont la photo téléchargée retrouve sa vente (photo_uuid du JSON PikCloud = pikcloud_uuid envoyé par la borne).
+    // medias.photo_uuid est en texte depuis le 16/11 (empreintes de 64 hexadécimaux) et transactions.pikcloud_uuid encore
+    // en uuid : comparaison en texte (uuid::text est canonique, en minuscules, comme les photo_uuid enregistrés).
     const relies = new Map(
       (
         await prisma.$queryRaw<{ id: number; n: bigint }[]>`
           SELECT m.config_evenement_id id, count(DISTINCT m.photo_uuid) n FROM medias m
           WHERE m.config_evenement_id IS NOT NULL AND m.media_statut = 'TELECHARGE'
-            AND EXISTS (SELECT 1 FROM transactions t WHERE t.pikcloud_uuid = m.photo_uuid)
+            AND EXISTS (SELECT 1 FROM transactions t WHERE t.pikcloud_uuid::text = m.photo_uuid)
           GROUP BY m.config_evenement_id`
       ).map((r) => [r.id, Number(r.n)])
     );
