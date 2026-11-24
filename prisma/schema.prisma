@@ -1975,10 +1975,12 @@ model CarteLieu {
   effet              EffetCarteLieu
   // Carte DEBITE : crédit restant ; modifié par les débits, les annulations et les mouvements saisis dans la Régie
   soldeCents         Int            @default(0) @map("solde_cents")
-  // Plafonds par jour (heure de Paris), facultatifs : en euros pour DEBITE, en tirages pour OFFERT
+  // Plafonds par nuit d'exploitation (6 h à 6 h, heure de Paris), facultatifs : en euros pour DEBITE, en tirages
+  // pour OFFERT, et en nombre d'utilisations pour les deux
   plafondJourCents   Int?           @map("plafond_jour_cents")
   plafondJourTirages Int?           @map("plafond_jour_tirages")
-  // Dernier jour de validité (inclus, heure de Paris)
+  plafondJourUtilisations Int?      @map("plafond_jour_utilisations")
+  // Dernière nuit de validité (incluse : jusqu'à 6 h le lendemain, heure de Paris)
   expireLe           DateTime?      @map("expire_le") @db.Date
   desactiveLe        DateTime?      @map("desactive_le") @db.Timestamptz(3)
   notes              String?

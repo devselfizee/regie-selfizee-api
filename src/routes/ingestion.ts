@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { utiliserCode, verifierCode } from "../codes/codes.js";
-import { annulerUtilisation, normaliserUid, utiliserCarte } from "../cartes/cartesLieu.js";
+import { annulerUtilisation, normaliserUid, noterRefus, RAISONS_ANNULATION, tropDeRefus, utiliserCarte } from "../cartes/cartesLieu.js";
 import { asynchrone } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { cheminAbsolu, existe } from "../lib/stockage.js";
@@ -131,7 +131,8 @@ ingestionRouter.post(
         borne_id: z.string(),
         uid: z.string().transform((v, ctx) => normaliserUid(v) ?? (ctx.addIssue({ code: "custom", message: "UID hexadécimal de 8, 14 ou 20 caractères attendu" }), z.NEVER)),
         type_carte: z.string().trim().max(2).nullable().optional(),
-        montant_centimes: z.number().int().min(0).max(1_000_000),
+        // 0 refusé (avenant v2, § 2 bis) ; le plafond suit les tarifs, contrôlé par utiliserCarte
+        montant_centimes: z.number().int().min(1).max(1_000_000),
         nb: z.number().int().min(1).max(100),
         utilisation_id: utilisationId,
         session_code: z.string().trim().max(32).nullable().optional(),
@@ -140,28 +141,31 @@ ingestionRouter.post(
       .safeParse(req.body);
     if (!c.success) return invalide(req, res, c.error, "CARTES");
     res.setHeader("Cache-Control", "no-store");
-    res.json(
-      await utiliserCarte(req.borne!.id, {
-        uid: c.data.uid,
-        typeCarte: c.data.type_carte || null,
-        montantCents: c.data.montant_centimes,
-        nb: c.data.nb,
-        utilisationId: c.data.utilisation_id,
-        sessionCode: c.data.session_code || null,
-        evenementCode: c.data.evenement_code?.toUpperCase() || null,
-      })
-    );
+    // Trop de refus en une minute sur cette borne : 429, la borne refuse la carte sans second essai
+    if (tropDeRefus(req.borne!.id)) return res.status(429).json({ ok: false, code: "TROP_DE_REFUS", message: "Trop d'essais refusés, réessayer dans une minute" });
+    const r = await utiliserCarte(req.borne!.id, {
+      uid: c.data.uid,
+      typeCarte: c.data.type_carte || null,
+      montantCents: c.data.montant_centimes,
+      nb: c.data.nb,
+      utilisationId: c.data.utilisation_id,
+      sessionCode: c.data.session_code || null,
+      evenementCode: c.data.evenement_code?.toUpperCase() || null,
+    });
+    if (!r.ok) noterRefus(req.borne!.id);
+    res.json(r);
   })
 );
 
-// POST /ingest/v1/cartes/annuler { borne_id, utilisation_id, raison } — rend le montant à la carte. Idempotente :
-// utilisation inconnue ou déjà annulée → { ok: true, annulee: false }, ce n'est pas une erreur.
+// POST /ingest/v1/cartes/annuler { borne_id, utilisation_id, raison, le? } — rend le montant à la carte. Idempotente :
+// utilisation inconnue, déjà annulée ou de plus de 7 jours → { ok: true, annulee: false }, ce n'est pas une erreur.
+// « le » (heure de la décision de la borne) est accepté mais pas gardé : l'heure de réception fait foi.
 ingestionRouter.post(
   "/cartes/annuler",
   authBorne("CARTES"),
   asynchrone<BorneRequest>(async (req, res) => {
     const c = z
-      .object({ borne_id: z.string(), utilisation_id: utilisationId, raison: z.enum(["tirage_non_sorti", "sans_reponse", "reponse_tardive"]) })
+      .object({ borne_id: z.string(), utilisation_id: utilisationId, raison: z.enum(RAISONS_ANNULATION), le: z.string().max(40).nullable().optional() })
       .safeParse(req.body);
     if (!c.success) return invalide(req, res, c.error, "CARTES");
     res.json(await annulerUtilisation(req.borne!.id, c.data.utilisation_id, c.data.raison));

@@ -3,16 +3,16 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asynchrone, HttpError } from "../lib/http.js";
-import { jourEtHeureLocaux } from "../lib/temps.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
 import { requirePerm } from "../middleware/permissions.js";
-import { normaliserUid } from "../cartes/cartesLieu.js";
+import { normaliserUid, nuitExploitation } from "../cartes/cartesLieu.js";
 
 // Cartes sans contact du lieu (Mifare, avenant du 23/11/2026, docs/avenant-cartes-lieu.md) : enregistrement des cartes,
 // solde, plafonds, désactivation, historique des utilisations et des mouvements. Monté sous /api/cartes-lieu.
 export const cartesLieuRouter = Router();
 
-const aujourdhui = () => jourEtHeureLocaux(new Date()).jour;
+// Nuit d'exploitation en cours (6 h à 6 h, heure de Paris) : plafonds et validité, comme pour les bornes
+const aujourdhui = () => nuitExploitation(new Date());
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
 type Etat = "active" | "expiree" | "desactivee";
@@ -84,6 +84,7 @@ const ligne = (c: Prisma.CarteLieuGetPayload<{ include: { lieu: { select: { id: 
   soldeCents: c.soldeCents,
   plafondJourCents: c.plafondJourCents,
   plafondJourTirages: c.plafondJourTirages,
+  plafondJourUtilisations: c.plafondJourUtilisations,
   expireLe: c.expireLe ? ymd(c.expireLe) : null,
   desactiveLe: c.desactiveLe,
   notes: c.notes,
@@ -126,6 +127,7 @@ const corpsCarte = z.object({
   effet: z.enum(["DEBITE", "OFFERT"]),
   plafondJourCents: z.number().int().min(1).max(1_000_000).nullable().optional(),
   plafondJourTirages: z.number().int().min(1).max(1000).nullable().optional(),
+  plafondJourUtilisations: z.number().int().min(1).max(1000).nullable().optional(),
   expireLe: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
 });
@@ -137,6 +139,7 @@ const donnees = (d: z.infer<typeof corpsCarte>) => ({
   effet: d.effet,
   plafondJourCents: d.effet === "DEBITE" ? (d.plafondJourCents ?? null) : null,
   plafondJourTirages: d.effet === "OFFERT" ? (d.plafondJourTirages ?? null) : null,
+  plafondJourUtilisations: d.plafondJourUtilisations ?? null,
   expireLe: d.expireLe ? new Date(`${d.expireLe}T00:00:00Z`) : null,
   notes: d.notes || null,
 });
@@ -187,10 +190,10 @@ cartesLieuRouter.get(
         include: { borne: { select: { id: true, identifiant: true } }, lieu: { select: { id: true, enseigne: true } } },
       }),
       prisma.mouvementCarteLieu.findMany({ where: { carteId: id }, orderBy: { createdAt: "desc" }, take: 200, include: { par: { select: { prenom: true, nom: true } } } }),
-      prisma.$queryRaw<{ cents: bigint | null; tirages: bigint | null }[]>`
-        SELECT sum(montant_debite_cents) cents, sum(nb) tirages FROM utilisations_carte_lieu
+      prisma.$queryRaw<{ cents: bigint | null; tirages: bigint | null; utilisations: bigint }[]>`
+        SELECT sum(montant_debite_cents) cents, sum(nb) tirages, count(*) utilisations FROM utilisations_carte_lieu
         WHERE carte_id = ${id} AND accepte AND annulee_le IS NULL
-          AND (horodatage AT TIME ZONE 'Europe/Paris')::date = ${ymd(aujourdhui())}::date`,
+          AND ((horodatage AT TIME ZONE 'Europe/Paris') - interval '6 hours')::date = ${ymd(aujourdhui())}::date`,
     ]);
     // Ventes envoyées par la borne avec carte_utilisation_id
     const ventes = utilisations.length
@@ -202,7 +205,7 @@ cartesLieuRouter.get(
     res.json({
       ...ligne(c),
       creePar: c.creePar,
-      aujourdhui: { cents: Number(jour[0]?.cents ?? 0), tirages: Number(jour[0]?.tirages ?? 0) },
+      aujourdhui: { cents: Number(jour[0]?.cents ?? 0), tirages: Number(jour[0]?.tirages ?? 0), utilisations: Number(jour[0]?.utilisations ?? 0) },
       utilisations: utilisations.map((u) => ({
         id: String(u.id),
         horodatage: u.horodatage,

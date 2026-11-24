@@ -2,18 +2,22 @@ import { Prisma, type CarteLieu, type EffetCarteLieu, type UtilisationCarteLieu 
 import { prisma } from "../lib/prisma.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { lieuActuel } from "../codes/codes.js";
+import { HttpError } from "../lib/http.js";
+import { avecGrilleDuLieu, reglagesSchema } from "../config-evenement/reglages.js";
+import { grilleEffective, type Grille } from "../tarifs/grille.js";
 
 // Cartes sans contact du lieu (Mifare), avenant du 23/11/2026 (docs/avenant-cartes-lieu.md). La borne rend l'UID lu
 // par le terminal ; la Régie décide tout : carte connue, lieu, validité, plafond du jour, solde. Refus par défaut :
 // sans réponse de la Régie, la borne refuse la carte.
 
-export type RaisonRefusCarte = "INCONNUE" | "DESACTIVEE" | "EXPIREE" | "LIEU" | "PLAFOND" | "SOLDE_INSUFFISANT" | "ANNULEE";
+export type RaisonRefusCarte = "INCONNUE" | "DESACTIVEE" | "EXPIREE" | "LIEU" | "MONTANT" | "PLAFOND" | "SOLDE_INSUFFISANT" | "ANNULEE";
 
 export const MESSAGES_REFUS_CARTE: Record<RaisonRefusCarte, string> = {
   INCONNUE: "Carte inconnue",
   DESACTIVEE: "Carte désactivée",
   EXPIREE: "Carte expirée",
   LIEU: "Carte d'un autre lieu",
+  MONTANT: "Montant hors des tarifs",
   PLAFOND: "Plafond du jour atteint",
   SOLDE_INSUFFISANT: "Solde insuffisant",
   ANNULEE: "Utilisation annulée par la borne",
@@ -25,26 +29,43 @@ export function normaliserUid(v: string): string | null {
   return /^[0-9A-F]{8}$|^[0-9A-F]{14}$|^[0-9A-F]{20}$/.test(u) ? u : null;
 }
 
+/**
+ * Nuit d'exploitation (avenant v2, § 2 bis) : de 6 h à 6 h, heure de Paris. Une soirée qui passe minuit reste sur la
+ * nuit du jour où elle a commencé. Rendue à minuit UTC, comme une colonne @db.Date. La requête des plafonds
+ * (utiliserCarte) reprend ces 6 heures.
+ */
+export const nuitExploitation = (instant: Date) => jourEtHeureLocaux(new Date(instant.getTime() - 6 * 3_600_000)).jour;
+
+/**
+ * Montant le plus haut qu'une commande de nb tirages peut coûter avec ces grilles : nb fois le prix unitaire le plus
+ * haut (premier palier, la grille étant dégressive, ou « +1 »). La borne ne vide pas une carte avec un montant inventé.
+ */
+export const montantMaxCommande = (grilles: Pick<Grille, "paliers" | "plusUnCents">[], nb: number) =>
+  nb * Math.max(0, ...grilles.flatMap((g) => [g.paliers[0]?.prixCents ?? 0, g.plusUnCents]));
+
 /** Les 4 derniers caractères d'un UID (journal, écrans où l'UID complet n'est pas utile) */
 export const finUid = (uid: string) => `…${uid.slice(-4)}`;
 
-type CarteDecision = Pick<CarteLieu, "lieuId" | "effet" | "soldeCents" | "plafondJourCents" | "plafondJourTirages" | "expireLe" | "desactiveLe">;
+type CarteDecision = Pick<CarteLieu, "lieuId" | "effet" | "soldeCents" | "plafondJourCents" | "plafondJourTirages" | "plafondJourUtilisations" | "expireLe" | "desactiveLe">;
 
 export type Decision = { ok: true; effet: EffetCarteLieu; debitCents: number } | { ok: false; raison: RaisonRefusCarte };
 
 /**
- * Décision pour une présentation de carte. `dejaJour` : ce que la carte a déjà servi aujourd'hui (heure de Paris),
- * utilisations acceptées et non annulées. Pas de débit partiel : un solde trop court est un refus.
+ * Décision pour une présentation de carte. `dejaJour` : ce que la carte a déjà servi pendant la nuit d'exploitation
+ * en cours, utilisations acceptées et non annulées. `montantMax` : plus haut montant possible d'après les tarifs (null :
+ * pas de contrôle). Pas de débit partiel : un solde trop court est un refus.
  */
 export function deciderCarte(
   carte: CarteDecision | null,
-  c: { lieuBorne: number | null; montantCents: number; nb: number; dejaJour: { cents: number; tirages: number }; maintenant?: Date }
+  c: { lieuBorne: number | null; montantCents: number; nb: number; dejaJour: { cents: number; tirages: number; utilisations: number }; montantMax?: number | null; maintenant?: Date }
 ): Decision {
   if (!carte) return { ok: false, raison: "INCONNUE" };
   if (carte.desactiveLe) return { ok: false, raison: "DESACTIVEE" };
-  if (carte.expireLe && jourEtHeureLocaux(c.maintenant ?? new Date()).jour.getTime() > carte.expireLe.getTime()) return { ok: false, raison: "EXPIREE" };
+  if (carte.expireLe && nuitExploitation(c.maintenant ?? new Date()).getTime() > carte.expireLe.getTime()) return { ok: false, raison: "EXPIREE" };
   // Borne en stock (aucun lieu) ou installée ailleurs
   if (carte.lieuId !== c.lieuBorne) return { ok: false, raison: "LIEU" };
+  if (c.montantMax != null && c.montantCents > c.montantMax) return { ok: false, raison: "MONTANT" };
+  if (carte.plafondJourUtilisations != null && c.dejaJour.utilisations + 1 > carte.plafondJourUtilisations) return { ok: false, raison: "PLAFOND" };
   if (carte.effet === "OFFERT") {
     if (carte.plafondJourTirages != null && c.dejaJour.tirages + c.nb > carte.plafondJourTirages) return { ok: false, raison: "PLAFOND" };
     return { ok: true, effet: "OFFERT", debitCents: 0 };
@@ -54,7 +75,7 @@ export function deciderCarte(
   return { ok: true, effet: "DEBITE", debitCents: c.montantCents };
 }
 
-type UtilisationReponse = Pick<UtilisationCarteLieu, "accepte" | "effet" | "montantDebiteCents" | "soldeApresCents" | "raison" | "annuleeLe">;
+type UtilisationReponse = Pick<UtilisationCarteLieu, "accepte" | "effet" | "montantDebiteCents" | "raison" | "annuleeLe">;
 
 /**
  * Réponse à la borne pour une utilisation enregistrée : la même au premier appel et à un renvoi (même utilisation_id).
@@ -65,12 +86,31 @@ export function reponseUtilisation(u: UtilisationReponse, libelle: string | null
     return {
       ok: true as const,
       effet: u.effet === "OFFERT" ? ("offert" as const) : ("debite" as const),
-      ...(u.effet === "DEBITE" ? { montant_debite_centimes: u.montantDebiteCents, solde_restant_centimes: u.soldeApresCents ?? 0 } : {}),
+      // Pas de solde restant : la borne n'en a pas besoin et il aiderait à sonder une carte (avenant v2, § 2 bis)
+      ...(u.effet === "DEBITE" ? { montant_debite_centimes: u.montantDebiteCents } : {}),
       ...(libelle ? { libelle } : {}),
     };
   }
   const raison = (u.annuleeLe ? "ANNULEE" : (u.raison ?? "INCONNUE")) as RaisonRefusCarte;
   return { ok: false as const, raison, message: MESSAGES_REFUS_CARTE[raison] ?? "Carte non acceptée" };
+}
+
+/**
+ * Limite d'essais par borne (avenant v2, § 2 bis) : au-delà de 5 refus en une minute, la route répond 429, pour
+ * qu'elle ne serve pas à énumérer les UID de 4 octets. Gardé en mémoire : une seule instance de l'API.
+ */
+const refusRecents = new Map<number, number[]>();
+export const LIMITE_REFUS_MINUTE = 5;
+
+export function tropDeRefus(borneId: number, maintenant = Date.now()): boolean {
+  const l = (refusRecents.get(borneId) ?? []).filter((t) => maintenant - t < 60_000);
+  if (l.length) refusRecents.set(borneId, l);
+  else refusRecents.delete(borneId);
+  return l.length >= LIMITE_REFUS_MINUTE;
+}
+
+export function noterRefus(borneId: number, maintenant = Date.now()) {
+  refusRecents.set(borneId, [...(refusRecents.get(borneId) ?? []), maintenant]);
 }
 
 export interface DemandeUtilisation {
@@ -83,15 +123,39 @@ export interface DemandeUtilisation {
   evenementCode: string | null;
 }
 
+/**
+ * Renvoi d'un utilisation_id déjà connu : il doit porter la même carte et la même commande, sinon 400 (avenant v2,
+ * § 3.1). Une ligne posée par une annulation arrivée la première n'a pas d'UID : rien à comparer.
+ */
+export function verifierRenvoi(u: Pick<UtilisationCarteLieu, "uid" | "montantCents" | "nb">, d: Pick<DemandeUtilisation, "uid" | "montantCents" | "nb">) {
+  if (u.uid == null) return;
+  if (u.uid !== d.uid || u.montantCents !== d.montantCents || u.nb !== d.nb)
+    throw new HttpError(400, "UTILISATION_DIFFERENTE", "Cet utilisation_id a déjà servi pour une autre carte ou une autre commande");
+}
+
 const estDoublon = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 /** Une utilisation déjà enregistrée pour cette borne, avec le libellé actuel de sa carte */
-async function rejouer(borneId: number, utilisationId: string) {
+async function rejouer(borneId: number, d: DemandeUtilisation) {
   const u = await prisma.utilisationCarteLieu.findUnique({
-    where: { borneId_utilisationId: { borneId, utilisationId } },
+    where: { borneId_utilisationId: { borneId, utilisationId: d.utilisationId } },
     include: { carte: { select: { libelle: true } } },
   });
-  return u ? reponseUtilisation(u, u.carte?.libelle ?? null) : null;
+  if (!u) return null;
+  verifierRenvoi(u, d);
+  return reponseUtilisation(u, u.carte?.libelle ?? null);
+}
+
+/** Montant maximal d'une commande sur cette borne : tarifs du lieu et, s'il est de ce lieu, de l'événement annoncé */
+async function montantMax(lieuId: number, evenementCode: string | null, nb: number) {
+  const lieu = (await grilleEffective(lieuId)).grille;
+  const grilles: Pick<Grille, "paliers" | "plusUnCents">[] = [lieu];
+  if (evenementCode) {
+    const e = await prisma.configEvenement.findFirst({ where: { code: evenementCode, lieuId }, select: { reglages: true } });
+    const r = e ? reglagesSchema.safeParse(e.reglages) : null;
+    if (r?.success) grilles.push(avecGrilleDuLieu(r.data, lieu).tarifs);
+  }
+  return montantMaxCommande(grilles, nb);
 }
 
 /**
@@ -100,28 +164,33 @@ async function rejouer(borneId: number, utilisationId: string) {
  * la première réponse sans rien débiter.
  */
 export async function utiliserCarte(borneId: number, d: DemandeUtilisation, maintenant = new Date()) {
-  const premiere = await rejouer(borneId, d.utilisationId);
+  const premiere = await rejouer(borneId, d);
   if (premiere) return premiere;
   const lieuBorne = await lieuActuel(borneId, maintenant);
+  const max = lieuBorne != null ? await montantMax(lieuBorne, d.evenementCode, d.nb) : null;
   try {
     return await prisma.$transaction(async (db) => {
       const [verrou] = await db.$queryRaw<{ id: number }[]>`SELECT id FROM cartes_lieu WHERE uid = ${d.uid} FOR UPDATE`;
       const carte = verrou ? await db.carteLieu.findUnique({ where: { id: verrou.id } }) : null;
       // Même utilisation arrivée pendant l'attente du verrou (renvoi de la borne) : la première réponse
       const deja = await db.utilisationCarteLieu.findUnique({ where: { borneId_utilisationId: { borneId, utilisationId: d.utilisationId } } });
-      if (deja) return reponseUtilisation(deja, carte?.libelle ?? null);
-
-      let dejaJour = { cents: 0, tirages: 0 };
-      if (carte && (carte.plafondJourCents != null || carte.plafondJourTirages != null)) {
-        const jour = jourEtHeureLocaux(maintenant).jour.toISOString().slice(0, 10);
-        const [s] = await db.$queryRaw<{ cents: bigint | null; tirages: bigint | null }[]>`
-          SELECT sum(montant_debite_cents) cents, sum(nb) tirages FROM utilisations_carte_lieu
-          WHERE carte_id = ${carte.id} AND accepte AND annulee_le IS NULL
-            AND (horodatage AT TIME ZONE 'Europe/Paris')::date = ${jour}::date`;
-        dejaJour = { cents: Number(s?.cents ?? 0), tirages: Number(s?.tirages ?? 0) };
+      if (deja) {
+        verifierRenvoi(deja, d);
+        return reponseUtilisation(deja, carte?.libelle ?? null);
       }
 
-      const decision = deciderCarte(carte, { lieuBorne, montantCents: d.montantCents, nb: d.nb, dejaJour, maintenant });
+      let dejaJour = { cents: 0, tirages: 0, utilisations: 0 };
+      if (carte && (carte.plafondJourCents != null || carte.plafondJourTirages != null || carte.plafondJourUtilisations != null)) {
+        // Nuit d'exploitation en cours : de 6 h à 6 h, heure de Paris (nuitExploitation)
+        const nuit = nuitExploitation(maintenant).toISOString().slice(0, 10);
+        const [s] = await db.$queryRaw<{ cents: bigint | null; tirages: bigint | null; utilisations: bigint }[]>`
+          SELECT sum(montant_debite_cents) cents, sum(nb) tirages, count(*) utilisations FROM utilisations_carte_lieu
+          WHERE carte_id = ${carte.id} AND accepte AND annulee_le IS NULL
+            AND ((horodatage AT TIME ZONE 'Europe/Paris') - interval '6 hours')::date = ${nuit}::date`;
+        dejaJour = { cents: Number(s?.cents ?? 0), tirages: Number(s?.tirages ?? 0), utilisations: Number(s?.utilisations ?? 0) };
+      }
+
+      const decision = deciderCarte(carte, { lieuBorne, montantCents: d.montantCents, nb: d.nb, dejaJour, montantMax: max, maintenant });
       let soldeApres: number | null = carte?.effet === "DEBITE" ? carte.soldeCents : null;
       if (decision.ok && decision.debitCents > 0) {
         const maj = await db.carteLieu.update({ where: { id: carte!.id }, data: { soldeCents: { decrement: decision.debitCents } }, select: { soldeCents: true } });
@@ -152,14 +221,18 @@ export async function utiliserCarte(borneId: number, d: DemandeUtilisation, main
   } catch (e) {
     // Carte inconnue (pas de verrou) ou annulation arrivée entre-temps : la ligne existe, sa réponse fait foi
     if (estDoublon(e)) {
-      const r = await rejouer(borneId, d.utilisationId);
+      const r = await rejouer(borneId, d);
       if (r) return r;
     }
     throw e;
   }
 }
 
-export type RaisonAnnulation = "tirage_non_sorti" | "sans_reponse" | "reponse_tardive";
+export const RAISONS_ANNULATION = ["tirage_non_sorti", "sans_reponse", "reponse_invalide", "reponse_tardive", "arret_borne"] as const;
+export type RaisonAnnulation = (typeof RAISONS_ANNULATION)[number];
+
+/** Une annulation n'est plus acceptée 7 jours après l'utilisation (avenant v2, § 3.2) */
+export const annulationHorsDelai = (horodatage: Date, maintenant: Date) => maintenant.getTime() - horodatage.getTime() > 7 * 86_400_000;
 
 /**
  * POST ingest/v1/cartes/annuler : rend le montant débité à la carte. Idempotente : une utilisation inconnue ou déjà
@@ -180,6 +253,10 @@ export async function annulerUtilisation(borneId: number, utilisationId: string,
         }
         const u = await db.utilisationCarteLieu.findUniqueOrThrow({ where: { id: ligne.id } });
         if (u.annuleeLe || !u.accepte) return { ok: true as const, annulee: false };
+        if (annulationHorsDelai(u.horodatage, maintenant)) {
+          console.warn(`[cartes] annulation refusée, plus de 7 jours après l'utilisation : borne ${borneId}, utilisation ${u.id}`);
+          return { ok: true as const, annulee: false };
+        }
         if (u.carteId && u.montantDebiteCents > 0) {
           await db.$queryRaw`SELECT id FROM cartes_lieu WHERE id = ${u.carteId} FOR UPDATE`;
           await db.carteLieu.update({ where: { id: u.carteId }, data: { soldeCents: { increment: u.montantDebiteCents } } });
