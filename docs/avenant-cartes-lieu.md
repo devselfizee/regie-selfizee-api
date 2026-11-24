@@ -6,6 +6,9 @@ Disponible sur l'API DEV dès son redéploiement, avec la migration `20261124090
 Les deux routes suivent le contrat de l'avenant (§ 3). Ce document liste seulement ce que la Régie précise ou
 ajoute.
 
+Choix confirmés par l'exploitant le 24/11/2026 : une carte appartient à un seul lieu, la raison de refus
+`ANNULEE` (§ 1), pas de valeur `carte_lieu` dans les ventes (§ 3).
+
 ## 1. `POST ingest/v1/cartes/utiliser`
 
 Corps accepté :
