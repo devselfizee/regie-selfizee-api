@@ -27,6 +27,8 @@ vi.mock("../src/lib/prisma.js", () => ({
       },
     },
     configEvenement: { findUnique: async ({ where }: { where: { code: string } }) => b.evenements.find((e) => e.code === where.code) ?? null },
+    // Aucun créneau booth ici : un code inconnu de la Régie reste « unknown » (le booth sur mesure : programme-borne.test.ts)
+    evenementBooth: { findFirst: async () => null },
     importLot: { create: async ({ data }: { data: unknown }) => b.rejets.push(data) },
     installationEvenement: { create: async ({ data }: { data: Record<string, unknown> }) => b.journal.push(data), findFirst: async () => null },
   },

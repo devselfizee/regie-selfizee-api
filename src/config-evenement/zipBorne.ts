@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import type { Borne } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { deplacer, ecrireBuffer, existe, supprimer } from "../lib/stockage.js";
+import { zipBoothPourLieu } from "./zipBooth.js";
 
 // Zip de l'événement chargé par la borne, sur le modèle du booth (getEvent puis e/zip/download/<paramètre>) :
 // 1. la borne demande l'état de son événement avec sa clé (POST /ingest/v1/evenements/statut) ;
@@ -9,6 +10,11 @@ import { deplacer, ecrireBuffer, existe, supprimer } from "../lib/stockage.js";
 // Différences avec le booth : la demande est authentifiée (clé de la borne, et la borne doit être installée dans le
 // lieu de l'événement) ; l'URL est signée (HMAC) et expire, au lieu d'un paramètre en base64 que tout le monde peut
 // fabriquer ; le zip est figé à la publication (le contenu ne bouge pas entre deux publications).
+// Avenant du 24/11/2026 : un événement booth « sur mesure » (zip déposé dans la Régie, zipBooth.ts) passe par le même
+// chemin, avec ses propres URL (/ingest/v1/evenements/booth/<code>/zip) et une signature qui ne vaut que pour elles.
+
+/** D'où vient le zip : publication d'un événement Régie, ou dépôt d'un événement booth sur mesure. */
+export type OrigineZip = "regie" | "booth";
 
 /** Durée de validité de l'URL de téléchargement. */
 const VALIDITE_URL_S = 15 * 60;
@@ -59,25 +65,33 @@ export interface PorteurZip {
   borneId: number;
   declencheur: "AUTO" | "MANUEL";
 }
-const signer = (code: string, version: number, exp: number, b: string, d: string) =>
-  createHmac("sha256", secret()).update(`zip-borne\n${code}\n${version}\n${exp}\n${b}\n${d}`).digest("base64url");
+// Le préfixe signé dit l'origine : un lien d'un zip Régie ne s'ouvre pas sur la route booth, ni l'inverse (un code booth
+// peut aussi être celui d'un événement Régie d'un autre lieu)
+const signer = (origine: OrigineZip, code: string, version: number, exp: number, b: string, d: string) =>
+  createHmac("sha256", secret()).update(`${origine === "booth" ? "zip-booth" : "zip-borne"}\n${code}\n${version}\n${exp}\n${b}\n${d}`).digest("base64url");
 
-export function urlZip(base: string, code: string, version: number, maintenant = Date.now(), porteur?: PorteurZip) {
+export function urlZip(base: string, code: string, version: number, maintenant = Date.now(), porteur?: PorteurZip, origine: OrigineZip = "regie") {
   const exp = Math.floor(maintenant / 1000) + VALIDITE_URL_S;
   const b = porteur ? String(porteur.borneId) : "";
   const d = porteur ? (porteur.declencheur === "AUTO" ? "a" : "m") : "";
   const qui = porteur ? `&b=${b}&d=${d}` : "";
-  return { url: `${base}/ingest/v1/evenements/${encodeURIComponent(code)}/zip?v=${version}&exp=${exp}${qui}&sig=${signer(code, version, exp, b, d)}`, expireLe: new Date(exp * 1000) };
+  const route = origine === "booth" ? "evenements/booth" : "evenements";
+  return { url: `${base}/ingest/v1/${route}/${encodeURIComponent(code)}/zip?v=${version}&exp=${exp}${qui}&sig=${signer(origine, code, version, exp, b, d)}`, expireLe: new Date(exp * 1000) };
 }
 
 /** La version et le porteur d'un lien bien signé et pas expiré ; null sinon. */
-export function urlZipValide(code: string, q: { v?: unknown; exp?: unknown; sig?: unknown; b?: unknown; d?: unknown }, maintenant = Date.now()): { version: number; porteur: PorteurZip | null } | null {
+export function urlZipValide(
+  code: string,
+  q: { v?: unknown; exp?: unknown; sig?: unknown; b?: unknown; d?: unknown },
+  maintenant = Date.now(),
+  origine: OrigineZip = "regie"
+): { version: number; porteur: PorteurZip | null } | null {
   const { v: version, exp, sig } = q;
   if (typeof version !== "string" || !/^\d{1,6}$/.test(version) || typeof exp !== "string" || !/^\d{1,12}$/.test(exp) || typeof sig !== "string") return null;
   const b = typeof q.b === "string" && /^\d{1,9}$/.test(q.b) ? q.b : "";
   const d = q.d === "a" || q.d === "m" ? q.d : "";
   if (Number(exp) * 1000 < maintenant) return null;
-  const attendu = Buffer.from(signer(code, Number(version), Number(exp), b, d));
+  const attendu = Buffer.from(signer(origine, code, Number(version), Number(exp), b, d));
   const recu = Buffer.from(sig);
   if (attendu.length !== recu.length || !timingSafeEqual(attendu, recu)) return null;
   return { version: Number(version), porteur: b && d ? { borneId: Number(b), declencheur: d === "a" ? "AUTO" : "MANUEL" } : null };
@@ -117,13 +131,27 @@ export async function etatDuZip(e: EvenementZip): Promise<"incomplete" | "obsole
   return "complete";
 }
 
+/**
+ * État pour la borne : un événement Régie de son lieu ; sinon un événement booth sur mesure programmé sur son lieu (le
+ * zip déposé, servi de la même façon) ; sinon « unknown », dont un code booth sans zip (la borne le prend chez booth).
+ */
 export async function statutPourBorne(borne: Pick<Borne, "id">, code: string, base: string, maintenant = new Date(), declencheur: PorteurZip["declencheur"] = "MANUEL"): Promise<StatutZip> {
+  const lieuId = await lieuDeLaBorne(borne.id, maintenant);
+  if (lieuId === null) return { status: "unknown" };
   const e = await prisma.configEvenement.findUnique({ where: { code }, select: selectionZip });
-  if (!e || e.lieuId !== (await lieuDeLaBorne(borne.id, maintenant))) return { status: "unknown" };
+  if (e && e.lieuId === lieuId) return statutDuZip(e, "regie", borne.id, base, maintenant, declencheur);
+  const z = await zipBoothPourLieu(code, lieuId);
+  return z ? statutDuZip(z, "booth", borne.id, base, maintenant, declencheur) : { status: "unknown" };
+}
+
+async function statutDuZip(e: EvenementZip, origine: OrigineZip, borneId: number, base: string, maintenant: Date, declencheur: PorteurZip["declencheur"]): Promise<StatutZip> {
   const etat = await etatDuZip(e);
   if (etat === "incomplete") return { status: "incomplete" };
-  if (etat === "obsolete") return { status: "obsolete", version: e.version, message: "Republier l'événement dans la Régie pour préparer son zip." };
-  const { url, expireLe } = urlZip(base, e.code, e.version, maintenant.getTime(), { borneId: borne.id, declencheur });
+  if (etat === "obsolete") {
+    const message = origine === "booth" ? "Redéposer le zip de l'événement sur mesure dans la Régie." : "Republier l'événement dans la Régie pour préparer son zip.";
+    return { status: "obsolete", version: e.version, message };
+  }
+  const { url, expireLe } = urlZip(base, e.code, e.version, maintenant.getTime(), { borneId, declencheur }, origine);
   return {
     status: "complete",
     code: e.code,

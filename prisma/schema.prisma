@@ -72,6 +72,7 @@ model User {
   photosCles      LieuPhotoCles[]  @relation("PhotosClesAuteur")
   evenementsLieu  EvenementLieu[]  @relation("EvenementsLieuAuteur")
   evenementsBooth EvenementBooth[] @relation("EvenementBoothCreePar")
+  zipsBooth       ZipBooth[]       @relation("ZipBoothDeposePar")
   modelesMail     ModeleMail[]
 
   @@unique([compte, email])
@@ -2049,4 +2050,32 @@ model MouvementCarteLieu {
 
   @@index([carteId, createdAt])
   @@map("mouvements_carte_lieu")
+}
+
+// Zip d'un événement booth « sur mesure » (avenant de l'équipe borne du 24/11/2026) : l'exploitant dépose dans la Régie
+// le zip d'un événement booth retouché (fonds, cadres, config.json), et la Régie le sert aux bornes comme un de ses
+// événements (statut, URL signée, reprise). Une ligne par code booth, partagée par tous ses créneaux, sur tous les
+// lieux. Programme de la borne : `version` si `actif`, sinon 0 (la borne reprend la version de booth). L'événement
+// reste un événement booth pour tout le reste (galerie, médias, codes promo).
+model ZipBooth {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.VarChar(8)
+  // Compteur des dépôts (1, 2, 3…) : ne redescend jamais, même après un retrait, pour que deux zips différents ne
+  // portent jamais le même numéro (journal des installations, fichier rangé par version)
+  version     Int       @default(0)
+  // Case « Événement sur mesure » : false = zip retiré, la borne reprend booth ; recocher ressert la dernière version
+  actif       Boolean   @default(false)
+  // Dernier dépôt : date, fichier rangé, taille, empreinte, nom du fichier envoyé, qui l'a déposé
+  publieeLe   DateTime? @map("publiee_le") @db.Timestamptz(3)
+  zipChemin   String?   @map("zip_chemin")
+  zipTaille   Int?      @map("zip_taille")
+  zipSha256   String?   @map("zip_sha256") @db.Char(64)
+  nomFichier  String?   @map("nom_fichier") @db.VarChar(255)
+  deposeParId Int?      @map("depose_par_id")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  deposePar User? @relation("ZipBoothDeposePar", fields: [deposeParId], references: [id], onDelete: SetNull)
+
+  @@map("zips_booth")
 }

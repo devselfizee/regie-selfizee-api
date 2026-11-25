@@ -5,7 +5,8 @@ import { annulerUtilisation, normaliserUid, noterRefus, RAISONS_ANNULATION, trop
 import { asynchrone } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { cheminAbsolu, existe } from "../lib/stockage.js";
-import { cheminZip, statutPourBorne, urlZipValide } from "../config-evenement/zipBorne.js";
+import { cheminZip, statutPourBorne, urlZipValide, type OrigineZip } from "../config-evenement/zipBorne.js";
+import { cheminZipBooth } from "../config-evenement/zipBooth.js";
 import { declencheurDe, noterEtape, noterInstallation, programmePourBorne, versionsPourBorne } from "../config-evenement/programmeBorne.js";
 import { authBorne, type BorneRequest } from "../middleware/authBorne.js";
 import { journaliserRejet } from "../ingestion/journal.js";
@@ -230,7 +231,8 @@ ingestionRouter.post(
 // POST /ingest/v1/evenements/statut { borne_id, code } — état du zip de l'événement et URL de téléchargement
 // (15 minutes). status : complete | incomplete (jamais publié) | obsolete (à republier) | unknown (code inconnu ou
 // événement d'un autre lieu que celui où la borne est installée). La borne compare `version` à la sienne avant de
-// télécharger, et vérifie le fichier reçu avec `sha256`.
+// télécharger, et vérifie le fichier reçu avec `sha256`. Un événement booth sur mesure programmé sur le lieu de la
+// borne répond de la même façon, avec le zip déposé (avenant du 24/11/2026).
 ingestionRouter.post(
   "/evenements/statut",
   authBorne("CONFIG"),
@@ -246,20 +248,22 @@ ingestionRouter.post(
   })
 );
 
-// GET /ingest/v1/evenements/:code/zip?v=&exp=&sig= — le zip publié, sur l'URL signée rendue par /statut.
+// GET /ingest/v1/evenements/:code/zip?v=&exp=&sig= — le zip publié, sur l'URL signée rendue par /statut ;
+// GET /ingest/v1/evenements/booth/:code/zip?… — le zip déposé d'un événement booth sur mesure (avenant du 24/11/2026).
 // 404 sans détail si l'URL est fausse, expirée, ou si cette version n'est plus gardée (redemander l'état).
-ingestionRouter.get(
-  "/evenements/:code/zip",
+const servirZip = (origine: OrigineZip) =>
   asynchrone(async (req, res) => {
     const code = String(req.params.code).toUpperCase();
-    const lien = /^[A-Z0-9]{3,8}$/.test(code) ? urlZipValide(code, req.query) : null;
+    const lien = /^[A-Z0-9]{3,8}$/.test(code) ? urlZipValide(code, req.query, Date.now(), origine) : null;
     if (lien === null) return void res.status(404).json({ error: "INTROUVABLE" });
     const { version, porteur } = lien;
-    const e = await prisma.configEvenement.findUnique({ where: { code }, select: { version: true, zipSha256: true } });
+    const select = { version: true, zipSha256: true } as const;
+    const e = origine === "booth" ? await prisma.zipBooth.findUnique({ where: { code }, select }) : await prisma.configEvenement.findUnique({ where: { code }, select });
     if (!e) return void res.status(404).json({ error: "INTROUVABLE" });
+    const chemin = origine === "booth" ? cheminZipBooth(code, version) : cheminZip(code, version);
     // Version plus gardée : 404 avant d'écrire « envoyé » au journal
-    if (!(await existe(cheminZip(code, version)))) return void res.status(404).json({ error: "INTROUVABLE" });
-    const absolu = cheminAbsolu(cheminZip(code, version));
+    if (!(await existe(chemin))) return void res.status(404).json({ error: "INTROUVABLE" });
+    const absolu = cheminAbsolu(chemin);
     res.setHeader("Content-Disposition", `attachment; filename="${code}.zip"`);
     res.setHeader("Cache-Control", "private, no-store");
     if (version === e.version && e.zipSha256) res.setHeader("X-Zip-Sha256", e.zipSha256);
@@ -270,6 +274,7 @@ ingestionRouter.get(
     res.sendFile(absolu, { headers: { "Content-Type": "application/zip" }, etag: false, lastModified: false }, (err) => {
       if (err && !res.headersSent) res.status(404).json({ error: "INTROUVABLE" });
     });
-  })
-);
+  });
+ingestionRouter.get("/evenements/:code/zip", servirZip("regie"));
+ingestionRouter.get("/evenements/booth/:code/zip", servirZip("booth"));
 

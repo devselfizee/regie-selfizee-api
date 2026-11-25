@@ -175,7 +175,9 @@ configEvenementRouter.get(
 
 // GET /api/lieux/:id/evenements/installations — pour chaque événement du lieu (par code) et chaque borne installée dans
 // le lieu : sa dernière étape (demandé, envoyé, téléchargé, installé, échec) et la dernière version installée, d'après le
-// journal des téléchargements (retour de Sébastien du 16/11 : savoir si la mise à jour est arrivée sur la borne).
+// journal des téléchargements (retour de Sébastien du 16/11 : savoir si la mise à jour est arrivée sur la borne). Avec
+// la version du logiciel de chaque borne (heartbeat) : un événement booth sur mesure (avenant du 24/11/2026) demande le
+// logiciel livré avec l'avenant.
 configEvenementRouter.get(
   "/:id/evenements/installations",
   voir,
@@ -185,7 +187,7 @@ configEvenementRouter.get(
     const [affectations, derniers, installes] = await Promise.all([
       prisma.affectationBorne.findMany({
         where: { lieuId, debut: { lte: maintenant }, OR: [{ fin: null }, { fin: { gt: maintenant } }], borne: { supprimeLe: null } },
-        select: { borne: { select: { id: true, identifiant: true } } },
+        select: { borne: { select: { id: true, identifiant: true, logicielVersion: true } } },
         orderBy: { borne: { identifiant: "asc" } },
       }),
       prisma.$queryRaw<{ borne_id: number; code: string; version: number; etat: string; message: string | null; created_at: Date }[]>`

@@ -26,6 +26,7 @@ export async function viderBase() {
     prisma.evenementLieu.deleteMany(),
     prisma.configEvenement.deleteMany(),
     prisma.evenementBooth.deleteMany(),
+    prisma.zipBooth.deleteMany(),
     prisma.parcours.deleteMany(),
     prisma.transaction.deleteMany(),
     prisma.importErreur.deleteMany(),

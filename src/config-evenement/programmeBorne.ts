@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { FUSEAU_METIER } from "../lib/temps.js";
 import { reglagesSchema } from "./reglages.js";
 import { etatDuZip, lieuDeLaBorne, selectionZip } from "./zipBorne.js";
+import { versionServie, zipsBoothDe, type ZipBoothServi } from "./zipBooth.js";
 
 // Mise à jour automatique des événements sur la borne (13/11/2026). La borne interroge la Régie avec sa clé :
 // - programme : l'événement qui doit tourner chez elle maintenant, d'après la programmation de son lieu (le par défaut,
@@ -13,6 +14,8 @@ import { etatDuZip, lieuDeLaBorne, selectionZip } from "./zipBorne.js";
 // Le zip lui-même se demande ensuite par /statut (URL signée) puis se télécharge (zipBorne.ts).
 // Avenant du 18/11/2026 : un créneau peut désigner un événement booth (table evenements_booth). La Régie transmet son
 // code tel quel, avec origine « booth », version 0 et status « complete » : la borne le charge par booth, sans zip.
+// Avenant du 24/11/2026 : un événement booth « sur mesure » (zip déposé dans la Régie, zipBooth.ts) porte la version
+// du dernier dépôt (1 ou plus) : la borne prend alors son zip à la Régie (statut), comme pour un événement Régie.
 
 /** Combien de jours de programmation à venir la borne reçoit (de quoi précharger les zips). */
 const HORIZON_JOURS = 14;
@@ -28,10 +31,13 @@ export interface EvenementBorne {
   /** null pour l'événement par défaut */
   nom: string | null;
   parDefaut: boolean;
-  /** Version publiée (0 : jamais publié, et toujours 0 pour un événement booth) et date de publication */
+  /**
+   * Version publiée (0 : jamais publié) et date de publication. Événement booth : 0 = la borne le prend chez booth ;
+   * 1 ou plus = événement sur mesure, son zip déposé est à la Régie (version du dernier dépôt)
+   */
   version: number;
   publieLe: string | null;
-  /** État du zip ; un événement booth est toujours « complete » (rien à télécharger chez la Régie) */
+  /** État du zip ; un événement booth sans zip déposé est toujours « complete » (rien à télécharger chez la Régie) */
   status: EtatZip;
 }
 
@@ -78,11 +84,17 @@ async function versBorne(e: Ligne): Promise<EvenementBorne> {
   };
 }
 
+/** Un code booth pour la borne : version 0 (chez booth), ou la version de son zip sur mesure s'il est servi. */
+async function boothVersBorne(code: string, nom: string | null, z: ZipBoothServi | undefined): Promise<EvenementBorne> {
+  if (!z || versionServie(z) === 0) return { code, origine: "booth", nom, parDefaut: false, version: 0, publieLe: null, status: "complete" };
+  return { code, origine: "booth", nom, parDefaut: false, version: z.version, publieLe: z.publieeLe ? z.publieeLe.toISOString() : null, status: await etatDuZip(z) };
+}
+
 /**
  * Programme de la borne. L'événement actuel suit la règle de l'onglet Configuration : parmi les événements
  * personnalisés en cours (Régie ou booth), celui qui a commencé le plus tard ; sinon le par défaut. Un événement dont
  * le zip n'est pas prêt (jamais publié, ou à republier) est sauté : la borne garde ce qui marche (le par défaut).
- * Un créneau booth est toujours prêt : la Régie n'a rien à lui fournir.
+ * Un créneau booth sans zip déposé est toujours prêt : la Régie n'a rien à lui fournir.
  */
 export async function programmePourBorne(borne: Pick<Borne, "id">, maintenant = new Date()): Promise<ProgrammeBorne> {
   const lieuId = await lieuDeLaBorne(borne.id, maintenant);
@@ -92,6 +104,7 @@ export async function programmePourBorne(borne: Pick<Borne, "id">, maintenant = 
     chargerEvenements(lieuId),
     chargerBooth(lieuId),
   ]);
+  const zipsBooth = await zipsBoothDe(booth.map((e) => e.code));
 
   const t = maintenant.getTime();
   const horizon = t + HORIZON_JOURS * 86_400_000;
@@ -106,11 +119,13 @@ export async function programmePourBorne(borne: Pick<Borne, "id">, maintenant = 
     ...(await Promise.all(
       lisibles.map(async ({ e, l }) => ({ b: await versBorne(e), debut: instantParis(l.dateDebut, l.heureDebut, false), fin: instantParis(l.dateFin, l.heureFin, true) }))
     )),
-    ...booth.map((e) => ({
-      b: { code: e.code, origine: "booth", nom: e.nom, parDefaut: false, version: 0, publieLe: null, status: "complete" } satisfies EvenementBorne,
-      debut: instantParis(jourIso(e.dateDebut), e.heureDebut, false),
-      fin: instantParis(jourIso(e.dateFin), e.heureFin, true),
-    })),
+    ...(await Promise.all(
+      booth.map(async (e) => ({
+        b: await boothVersBorne(e.code, e.nom, zipsBooth.get(e.code)),
+        debut: instantParis(jourIso(e.dateDebut), e.heureDebut, false),
+        fin: instantParis(jourIso(e.dateFin), e.heureFin, true),
+      }))
+    )),
   ];
   const defaut = evenements.find((e) => e.habituel);
   const bDefaut = defaut ? await versBorne(defaut) : null;
@@ -153,18 +168,25 @@ export function declencheurDe(borneId: number, code: string, annonce?: "auto" | 
 }
 
 /**
- * Versions publiées de plusieurs codes (comme getEventLastUpdate du booth) : seulement les événements Régie du lieu
- * où la borne est installée ; les autres codes, dont les codes booth, sont « unknown ».
+ * Versions publiées de plusieurs codes (comme getEventLastUpdate du booth) : les événements Régie du lieu où la borne
+ * est installée, et les événements booth sur mesure programmés sur ce lieu (version du zip déposé) ; les autres codes,
+ * dont les codes booth sans zip, sont « unknown ».
  */
 export async function versionsPourBorne(borne: Pick<Borne, "id">, codes: string[], maintenant = new Date()) {
   const lieuId = await lieuDeLaBorne(borne.id, maintenant);
   const trouves = lieuId === null ? [] : await prisma.configEvenement.findMany({ where: { code: { in: codes }, lieuId }, select: { ...selectionZip, id: true, nom: true, habituel: true, reglages: true } });
   const parCode = new Map(trouves.map((e) => [e.code, e]));
+  const restants = codes.filter((c) => !parCode.has(c));
+  const creneaux = lieuId === null || !restants.length ? [] : await prisma.evenementBooth.findMany({ where: { code: { in: restants }, lieuId }, select: { code: true, nom: true } });
+  const zipsBooth = await zipsBoothDe(creneaux.map((c) => c.code));
   return {
     evenements: await Promise.all(
       codes.map(async (code) => {
         const e = parCode.get(code);
-        return e ? await versBorne(e) : { code, status: "unknown" as const };
+        if (e) return await versBorne(e);
+        const z = zipsBooth.get(code);
+        if (!z || versionServie(z) === 0) return { code, status: "unknown" as const };
+        return await boothVersBorne(code, creneaux.find((c) => c.code === code && c.nom)?.nom ?? null, z);
       })
     ),
   };

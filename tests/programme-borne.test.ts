@@ -6,6 +6,9 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { genererCle } from "../src/lib/cleBorne.js";
 import { reglagesParDefaut } from "../src/config-evenement/reglages.js";
 import { empreinteZip, rangerZip } from "../src/config-evenement/zipBorne.js";
+import { cheminZipBooth } from "../src/config-evenement/zipBooth.js";
+import { ecrireBuffer, supprimer } from "../src/lib/stockage.js";
+import { createHash } from "node:crypto";
 
 // Mise à jour automatique des événements sur la borne : programme (événement à faire tourner maintenant et prochains),
 // versions de plusieurs codes, signalement des installations. Base simulée, stockage dans un dossier temporaire.
@@ -15,6 +18,7 @@ const b = vi.hoisted(() => ({
   affectations: [] as { borneId: number; lieuId: number; debut: Date; fin: Date | null }[],
   evenements: [] as Record<string, unknown>[],
   booth: [] as Record<string, unknown>[],
+  zips: [] as Record<string, unknown>[],
   installations: [] as Record<string, unknown>[],
   rejets: [] as unknown[],
 }));
@@ -39,6 +43,10 @@ vi.mock("../src/lib/prisma.js", () => {
       evenementBooth: {
         findMany: async ({ where }: { where: Record<string, unknown> }) => b.booth.filter((e) => correspond(e, where)),
         findFirst: async ({ where }: { where: Record<string, unknown> }) => b.booth.find((e) => correspond(e, where)) ?? null,
+      },
+      zipBooth: {
+        findMany: async ({ where }: { where: Record<string, unknown> }) => b.zips.filter((z) => correspond(z, where)),
+        findUnique: async ({ where }: { where: { code: string } }) => b.zips.find((z) => z.code === where.code) ?? null,
       },
       installationEvenement: {
         create: async ({ data }: { data: Record<string, unknown> }) => b.installations.push({ id: BigInt(b.installations.length + 1), createdAt: new Date(), ...data }),
@@ -83,6 +91,21 @@ function booth(code: string, d: { nom?: string; debut: string; fin?: string; hDe
   return { id: code.charCodeAt(0) * 100 + code.charCodeAt(1), lieuId: d.lieuId ?? 7, code, nom: d.nom ?? null, dateDebut: new Date(`${d.debut}T00:00:00Z`), dateFin: new Date(`${d.fin ?? d.debut}T00:00:00Z`), heureDebut: d.hDebut ?? null, heureFin: d.hFin ?? null };
 }
 
+/** Zip déposé pour un code booth (événement sur mesure, avenant du 24/11/2026), rangé dans le stockage. */
+async function zipBooth(code: string, d: { version: number; actif?: boolean }) {
+  await ecrireBuffer(cheminZipBooth(code, d.version), ZIP);
+  return {
+    code, version: d.version, actif: d.actif ?? true, publieeLe: new Date("2026-11-12T10:12:00Z"),
+    zipChemin: cheminZipBooth(code, d.version), zipTaille: ZIP.length, zipSha256: createHash("sha256").update(ZIP).digest("hex"),
+  };
+}
+/** Corps binaire de la réponse (supertest le lit en texte sinon). */
+const lireBinaire = (res: { on(ev: string, cb: (c: Buffer) => void): unknown }, fin: (err: Error | null, corps: Buffer) => void) => {
+  const morceaux: Buffer[] = [];
+  res.on("data", (c: Buffer) => morceaux.push(c));
+  res.on("end", () => fin(null, Buffer.concat(morceaux)));
+};
+
 const appel = (chemin: string, corps: Record<string, unknown> = {}) =>
   request(app).post(`/ingest/v1/evenements/${chemin}`).set("Authorization", `Bearer ${cle.cle}`).send({ borne_id: "SZ-001", ...corps });
 
@@ -100,6 +123,7 @@ beforeEach(async () => {
     evenement("RAUT", { nom: "Autre lieu", debut: "2026-11-12", fin: "2026-11-30", lieuId: 9 }),
   ];
   b.booth = [];
+  b.zips = [];
   b.installations = [];
   b.rejets = [];
   for (const e of b.evenements) if (e.zipChemin) await rangerZip(String(e.code), Number(e.version), ZIP);
@@ -160,6 +184,67 @@ describe("programme de la borne", () => {
     b.affectations = [];
     expect((await appel("programme").expect(200)).body).toMatchObject({ lieu: null, actuel: null, prochains: [] });
     await request(app).post("/ingest/v1/evenements/programme").set("Authorization", `Bearer ${genererCle().cle}`).send({ borne_id: "SZ-001" }).expect(401);
+    vi.useRealTimers();
+  });
+});
+
+describe("événement booth sur mesure : zip déposé dans la Régie (avenant du 24/11/2026)", () => {
+  it("programme : la version du dernier dépôt si la case est cochée, 0 sinon ; zip disparu : pas prêt, le par défaut tourne", async () => {
+    b.evenements = b.evenements.filter((e) => e.code !== "RHAL");
+    b.booth = [booth("FTL6", { nom: "Mariage Dupont", debut: "2026-11-13", hDebut: "14:00", hFin: "23:00" }), booth("CD34", { debut: "2026-11-21" })];
+    b.zips = [await zipBooth("FTL6", { version: 2 }), await zipBooth("CD34", { version: 1, actif: false })];
+    const r = (await appel("programme").expect(200)).body;
+    expect(r.actuel).toEqual({
+      code: "FTL6", origine: "booth", nom: "Mariage Dupont", parDefaut: false, version: 2, publieLe: "2026-11-12T10:12:00.000Z", status: "complete",
+      jusqua: "2026-11-13T23:00:00.000+01:00",
+    });
+    // Case décochée : version 0, la borne reprend booth
+    expect(r.prochains.find((p: { code: string }) => p.code === "CD34")).toMatchObject({ origine: "booth", version: 0, publieLe: null, status: "complete" });
+
+    await supprimer(cheminZipBooth("FTL6", 2));
+    const r2 = (await appel("programme").expect(200)).body;
+    vi.useRealTimers();
+    expect(r2.actuel).toMatchObject({ code: "RDEF", parDefaut: true, jusqua: "2026-11-20T20:00:00.000+01:00" });
+  });
+
+  it("statut : comme un événement Régie, sur une URL signée propre au booth ; téléchargement, reprise, journal avec la vraie version", async () => {
+    b.booth = [booth("FTL6", { debut: "2026-11-13" })];
+    b.zips = [await zipBooth("FTL6", { version: 2 })];
+    const s = (await appel("statut", { code: "ftl6" }).expect(200)).body;
+    expect(s).toMatchObject({ status: "complete", code: "FTL6", version: 2, publieLe: "2026-11-12T10:12:00.000Z", taille: ZIP.length, sha256: b.zips[0].zipSha256 });
+    expect(s.url).toMatch(/\/ingest\/v1\/evenements\/booth\/FTL6\/zip\?v=2&exp=\d+&b=1&d=m&sig=[\w-]+$/);
+    const chemin = (s.url as string).replace(/^https?:\/\/[^/]+/, "");
+
+    const z = await request(app).get(chemin).buffer(true).parse((res, fin) => lireBinaire(res, fin)).expect(200);
+    expect(z.headers["content-type"]).toBe("application/zip");
+    expect(z.headers["x-zip-sha256"]).toBe(b.zips[0].zipSha256);
+    expect(Buffer.compare(z.body as Buffer, ZIP)).toBe(0);
+    await request(app).get(chemin).set("Range", "bytes=4-7").expect(206);
+    // La signature vaut pour la route booth seulement
+    await request(app).get(chemin.replace("/evenements/booth/", "/evenements/")).expect(404);
+
+    await appel("installation", { code: "FTL6", version: 2, etat: "INSTALLE" }).expect(200);
+    vi.useRealTimers();
+    expect(b.installations.map((l) => [l.code, l.version, l.etat, l.lieuId, l.configEvenementId])).toEqual([
+      ["FTL6", 2, "DEMANDE", 7, null],
+      ["FTL6", 2, "ENVOYE", 7, null],
+      ["FTL6", 2, "INSTALLE", 7, null],
+    ]);
+  });
+
+  it("versions donne la version servie ; case décochée, ou code programmé sur un autre lieu seulement : unknown", async () => {
+    b.booth = [booth("FTL6", { nom: "Mariage", debut: "2026-11-13" }), booth("GH56", { debut: "2026-11-13", lieuId: 9 })];
+    b.zips = [await zipBooth("FTL6", { version: 3 }), await zipBooth("GH56", { version: 1 })];
+    const v = (await appel("versions", { codes: ["FTL6", "GH56"] }).expect(200)).body;
+    expect(v.evenements).toEqual([
+      { code: "FTL6", origine: "booth", nom: "Mariage", parDefaut: false, version: 3, publieLe: "2026-11-12T10:12:00.000Z", status: "complete" },
+      { code: "GH56", status: "unknown" },
+    ]);
+    expect((await appel("statut", { code: "GH56" }).expect(200)).body).toEqual({ status: "unknown" });
+
+    b.zips[0].actif = false;
+    expect((await appel("versions", { codes: ["FTL6"] }).expect(200)).body.evenements).toEqual([{ code: "FTL6", status: "unknown" }]);
+    expect((await appel("statut", { code: "FTL6" }).expect(200)).body).toEqual({ status: "unknown" });
     vi.useRealTimers();
   });
 });

@@ -1,6 +1,6 @@
 # Mise à jour automatique des événements sur les bornes
 
-Régie Selfizee · API bornes · v1.2 du 18/11/2026
+Régie Selfizee · API bornes · v1.3 du 25/11/2026
 
 Pour les codes d'événement Régie (`R…`), la borne n'a plus besoin qu'on tape un code : elle demande à la Régie quel
 événement faire tourner, le télécharge, le recharge quand il est republié, et signale ce qu'elle a installé.
@@ -9,6 +9,11 @@ Pour les codes d'événement Régie (`R…`), la borne n'a plus besoin qu'on tap
 Chaque événement du programme porte un champ `origine` (`"regie"` ou `"booth"`) ; un événement booth a toujours
 `version: 0` et `status: "complete"`, et la borne le charge par booth, sans rien télécharger chez la Régie. La route
 `installation` accepte `version: 0`. Rien d'autre ne change.
+
+**v1.3 (25/11/2026, avenant « événement booth sur mesure »)** : un événement booth peut porter une `version` de **1 ou
+plus**. C'est un événement **sur mesure** : l'exploitant a déposé son zip dans la Régie, et la borne le prend **à la
+Régie** (`statut`, puis le zip), exactement comme un événement Régie. `version: 0` garde son sens (la borne le prend
+chez booth). Aucun nouveau champ ; voir [Événement booth sur mesure](#événement-booth-sur-mesure).
 
 ## Sommaire
 
@@ -21,6 +26,7 @@ Chaque événement du programme porte un champ `origine` (`"regie"` ou `"booth"`
 - [5. Signaler l'installation](#5-signaler-linstallation)
 - [Boucle conseillée](#boucle-conseillée)
 - [Événement booth dans le programme](#événement-booth-dans-le-programme)
+- [Événement booth sur mesure](#événement-booth-sur-mesure)
 - [Erreurs](#erreurs)
 - [Essais en DEV](#essais-en-dev)
 
@@ -32,6 +38,8 @@ dates (Halloween, une soirée…). Dans la Régie, chaque événement a un code,
 
 Depuis la v1.2, un créneau peut aussi désigner un **événement booth** : la Régie ne connaît que son code, saisi par
 l'exploitant sans vérification, et le transmet tel quel ; c'est la borne qui le charge par booth, comme un code tapé.
+Depuis la v1.3, l'exploitant peut aussi déposer dans la Régie le zip d'un événement booth retouché : la Régie le sert
+alors comme un de ses événements (version 1 ou plus).
 
 La borne est rattachée à un lieu dans la Régie. Elle interroge la Régie avec sa clé, sans rien connaître d'autre que son
 `borne_id`.
@@ -93,7 +101,7 @@ Réponse `200` :
 | Champ | Sens |
 | --- | --- |
 | `actuel` | L'événement à faire tourner maintenant. Parmi les événements personnalisés en cours (Régie ou booth), celui qui a commencé le plus tard ; sinon l'événement par défaut (`parDefaut: true`, `nom: null`). Un événement Régie dont le zip n'est pas prêt est sauté. |
-| `origine` | `"regie"` : événement de la Régie, à télécharger par `statut` et le zip. `"booth"` : code booth, à charger par la borne elle-même (voir [Événement booth dans le programme](#événement-booth-dans-le-programme)). Toujours présent depuis la v1.2. |
+| `origine` | `"regie"` : événement de la Régie, à télécharger par `statut` et le zip. `"booth"` avec `version: 0` : code booth, à charger par la borne elle-même (voir [Événement booth dans le programme](#événement-booth-dans-le-programme)). `"booth"` avec une `version` de 1 ou plus : événement booth sur mesure, son zip est à la Régie (voir [Événement booth sur mesure](#événement-booth-sur-mesure)). Toujours présent depuis la v1.2. |
 | `actuel.jusqua` | Fin de l'événement ; pour le par défaut, début du prochain événement prêt. `null` : rien de prévu. |
 | `actuel: null` | Rien de publié pour ce lieu : garder ce qui tourne. |
 | `prochains` | Événements personnalisés qui commencent dans les 14 jours (10 au plus), prêts ou non, pour précharger leur zip. |
@@ -103,7 +111,7 @@ Valeurs de `status` :
 
 | `status` | Sens |
 | --- | --- |
-| `complete` | Zip prêt, téléchargeable. Pour un événement booth : rien à télécharger chez la Régie, le code est à charger. |
+| `complete` | Zip prêt, téléchargeable. Pour un événement booth en `version: 0` : rien à télécharger chez la Régie, le code est à charger. |
 | `incomplete` | Jamais publié. |
 | `obsolete` | À republier dans la Régie. |
 | `unknown` | Code inconnu ou d'un autre lieu. |
@@ -111,8 +119,9 @@ Valeurs de `status` :
 ## 2. Versions de plusieurs codes
 
 `POST /ingest/v1/evenements/versions` (nouveau) — l'équivalent de `getEventLastUpdate` du booth, pour vérifier d'un coup
-les événements gardés sur la borne (50 codes au plus). Facultatif si la borne suit le programme. Seulement pour les
-codes Régie : un code booth répond `unknown`.
+les événements gardés sur la borne (50 codes au plus). Facultatif si la borne suit le programme. Pour les codes Régie
+et, depuis la v1.3, les événements booth sur mesure programmés sur le lieu de la borne ; un code booth sans zip déposé
+répond `unknown`.
 
 Requête :
 
@@ -132,7 +141,8 @@ Réponse `200` :
 
 ## 3. État du zip et lien de téléchargement
 
-`POST /ingest/v1/evenements/statut` (existante). Seulement pour les codes Régie : un code booth répond `unknown`.
+`POST /ingest/v1/evenements/statut` (existante). Pour les codes Régie et, depuis la v1.3, les événements booth sur
+mesure (même réponse) ; un code booth sans zip déposé répond `unknown`.
 
 Requête :
 
@@ -163,6 +173,8 @@ Autres réponses (toujours en `200`) : `{ "status": "incomplete" }`, `{ "status"
   téléchargement coupé avec l'en-tête `Range`.
 - Vérifier le fichier avec `sha256` (ou `taille`) avant de remplacer l'ancien.
 - URL fausse, expirée, ou version plus gardée : `404`. Redemander l'état (étape 3).
+- Utiliser l'`url` telle quelle : pour un événement booth sur mesure, elle est de la forme
+  `…/ingest/v1/evenements/booth/<code>/zip?…` (même fonctionnement).
 
 ## 5. Signaler l'installation
 
@@ -182,7 +194,8 @@ Réponse `200` : `{ "ok": true }`
 
 La Régie sait ainsi quelle version tourne sur chaque borne.
 
-`version` vaut `0` ou plus : pour un événement booth, envoyer `version: 0`, celle reçue dans le programme.
+`version` vaut `0` ou plus : envoyer celle reçue dans le programme. Pour un événement booth chargé chez booth,
+`version: 0` ; pour un événement booth sur mesure, la vraie version du zip (1, 2, 3…).
 
 ```json
 { "borne_id": "S513", "code": "AB12", "version": 0, "etat": "INSTALLE", "declencheur": "auto" }
@@ -206,9 +219,10 @@ vient de la mise à jour automatique ou d'un code tapé à la main sur la borne.
 ## Boucle conseillée
 
 1. Au démarrage puis toutes les 5 minutes : `programme`.
-2. Pour `actuel`, puis pour chaque `prochains` d'origine `regie` au `status` `complete` : si sa `version` diffère de la
-   version gardée sur la borne, demander `statut`, télécharger, vérifier `sha256`, puis signaler `TELECHARGE`. Un
-   événement d'origine `booth` se charge par booth (section suivante), jamais par `statut`.
+2. Pour `actuel`, puis pour chaque `prochains` au `status` `complete`, d'origine `regie` ou d'origine `booth` avec une
+   `version` de 1 ou plus : si sa `version` diffère de la version gardée sur la borne, demander `statut`, télécharger,
+   vérifier `sha256`, puis signaler `TELECHARGE`. Un événement d'origine `booth` en `version: 0` se charge par booth
+   (sections suivantes), jamais par `statut`.
 3. Si `actuel.code` a changé, basculer sur cet événement ; signaler `INSTALLE`. Entre deux appels, basculer aussi à
    l'heure `jusqua` si le suivant est déjà téléchargé (ou, pour un booth, déjà chargé).
 4. En cas d'échec : garder l'ancien zip et l'événement qui tourne, signaler `ECHEC`, réessayer au tour suivant.
@@ -227,15 +241,51 @@ un créneau daté : il saisit le code booth, la Régie ne le vérifie pas et n'a
   `null`, `version: 0`, `publieLe: null`, `status: "complete"`.
 - La borne le charge **par booth**, comme un code tapé, à l'heure prévue (`actuel`, ou `debut` d'un prochain). Elle
   ne doit pas appeler `statut` ni chercher de zip chez la Régie pour ce code (`statut` et `versions` répondent
-  `unknown`).
+  `unknown`). Avec une `version` de 1 ou plus, c'est un événement sur mesure : voir la section suivante.
 - Elle signale l'installation comme pour un événement Régie, avec `version: 0` : `INSTALLE` quand il tourne, `ECHEC`
   avec le message de booth (par exemple `BadEventCode`) si le code n'existe pas. La Régie affiche cet état à côté du
   créneau, c'est ainsi que l'exploitant voit une faute de frappe.
 - À `jusqua`, elle revient à l'événement suivant du programme, en général l'événement par défaut de la Régie.
 - Même règle de priorité qu'entre événements Régie : deux créneaux qui se chevauchent, c'est celui qui a commencé le
-  plus tard qui tourne.
+  plus tard qui tourne. Depuis le 25/11/2026, la Régie refuse deux créneaux booth qui se chevauchent sur un même lieu :
+  un booth ne chevauche plus qu'un événement Régie.
 
 Rien ne change pour un créneau d'origine `regie`.
+
+## Événement booth sur mesure
+
+Depuis la v1.3 (avenant du 24/11/2026), l'exploitant peut dire dans la Régie qu'un événement booth est **sur mesure** et
+déposer son zip (le zip de booth ou le dossier d'une borne, retouché). La Régie le sert alors aux bornes comme un de ses
+événements. La Régie et booth ne se parlent toujours pas.
+
+| `origine` | `version` | La borne prend le zip… |
+| --- | --- | --- |
+| absent ou `"regie"` | N | à la Régie (`statut`), comme avant |
+| `"booth"` | `0` | chez booth (section précédente) |
+| `"booth"` | **1 ou plus** | **à la Régie** (`statut`) : événement booth sur mesure |
+
+```json
+{ "code": "FTL6", "origine": "booth", "nom": "Mariage Dupont", "parDefaut": false,
+  "version": 2, "publieLe": "2026-11-24T10:12:00.000Z", "status": "complete",
+  "debut": "2026-11-28T20:00:00.000+01:00", "fin": "2026-11-29T06:00:00.000+01:00" }
+```
+
+- **`version`** : le numéro du dernier zip déposé. Chaque dépôt ajoute 1 ; le numéro ne redescend jamais. Si
+  l'exploitant retire le zip (case « sur mesure » décochée), le programme renvoie `version: 0` et la borne reprend la
+  version de booth. S'il recoche la case, la même version revient, avec le même contenu. Un nouveau dépôt prend le
+  numéro suivant.
+- **`publieLe`** : date du dépôt (UTC). **`status`** : `complete` quand le zip est prêt ; `obsolete` si son fichier est
+  à redéposer, et la borne garde alors ce qui tourne.
+- **`statut`** répond exactement comme pour un événement Régie : `status`, `version`, `taille`, `sha256`, `publieLe`,
+  `url` signée 15 minutes (de la forme `…/ingest/v1/evenements/booth/<code>/zip?…`, à utiliser telle quelle), reprise
+  `Range`. Même règle d'accès : la borne doit être rattachée à un lieu où ce code est programmé.
+- **`versions`** donne aussi la version de ces codes.
+- **`installation`** : `TELECHARGE`, `INSTALLE`, `ECHEC` avec la vraie version (1, 2, 3…).
+- **Contrôles au dépôt** : `config.json` à la racine du zip, son `event.code` égal au code du créneau (comparé en
+  majuscules), 100 Mo au plus. Un zip refusé n'est pas enregistré : rien ne change pour les bornes.
+- **Un zip par code** : il vaut pour tous les créneaux de ce code, sur tous les lieux où il est programmé.
+- L'événement **reste un événement booth** pour le reste : ses médias restent des médias booth (pas de
+  `platform: "regie"`) ; ventes, parcours et heartbeat partent à la Régie avec le code de l'événement, comme avant.
 
 ## Erreurs
 
@@ -276,6 +326,8 @@ curl -X POST https://regie-selfizee-api.orkessidev.com/ingest/v1/evenements/inst
 - Un événement n'est téléchargeable qu'une fois publié dans la Régie (bouton Publier de sa fiche).
 - Pour voir un créneau booth dans le programme : fiche du lieu › Configuration › « + Nouvel événement » › « Événement
   booth », avec un créneau qui couvre le moment de l'essai.
+- Pour un événement booth sur mesure : sur ce créneau, menu ⋯ › « Événement sur mesure » › déposer le zip. Le
+  programme passe à `version: 1`, et `statut` rend l'URL du zip.
 
 ---
 

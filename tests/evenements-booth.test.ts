@@ -79,4 +79,26 @@ describe("créneaux booth d'un lieu", () => {
     await editeur.post(`/api/lieux/${lieuB}/evenements-booth`).send(saisie).expect(404);
     await lecteur.delete(`/api/lieux/${lieuA}/evenements-booth/${c.body.id}`).expect(403);
   });
+
+  it("un seul événement booth à la fois sur un lieu : chevauchement refusé, quel que soit le code ; se suivre, un autre lieu ou une autre date restent permis", async () => {
+    const soiree = { code: "XDXD", nom: "Soirée", dateDebut: "2026-11-26", dateFin: "2026-11-26", heureDebut: "20:00", heureFin: "22:00" };
+    const c = await admin.post(`/api/lieux/${lieuA}/evenements-booth`).send(soiree).expect(201);
+    // Le même créneau une seconde fois, ou un autre code qui le recouvre en partie
+    const doublon = await admin.post(`/api/lieux/${lieuA}/evenements-booth`).send({ ...soiree, heureFin: "21:00" }).expect(409);
+    expect(doublon.body).toMatchObject({ error: "CRENEAU_OCCUPE" });
+    expect(doublon.body.message).toContain("« Soirée » (XDXD), programmé le 26/11/2026 de 20:00 à 22:00");
+    await admin.post(`/api/lieux/${lieuA}/evenements-booth`).send({ ...soiree, code: "AB12", heureDebut: "21:30", heureFin: "23:00" }).expect(409);
+    // Toute la nuit à cheval sur deux jours, qui commence la veille : refusé aussi
+    await admin.post(`/api/lieux/${lieuA}/evenements-booth`).send({ code: "AB12", dateDebut: "2026-11-25", dateFin: "2026-11-26", heureDebut: "22:00", heureFin: "20:30" }).expect(409);
+
+    // Se suivre (22:00 → 23:00), le même code un autre jour, le même créneau sur un autre lieu : permis
+    await admin.post(`/api/lieux/${lieuA}/evenements-booth`).send({ ...soiree, code: "AB12", heureDebut: "22:00", heureFin: "23:00" }).expect(201);
+    await admin.post(`/api/lieux/${lieuA}/evenements-booth`).send({ ...soiree, dateDebut: "2026-12-03", dateFin: "2026-12-03" }).expect(201);
+    await admin.post(`/api/lieux/${lieuB}/evenements-booth`).send(soiree).expect(201);
+
+    // Modifier un créneau : il ne se gêne pas lui-même, mais ne peut pas empiéter sur le suivant
+    await admin.put(`/api/lieux/${lieuA}/evenements-booth/${c.body.id}`).send({ ...soiree, heureDebut: "19:00" }).expect(200);
+    await admin.put(`/api/lieux/${lieuA}/evenements-booth/${c.body.id}`).send({ ...soiree, heureFin: "22:30" }).expect(409);
+    expect(await prisma.evenementBooth.count({ where: { lieuId: lieuA } })).toBe(3);
+  });
 });
