@@ -281,8 +281,11 @@ déposer son zip (le zip de booth ou le dossier d'une borne, retouché). La Rég
   `Range`. Même règle d'accès : la borne doit être rattachée à un lieu où ce code est programmé.
 - **`versions`** donne aussi la version de ces codes.
 - **`installation`** : `TELECHARGE`, `INSTALLE`, `ECHEC` avec la vraie version (1, 2, 3…).
-- **Contrôles au dépôt** : `config.json` à la racine du zip, son `event.code` égal au code du créneau (comparé en
-  majuscules), 100 Mo au plus. Un zip refusé n'est pas enregistré : rien ne change pour les bornes.
+- **Contrôles au dépôt** : un `config.json` (à la racine, ou dans un dossier unique : voir ci-dessous), son
+  `event.code` égal au code du créneau (comparé en majuscules), 100 Mo au plus. Un zip refusé n'est pas enregistré : rien ne change pour les bornes.
+- **Format servi** : toujours celui des zips de la Régie, `config.json` et dossiers de l'événement **à la racine**. Un
+  zip téléchargé de booth, qui range tout dans un dossier au nom du code (`D229/config.json`, `D229/Frames/…`), est
+  accepté au dépôt et remis à la racine ; `taille` et `sha256` sont ceux du zip servi.
 - **Un zip par code** : il vaut pour tous les créneaux de ce code, sur tous les lieux où il est programmé.
 - L'événement **reste un événement booth** pour le reste : ses médias restent des médias booth (pas de
   `platform: "regie"`) ; ventes, parcours et heartbeat partent à la Régie avec le code de l'événement, comme avant.

@@ -13,7 +13,8 @@ Référence : *Mise à jour automatique des événements sur les bornes*, passé
 |---|---|
 | « `origine: "booth"` + version ≥ 1 = zip chez vous » : cette lecture vous convient-elle ? | **Oui.** Pas de champ en plus. `version: 0` garde son sens (la borne prend l'événement chez booth) ; 1 ou plus veut dire « zip à la Régie ». Le numéro ne redescend jamais : deux zips différents n'ont jamais le même numéro. |
 | Taille maximale d'un zip déposé ? | **100 Mo.** Au-delà, le dépôt est refusé dans la Régie, avec un message. |
-| Le contrôle du code du `config.json` au dépôt : faisable ? | **Oui, en place.** Le `config.json` doit être **à la racine** du zip et son `event.code` égal au code du créneau (comparé en majuscules). Sinon le dépôt est refusé et la personne voit pourquoi : « Le config.json de ce zip porte le code Y, pas X ». Sont refusés aussi : un fichier qui n'est pas un zip, un zip sans `config.json` à la racine (avec un message dédié s'il est dans un dossier), un `config.json` illisible ou sans code. |
+| Le contrôle du code du `config.json` au dépôt : faisable ? | **Oui, en place.** Le `config.json` doit porter dans `event.code` le code du créneau (comparé en majuscules). Sinon le dépôt est refusé et la personne voit pourquoi : « Le config.json de ce zip porte le code Y, pas X ». Sont refusés aussi : un fichier qui n'est pas un zip, un zip sans `config.json`, un `config.json` illisible ou sans code. |
+| *(format du zip)* | La Régie sert **toujours le format de ses propres zips** : `config.json` et dossiers de l'événement à la racine. Un zip téléchargé de booth range tout dans un dossier au nom du code (`D229/config.json`) : il est accepté tel quel au dépôt et **remis à la racine** (fichiers macOS `__MACOSX` retirés). `taille` et `sha256` sont ceux du zip servi. Merci de nous confirmer que c'est bien ce format que la borne attend pour un booth en version ≥ 1. |
 
 ## 2. Ce que la Régie fait
 
@@ -60,7 +61,7 @@ Référence : *Mise à jour automatique des événements sur les bornes*, passé
 
 | Sujet | Qui | État |
 |---|---|---|
-| Dépôt du zip (100 Mo, `config.json` à la racine, contrôle du code), versions, case « sur mesure » | Régie | **livré** (API et front) |
+| Dépôt du zip (100 Mo, contrôle du code, zip de booth remis à la racine), versions, case « sur mesure » | Régie | **livré** (API et front) |
 | Programme `origine: "booth"` + version ≥ 1, `statut`, zip signé, `versions`, `installation` avec la vraie version | Régie | **livré** (contrat v1.3) |
 | Suivi par borne de la version installée, borne qui prend la version booth signalée | Régie | **livré** |
 | Chargement du zip de la Régie pour un booth en version ≥ 1 | borne | en place d'après l'avenant |

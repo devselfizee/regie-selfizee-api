@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,7 +98,24 @@ describe("dépôt du zip d'un événement booth sur mesure", () => {
     expect(await prisma.auditLog.count({ where: { entite: "zip_booth", action: "DEPOT" } })).toBe(3);
   });
 
-  it("refus explicites, sans rien enregistrer : pas un zip, config.json absent ou dans un dossier, code différent, trop gros, mauvais type, code Régie", async () => {
+  it("zip téléchargé de booth (tout dans un dossier au nom du code) : accepté et rangé avec son contenu à la racine, sans les fichiers macOS", async () => {
+    const id = await creneau(lieuA, "D229");
+    const deBooth = await zip({
+      "D229/config.json": config("D229"),
+      "D229/Frames/polaroid_frame.png": "cadre",
+      "D229/Backgrounds/welcom.jpg": "fond",
+      "__MACOSX/D229/._config.json": "macos",
+    });
+    const r = await deposer(lieuA, id, deBooth, admin, "D229.zip").expect(201);
+    const range = readFileSync(fichier("D229", 1));
+    expect(r.body.zip).toMatchObject({ version: 1, taille: range.length, nomFichier: "D229.zip" });
+    expect(r.body.zip.sha256).toBe(createHash("sha256").update(range).digest("hex"));
+    const contenu = await JSZip.loadAsync(range);
+    expect(Object.keys(contenu.files).filter((n) => !contenu.files[n].dir).sort()).toEqual(["Backgrounds/welcom.jpg", "Frames/polaroid_frame.png", "config.json"]);
+    expect(JSON.parse(await contenu.file("config.json")!.async("string")).event.code).toBe("D229");
+  });
+
+  it("refus explicites, sans rien enregistrer : pas un zip, config.json absent ou trop profond, code différent, trop gros, mauvais type, code Régie", async () => {
     const id = await creneau(lieuA, "AB12");
     const refus = async (corps: Buffer, statut: number, erreur: string) => {
       const r = await deposer(lieuA, id, corps).expect(statut);
@@ -106,7 +124,9 @@ describe("dépôt du zip d'un événement booth sur mesure", () => {
     };
     await refus(Buffer.from("pas un zip"), 400, "ZIP_ILLISIBLE");
     await refus(await zip({ "fond.jpg": "image" }), 400, "CONFIG_ABSENT");
-    expect(await refus(await zip({ "AB12/config.json": config("AB12") }), 400, "CONFIG_ABSENT")).toContain("racine");
+    // Deux niveaux de dossier, ou un config.json dans un dossier à côté d'autres fichiers : pas le format attendu
+    expect(await refus(await zip({ "AB12/sous/config.json": config("AB12") }), 400, "CONFIG_ABSENT")).toContain("« AB12/sous/ »");
+    await refus(await zip({ "AB12/config.json": config("AB12"), "autre.txt": "x" }), 400, "CONFIG_ABSENT");
     await refus(await zip({ "config.json": "{ pas du json" }), 400, "CONFIG_ILLISIBLE");
     await refus(await zip({ "config.json": JSON.stringify({ event: {} }) }), 400, "CODE_ABSENT");
     expect(await refus(await zip({ "config.json": config("XY99") }), 400, "CODE_DIFFERENT")).toContain("XY99");

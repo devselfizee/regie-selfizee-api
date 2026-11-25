@@ -1,10 +1,10 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { Readable } from "node:stream";
 import { Prisma } from "@prisma/client";
 import JSZip from "jszip";
 import { HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
-import { deplacer, ecrireFlux, FichierTropGros, lireBuffer, supprimer } from "../lib/stockage.js";
+import { deplacer, ecrireBuffer, ecrireFlux, FichierTropGros, lireBuffer, supprimer } from "../lib/stockage.js";
 
 // Événement booth « sur mesure » (avenant de l'équipe borne du 24/11/2026). Pour un événement créé dans booth puis
 // retouché à la main (fonds, cadres, config.json), l'exploitant dépose le zip dans la Régie ; la Régie le sert aux
@@ -13,6 +13,8 @@ import { deplacer, ecrireFlux, FichierTropGros, lireBuffer, supprimer } from "..
 // Décisions du 24/11/2026 : un zip par code booth (tous ses créneaux, tous lieux), 100 Mo au plus, config.json à la
 // racine du zip. La version est le compteur des dépôts et ne redescend jamais : décocher « sur mesure » envoie
 // version 0 à la borne (elle reprend booth), recocher ressert le dernier zip avec son numéro.
+// Retour du 25/11 : un zip téléchargé de booth range tout dans un dossier au nom du code (« D229/config.json ») ; il est
+// accepté tel quel et remis à la racine au dépôt, pour que la borne reçoive toujours le format des zips de la Régie.
 
 /** Taille maximale d'un zip déposé (100 Mo) ; ZIP_BOOTH_MAX_OCTETS la change (tests). */
 export const maxZipBooth = () => Number(process.env.ZIP_BOOTH_MAX_OCTETS) || 100 * 1024 * 1024;
@@ -45,38 +47,72 @@ export async function zipBoothPourLieu(code: string, lieuId: number): Promise<Zi
   return z && versionServie(z) > 0 ? z : null;
 }
 
+/** Fichiers ajoutés par macOS (« Compresser ») : ignorés, et retirés d'un zip remis à la racine. */
+const ENTREE_SYSTEME = /(^|\/)(__MACOSX\/|\.DS_Store$)/;
+
+/** Le zip déposé, lu : son code d'événement, et le dossier unique qui le contient (zip de booth) ou null (racine). */
+export interface ZipLu {
+  code: string;
+  dossier: string | null;
+  archive: JSZip;
+}
+
 /**
- * Le code d'événement du config.json à la racine du zip (`event.code`, comme les config.json de booth et de la
- * Régie), en majuscules. Refus explicite (400) d'un fichier qui n'est pas un zip, sans config.json à la racine, ou
- * dont le config.json est illisible ou sans code : la borne le refuserait de toute façon.
+ * Lit le zip déposé : le code d'événement de son config.json (`event.code`, comme les config.json de booth et de la
+ * Régie), en majuscules. Le config.json est attendu à la racine, comme dans les zips de la Régie, ou dans un dossier
+ * unique qui contient tout, comme les zips téléchargés de booth (« D229/config.json ») : remettreALaRacine le remet
+ * alors à la racine. Refus explicite (400) d'un fichier qui n'est pas un zip, sans config.json à l'un de ces endroits,
+ * ou dont le config.json est illisible ou sans code : la borne le refuserait de toute façon.
  */
-export async function codeDuZip(zip: Buffer): Promise<string> {
+export async function lireZipDepose(zip: Buffer): Promise<ZipLu> {
   let archive: JSZip;
   try {
     archive = await JSZip.loadAsync(zip);
   } catch {
     throw new HttpError(400, "ZIP_ILLISIBLE", "Ce fichier n'est pas un zip lisible.");
   }
-  const config = archive.file("config.json");
+  let dossier: string | null = null;
+  let config = archive.file("config.json");
   if (!config) {
-    const ailleurs = archive.file(/(^|\/)config\.json$/i)[0];
-    throw new HttpError(
-      400,
-      "CONFIG_ABSENT",
-      ailleurs
-        ? `Le config.json est dans « ${ailleurs.name.replace(/config\.json$/i, "")} » : il doit être à la racine du zip (zipper le contenu du dossier, pas le dossier).`
-        : "Le zip ne contient pas de config.json à sa racine."
-    );
+    const entrees = Object.keys(archive.files).filter((n) => !ENTREE_SYSTEME.test(n));
+    const premiers = new Set(entrees.map((n) => n.split("/")[0]));
+    const [seul] = premiers;
+    const dansUnDossier = premiers.size === 1 && entrees.every((n) => n.startsWith(`${seul}/`)) ? archive.file(`${seul}/config.json`) : null;
+    if (!dansUnDossier) {
+      const ailleurs = archive.file(/(^|\/)config\.json$/i).find((f) => !ENTREE_SYSTEME.test(f.name));
+      throw new HttpError(
+        400,
+        "CONFIG_ABSENT",
+        ailleurs
+          ? `Le config.json est dans « ${ailleurs.name.replace(/config\.json$/i, "")} » : il doit être à la racine du zip, ou dans un seul dossier qui contient tout (comme les zips de booth).`
+          : "Le zip ne contient pas de config.json."
+      );
+    }
+    dossier = `${seul}/`;
+    config = dansUnDossier;
   }
   let contenu: unknown;
   try {
-    contenu = JSON.parse((await config.async("string")).replace(/^﻿/, ""));
+    // trimStart retire aussi l'indicateur d'ordre des octets (BOM) d'un fichier enregistré sous Windows
+    contenu = JSON.parse((await config.async("string")).trimStart());
   } catch {
     throw new HttpError(400, "CONFIG_ILLISIBLE", "Le config.json du zip n'est pas un JSON valide.");
   }
   const code = (contenu as { event?: { code?: unknown } } | null)?.event?.code;
   if (typeof code !== "string" || !code.trim()) throw new HttpError(400, "CODE_ABSENT", "Le config.json du zip ne porte pas de code d'événement (event.code).");
-  return code.trim().toUpperCase();
+  return { code: code.trim().toUpperCase(), dossier, archive };
+}
+
+/** Le zip refait avec le contenu du dossier à la racine (dossiers vides gardés, fichiers macOS retirés). */
+export async function remettreALaRacine(archive: JSZip, dossier: string): Promise<Buffer> {
+  const sortie = new JSZip();
+  for (const f of Object.values(archive.files)) {
+    if (ENTREE_SYSTEME.test(f.name) || !f.name.startsWith(dossier) || f.name === dossier) continue;
+    const nom = f.name.slice(dossier.length);
+    if (f.dir) sortie.folder(nom);
+    else sortie.file(nom, await f.async("nodebuffer"), { date: f.date });
+  }
+  return sortie.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
 export interface DepotZipBooth {
@@ -106,9 +142,16 @@ export async function deposerZipBooth(flux: Readable, d: DepotZipBooth): Promise
   }
   try {
     if (empreinte.taille === 0) throw new HttpError(400, "ZIP_VIDE", "Aucun fichier reçu.");
-    const code = await codeDuZip(await lireBuffer(attente));
+    const lu = await lireZipDepose(await lireBuffer(attente));
+    const code = lu.code;
     if (code !== d.code) {
       throw new HttpError(400, "CODE_DIFFERENT", `Le config.json de ce zip porte le code ${code}, pas ${d.code} : la borne le refuserait. Vérifiez le zip ou le code du créneau.`);
+    }
+    // Zip de booth (tout dans un dossier) : rangé avec son contenu à la racine, empreinte et taille recalculées
+    if (lu.dossier) {
+      const refait = await remettreALaRacine(lu.archive, lu.dossier);
+      await ecrireBuffer(attente, refait);
+      empreinte = { taille: refait.length, sha256: createHash("sha256").update(refait).digest("hex") };
     }
     const maintenant = new Date();
     const version = await prisma.$transaction(async (db) => {
