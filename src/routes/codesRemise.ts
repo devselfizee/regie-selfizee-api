@@ -306,6 +306,46 @@ codesRemiseRouter.post(
   })
 );
 
+// POST /api/codes-remise/lots/:id/modifier { quantite?, expireLe? } — corriger un lot déjà créé : impressions (ou utilisations
+// en %) par code, date de fin de validité (demande de Sébastien du 27/11/2026). Vaut pour tous les codes du lot ; jamais
+// moins que ce qu'un code a déjà consommé. Pas les lots des cartes à gratter, réglés par la page souvenir.
+codesRemiseRouter.post(
+  "/lots/:id/modifier",
+  requirePerm("codes_remise.edit"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const d = z
+      .object({ quantite: z.number().int().min(1).max(1_000_000).optional(), expireLe: z.iso.date().optional() })
+      .refine((v) => v.quantite !== undefined || v.expireLe !== undefined, "Rien à modifier")
+      .parse(req.body);
+    const lot = await prisma.lotCodesRemise.findUnique({ where: { id: Number(req.params.id) } });
+    if (!lot) throw new HttpError(404, "INTROUVABLE");
+    const [maxUtilise, cartes] = await Promise.all([
+      prisma.codeRemise.aggregate({ where: { lotId: lot.id }, _max: { utilise: true } }),
+      prisma.codeRemise.count({ where: { lotId: lot.id, carteSouvenir: { isNot: null } } }),
+    ]);
+    if (cartes) throw new HttpError(409, "LOT_CARTE", "Lot de la carte à gratter : il se règle dans la page souvenir.");
+    const dejaUtilise = maxUtilise._max.utilise ?? 0;
+    if (d.quantite !== undefined && d.quantite < dejaUtilise)
+      throw new HttpError(409, "QUANTITE_TROP_BASSE", `Un code du lot a déjà servi ${dejaUtilise} fois : pas moins de ${dejaUtilise}.`);
+    if (d.expireLe && new Date(`${d.expireLe}T00:00:00Z`) < aujourdhui()) throw new HttpError(400, "DATE_PASSEE", "La date de fin de validité est passée");
+    const maj = await prisma.lotCodesRemise.update({
+      where: { id: lot.id },
+      data: { ...(d.quantite !== undefined && { quantite: d.quantite }), ...(d.expireLe && { expireLe: new Date(`${d.expireLe}T00:00:00Z`) }) },
+    });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.utilisateur?.id ?? null,
+        entite: "lot_codes_remise",
+        entiteId: String(lot.id),
+        action: "MODIFICATION",
+        avant: { lieuId: lot.lieuId, quantite: lot.quantite, expireLe: lot.expireLe },
+        apres: { lieuId: lot.lieuId, quantite: maj.quantite, expireLe: maj.expireLe },
+      },
+    });
+    res.json({ id: maj.id, quantite: maj.quantite, expireLe: maj.expireLe });
+  })
+);
+
 // POST /api/codes-remise/:id/renommer { code } — donner un nom choisi (« ENZO ») à un code déjà créé (demande de Sébastien
 // du 27/11/2026). Seulement un code jamais utilisé et pas gagné à la carte à gratter : l'ancien nom n'a pas encore circulé
 // dans les ventes, et l'invité qui a gratté sa carte connaît le sien.
