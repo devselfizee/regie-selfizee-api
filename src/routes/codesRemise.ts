@@ -228,7 +228,6 @@ const corpsLot = z
     seulementLieu: z.boolean().default(false),
     expireLe: z.iso.date(),
   })
-  .refine((d) => d.type !== "OFFERT" || d.quantite <= 100, { message: "100 impressions offertes au plus par code", path: ["quantite"] })
   .refine((d) => d.type !== "POURCENTAGE" || d.pourcentage !== undefined, { message: "Pourcentage de remise attendu", path: ["pourcentage"] })
   .refine((d) => !d.seulementLieu || !!d.lieuId, { message: "Choisir le lieu pour un code valable dans ce lieu seulement", path: ["lieuId"] })
   .refine((d) => !d.code || d.nbCodes === 1, { message: "Un code choisi est unique : 1 code", path: ["nbCodes"] });
