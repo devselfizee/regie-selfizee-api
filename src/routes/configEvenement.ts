@@ -157,14 +157,14 @@ configEvenementRouter.get(
       liste
         .map((e) => {
           const r = avecGrilleDuLieu(reglagesSchema.parse(e.reglages), grille);
-          const { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents } = r.tarifs;
+          const { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents, numeriqueCents } = r.tarifs;
           return {
             id: e.id, nom: e.nom, code: e.code, dateDebut: r.lieu.dateDebut, dateFin: r.lieu.dateFin,
             heureDebut: r.lieu.heureDebut, heureFin: r.lieu.heureFin,
             // Reprend les tarifs du lieu (chaîne d'héritage de l'onglet Configuration)
             tarifsHerites: r.tarifs.herite,
             // Tarifs pratiqués par l'événement (ceux du lieu s'il en hérite), affichés dans la liste
-            tarifs: { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents },
+            tarifs: { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents, numeriqueCents },
             version: e.version, publieeLe: e.publieeLe, modifieDepuisPublication: e.publieeLe === null || e.updatedAt > e.publieeLe,
           };
         })

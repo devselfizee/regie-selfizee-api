@@ -229,6 +229,6 @@ export function genererMotDePasse(tirer: (n: number) => number = randomInt): str
 /** Réglages tels que la borne les recevra : la grille du lieu remplace celle de l'événement s'il en hérite. */
 export function avecGrilleDuLieu(r: Reglages, grilleLieu: Grille): Reglages {
   if (!r.tarifs.herite) return r;
-  const { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents } = grilleLieu;
-  return { ...r, tarifs: { ...r.tarifs, paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents } };
+  const { paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents, numeriqueCents } = grilleLieu;
+  return { ...r, tarifs: { ...r.tarifs, paliers, palierMisEnAvant, libelleMisEnAvant, plusUnCents, numeriqueCents } };
 }

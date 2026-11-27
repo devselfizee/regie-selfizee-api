@@ -12,6 +12,9 @@ export const grilleSchema = z.object({
   libelleMisEnAvant: z.string().trim().max(200).default("Le plus populaire"),
   // « +1 pour un pote » pendant l'impression ; 0 = question masquée
   plusUnCents: z.number().int().min(0).max(100_00),
+  // Version numérique seule (imprimante indisponible, « Sur ton tél ») ; 1,50 € comme la borne jusqu'ici pour les
+  // grilles enregistrées avant (demande de Sébastien du 27/11/2026)
+  numeriqueCents: z.number().int().min(0).max(100_00).default(150),
 });
 export type Grille = z.infer<typeof grilleSchema>;
 
@@ -25,6 +28,7 @@ export const GRILLE_DEFAUT: Grille = {
   palierMisEnAvant: 2,
   libelleMisEnAvant: "Le plus populaire",
   plusUnCents: 200,
+  numeriqueCents: 150,
 };
 
 /** Erreurs bloquantes d'une grille (paliers croissants et dégressifs). */

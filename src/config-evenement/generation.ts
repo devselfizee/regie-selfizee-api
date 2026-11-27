@@ -153,6 +153,8 @@ export function genererConfig({ code, motDePasseTableau, reglages: r, horaires, 
         tiers: paliers.map((p) => ({ from: p.de, unitPrice: euros(p.prixCents) })),
       },
       upsellExtraPrintPrice: euros(t.plusUnCents),
+      // Version numérique seule (écran « Imprimante indisponible »). Nom de réglage à confirmer par l'équipe de la borne.
+      digitalPrice: euros(t.numeriqueCents),
       allowPromoCode: t.codesPromo,
       webReprint: t.reimpressionWeb,
       attractShoot: t.photoAppel.actif,
