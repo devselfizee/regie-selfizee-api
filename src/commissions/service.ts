@@ -28,21 +28,44 @@ const ymd = (d: Date) => d.toISOString().slice(0, 10);
 const aujourdhui = () => jourEtHeureLocaux(new Date()).jour;
 const veille = (d: Date) => new Date(d.getTime() - 86_400_000);
 
-/** Ventes agrégées d'un lieu entre deux jours inclus (heure de Paris). */
-export async function ventesDuLieu(lieuId: number, du: Date, au: Date): Promise<VentesPeriode & { nbVentes: number }> {
-  const [r] = await prisma.$queryRaw<Record<string, unknown>[]>`
-    SELECT coalesce(sum(ca_ttc_cents), 0)::float8 ca_ttc, coalesce(sum(ca_ht_cents), 0)::float8 ca_ht,
-           coalesce(sum(rembourse_ttc_cents), 0)::float8 remb_ttc, coalesce(sum(rembourse_ht_cents), 0)::float8 remb_ht,
-           coalesce(sum(nb_acceptees), 0)::float8 nb
-    FROM agg_jour WHERE lieu_id = ${lieuId} AND jour BETWEEN ${ymd(du)}::date AND ${ymd(au)}::date`;
+export interface PrivatisationsPeriode {
+  nb: number;
+  ttcCents: number;
+  htCents: number;
+}
+
+/**
+ * Ventes d'un lieu entre deux jours inclus (heure de Paris) : ventes d'impression agrégées, plus les privatisations
+ * commencées dans la période (comptées en entier le jour du début, comme dans les statistiques). Les privatisations
+ * entrent dans la base des commissions (réponse de Sébastien du 28/11/2026).
+ */
+export async function ventesDuLieu(
+  lieuId: number,
+  du: Date,
+  au: Date
+): Promise<VentesPeriode & { nbVentes: number; privatisations: PrivatisationsPeriode }> {
+  const [[r], [pv]] = await Promise.all([
+    prisma.$queryRaw<Record<string, unknown>[]>`
+      SELECT coalesce(sum(ca_ttc_cents), 0)::float8 ca_ttc, coalesce(sum(ca_ht_cents), 0)::float8 ca_ht,
+             coalesce(sum(rembourse_ttc_cents), 0)::float8 remb_ttc, coalesce(sum(rembourse_ht_cents), 0)::float8 remb_ht,
+             coalesce(sum(nb_acceptees), 0)::float8 nb
+      FROM agg_jour WHERE lieu_id = ${lieuId} AND jour BETWEEN ${ymd(du)}::date AND ${ymd(au)}::date`,
+    prisma.$queryRaw<Record<string, unknown>[]>`
+      SELECT count(*)::float8 nb, coalesce(sum(montant_ttc_cents), 0)::float8 ttc, coalesce(sum(montant_ht_cents), 0)::float8 ht
+      FROM privatisations WHERE lieu_id = ${lieuId} AND debut BETWEEN ${ymd(du)}::date AND ${ymd(au)}::date`,
+  ]);
+  const privatisations = { nb: Number(pv.nb), ttcCents: Number(pv.ttc), htCents: Number(pv.ht) };
   return {
-    caTtcCents: Number(r.ca_ttc),
-    caHtCents: Number(r.ca_ht),
+    caTtcCents: Number(r.ca_ttc) + privatisations.ttcCents,
+    caHtCents: Number(r.ca_ht) + privatisations.htCents,
     rembourseTtcCents: Number(r.remb_ttc),
     rembourseHtCents: Number(r.remb_ht),
     nbVentes: Number(r.nb),
+    privatisations,
   };
 }
+
+const euros = (c: number) => `${(c / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
 /** Calcule une période d'un contrat (avec le cumul si le seuil est cumulé). */
 export async function calculer(c: ContratAvecPaliers, p: Periode) {
@@ -53,6 +76,14 @@ export async function calculer(c: ContratAvecPaliers, p: Periode) {
   const cumulAvant =
     estCumule(regle) && p.debut > c.dateEffet ? baseDeCalcul(regle, await ventesDuLieu(c.lieuId, c.dateEffet, veille(p.debut))) : 0;
   const resultat = calculerPeriode(regle, ventes, cumulAvant);
+  // Le détail du relevé dit ce que les privatisations ajoutent au CA de la période
+  if (ventes.privatisations.nb) {
+    const pv = ventes.privatisations;
+    resultat.lignes.unshift({
+      libelle: `CA de la période dont ${pv.nb} privatisation${pv.nb > 1 ? "s" : ""} : ${euros(regle.base === "HT" ? pv.htCents : pv.ttcCents)} ${regle.base === "HT" ? "HT" : "TTC"}`,
+      montantCents: 0,
+    });
+  }
   const auProrataUtile = part < 1 && (regle.forfaitCents || regle.minimumGarantiCents || (!estCumule(regle) && (regle.seuilCents || regle.paliers.length)));
   if (auProrataUtile) {
     resultat.lignes.unshift({
@@ -112,6 +143,7 @@ export async function calculerReversements(options: { lieuId?: number; jusquA?: 
           contrat: decrireContrat(regleDe(c)),
           versionContrat: c.version,
           nbVentes: ventes.nbVentes,
+          privatisations: ventes.privatisations,
           cumulAvantCents: resultat.cumulAvantCents,
           minimumApplique: resultat.minimumApplique,
           lignes: resultat.lignes,
