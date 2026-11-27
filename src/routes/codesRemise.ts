@@ -222,7 +222,8 @@ const corpsLot = z
     libelle: z.string().trim().max(120).optional(),
     type: z.enum(["OFFERT", "POURCENTAGE"]),
     // Impressions offertes par code, ou nombre d’utilisations d’un code en % (remise sur toute la commande)
-    quantite: z.number().int().min(1).max(1000),
+    // Pas de limite pratique (demande de Sébastien du 27/11/2026) : le plafond protège seulement la colonne entière
+    quantite: z.number().int().min(1).max(1_000_000),
     pourcentage: z.number().int().min(1).max(99).optional(),
     lieuId: z.number().int().nullable().optional(),
     seulementLieu: z.boolean().default(false),
