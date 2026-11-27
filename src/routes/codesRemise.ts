@@ -306,6 +306,40 @@ codesRemiseRouter.post(
   })
 );
 
+// POST /api/codes-remise/:id/renommer { code } — donner un nom choisi (« ENZO ») à un code déjà créé (demande de Sébastien
+// du 27/11/2026). Seulement un code jamais utilisé et pas gagné à la carte à gratter : l'ancien nom n'a pas encore circulé
+// dans les ventes, et l'invité qui a gratté sa carte connaît le sien.
+codesRemiseRouter.post(
+  "/:id/renommer",
+  requirePerm("codes_remise.edit"),
+  asynchrone<UtilisateurRequest>(async (req, res) => {
+    const { code } = z
+      .object({
+        code: z
+          .string()
+          .transform(normaliserCode)
+          .refine((c) => CODE_CHOISI.test(c), "Code : 3 à 20 lettres ou chiffres, sans accent ni espace"),
+      })
+      .parse(req.body);
+    const c = await prisma.codeRemise.findUnique({
+      where: { id: Number(req.params.id) },
+      select: { id: true, code: true, utilise: true, carteSouvenir: { select: { id: true } }, _count: { select: { utilisations: true } } },
+    });
+    if (!c) throw new HttpError(404, "INTROUVABLE");
+    if (c.code === code) return res.json({ id: c.id, code });
+    if (c.utilise > 0 || c._count.utilisations > 0)
+      throw new HttpError(409, "CODE_UTILISE", `Le code ${c.code} a déjà servi : il garde son nom pour l'historique. Créez plutôt un code ${code}.`);
+    if (c.carteSouvenir) throw new HttpError(409, "CODE_CARTE", "Code gagné à la carte à gratter : l'invité le connaît, il garde son nom.");
+    if (await prisma.codeRemise.findUnique({ where: { code }, select: { id: true } }))
+      throw new HttpError(409, "CODE_PRIS", `Le code ${code} existe déjà`);
+    await prisma.codeRemise.update({ where: { id: c.id }, data: { code } });
+    await prisma.auditLog.create({
+      data: { userId: req.utilisateur?.id ?? null, entite: "code_remise", entiteId: String(c.id), action: "RENOMMAGE", avant: { code: c.code }, apres: { code } },
+    });
+    res.json({ id: c.id, code });
+  })
+);
+
 // POST /api/codes-remise/:id/desactiver { actif: false | true } — retirer un code (perdu, diffusé par erreur) ou le remettre
 codesRemiseRouter.post(
   "/:id/desactiver",
