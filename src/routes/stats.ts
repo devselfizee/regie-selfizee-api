@@ -12,6 +12,7 @@ import { apercusCadres, entonnoir, parcoursParTranche, photosPrisesParcours } fr
 import { userCan } from "../middleware/permissions.js";
 import { apercusSeances } from "../lib/apercusMedias.js";
 import { urlPhoto } from "../lib/photos.js";
+import { privatisationsParLieu, seriePrivatisations, totauxPrivatisations } from "../stats/privatisations.js";
 
 /** Filtres de la requête, restreints au périmètre de l'utilisateur (ses lieux pour un commercial). */
 export function filtresAutorises(req: UtilisateurRequest): Filtres {
@@ -72,6 +73,7 @@ async function activite(f: Filtres) {
 
 async function kpis(f: Filtres) {
   const photo = activite(f);
+  const privatisations = totauxPrivatisations(f);
   // Ventes des cartes de test : hors chiffres, montrées à part
   const tests = prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT count(*) FILTER (WHERE ${VENDUE}) nb, coalesce(sum(a.montant_ttc_cents) FILTER (WHERE ${VENDUE}), 0) ca
@@ -89,6 +91,7 @@ async function kpis(f: Filtres) {
   const refus = n(r.refus);
   const a = await photo;
   const [t] = await tests;
+  const priv = await privatisations;
   return {
     ...a,
     // Panier moyen par photo achetée (séance payée, « +1 pour un pote » compris)
@@ -111,17 +114,34 @@ async function kpis(f: Filtres) {
     caIncertainTtcCents: n(r.ca_incertain),
     lieuxAvecVentes: n(r.lieux_actifs),
     tests: { nbVentes: n(t.nb), caTtcCents: n(t.ca) },
+    // caTtcCents / caHtCents : ventes d'impression seules (bornes). Privatisations à part, et total des deux
+    privatisations: priv,
+    caTotalTtcCents: n(r.ca_ttc) + priv.caTtcCents,
+    caTotalHtCents: n(r.ca_ht) + priv.caHtCents,
   };
 }
 
 async function serie(f: Filtres, gran: keyof typeof GRANULARITES, decalageAns = 0) {
+  const privatisations = seriePrivatisations(f, GRANULARITES[gran], decalageAns);
   const rows = await prisma.$queryRaw<{ periode: Date; ca: unknown; ca_ht: unknown; nb: unknown }[]>`
     SELECT (date_trunc(${GRANULARITES[gran]}, a.jour::timestamp) + make_interval(years => ${decalageAns}::int))::date periode,
            sum(a.ca_ttc_cents) ca, sum(a.ca_ht_cents) ca_ht, sum(a.nb_acceptees) nb
     ${FROM_AGG}
     WHERE ${et([...conditionsVentes(f), ...conditionsLieu(f)])}
     GROUP BY 1 ORDER BY 1`;
-  return rows.map((r) => ({ periode: ymd(r.periode), caTtcCents: n(r.ca), caHtCents: n(r.ca_ht), nbVentes: n(r.nb) }));
+  const priv = await privatisations;
+  const points = new Map(rows.map((r) => [ymd(r.periode), { caTtcCents: n(r.ca), caHtCents: n(r.ca_ht), nbVentes: n(r.nb) }]));
+  for (const cle of priv.keys()) if (!points.has(cle)) points.set(cle, { caTtcCents: 0, caHtCents: 0, nbVentes: 0 });
+  return [...points.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([periode, v]) => {
+      const p = priv.get(periode);
+      return {
+        periode,
+        ...v,
+        ...(p ? { privatisationTtcCents: p.caTtcCents, privatisationHtCents: p.caHtCents, nbPrivatisations: p.nb } : {}),
+      };
+    });
 }
 
 async function comparaisons(f: Filtres) {
@@ -137,6 +157,7 @@ const debutParis = (d: Date) => Prisma.sql`(${ymd(d)}::date::timestamp AT TIME Z
 const finParis = (d: Date) => Prisma.sql`((${ymd(d)}::date + 1)::timestamp AT TIME ZONE 'Europe/Paris')`;
 
 export async function classement(f: Filtres) {
+  const privatisations = privatisationsParLieu(f);
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     WITH ventes AS (
       SELECT a.lieu_id, sum(a.ca_ttc_cents) ca, sum(a.ca_ht_cents) ca_ht, sum(a.nb_acceptees) nb,
@@ -152,17 +173,29 @@ export async function classement(f: Filtres) {
     LEFT JOIN ventes v ON v.lieu_id = l.id
     WHERE l.statut = 'ACTIF' AND ${et(conditionsLieu(f))}
     ORDER BY ca DESC, l.enseigne`;
-  return rows.map((r) => ({
-    lieuId: n(r.id),
-    enseigne: r.enseigne as string,
-    ville: r.ville as string | null,
-    typeLieu: r.type_lieu as string,
-    caTtcCents: n(r.ca),
-    caHtCents: n(r.ca_ht),
-    nbVentes: n(r.nb),
-    joursAvecVente: n(r.jours),
-    caParJourVenteCents: n(r.jours) ? Math.round(n(r.ca) / n(r.jours)) : 0,
-  }));
+  const priv = await privatisations;
+  return rows
+    .map((r) => {
+      const p = priv.get(n(r.id));
+      return {
+        lieuId: n(r.id),
+        enseigne: r.enseigne as string,
+        ville: r.ville as string | null,
+        typeLieu: r.type_lieu as string,
+        caTtcCents: n(r.ca),
+        caHtCents: n(r.ca_ht),
+        nbVentes: n(r.nb),
+        joursAvecVente: n(r.jours),
+        caParJourVenteCents: n(r.jours) ? Math.round(n(r.ca) / n(r.jours)) : 0,
+        // Privatisations du lieu sur la période (hors CA par jour de vente)
+        privatisationTtcCents: p?.caTtcCents ?? 0,
+        privatisationHtCents: p?.caHtCents ?? 0,
+        nbPrivatisations: p?.nb ?? 0,
+        caTotalTtcCents: n(r.ca) + (p?.caTtcCents ?? 0),
+        caTotalHtCents: n(r.ca_ht) + (p?.caHtCents ?? 0),
+      };
+    })
+    .sort((a, b) => b.caTotalTtcCents - a.caTotalTtcCents || a.enseigne.localeCompare(b.enseigne));
 }
 
 async function parc(f: Filtres) {

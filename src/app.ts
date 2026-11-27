@@ -26,6 +26,7 @@ import { ventesRouter } from "./routes/ventes.js";
 import { cartesTestRouter } from "./routes/cartesTest.js";
 import { codesRemiseRouter } from "./routes/codesRemise.js";
 import { cartesLieuRouter } from "./routes/cartesLieu.js";
+import { privatisationsRouter } from "./routes/privatisations.js";
 import { supervisionRouter } from "./routes/supervision.js";
 import { calendrierMarketingRouter } from "./routes/calendrierMarketing.js";
 import { concurrentsRouter } from "./routes/concurrents.js";
@@ -209,6 +210,7 @@ export function creerApp() {
   app.use("/api/cartes-test", requirePerm("cartes_test.edit"), cartesTestRouter);
   app.use("/api/codes-remise", requirePerm("codes_remise.view"), codesRemiseRouter);
   app.use("/api/cartes-lieu", requirePerm("cartes_lieu.view"), cartesLieuRouter);
+  app.use("/api/privatisations", requirePerm("ventes.view"), privatisationsRouter);
   app.use("/api/supervision", requirePerm("supervision.view"), supervisionRouter);
   app.use("/api/calendrier-marketing", calendrierMarketingRouter);
   app.use("/api/concurrents", requirePerm("prospects.view"), concurrentsRouter);

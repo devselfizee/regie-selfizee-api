@@ -59,6 +59,7 @@ const GROUPES: Groupe[] = [
       { key: "ventes.view", label: "Voir le chiffre d'affaires et les statistiques", description: "Tableau de bord, analyse, comportements, onglets Statistiques et Comportement d'un lieu." },
       { key: "ventes.marges_view", label: "Voir les marges et les commissions dans les statistiques" },
       { key: "ventes.export", label: "Exporter les chiffres (Excel, PDF)" },
+      { key: "privatisations.edit", label: "Ajouter et modifier les privatisations d'un lieu", description: "Forfait vendu (ou offert) au lieu pour un événement en gratuit ; compte dans son chiffre d'affaires." },
     ],
   },
   {
@@ -170,7 +171,7 @@ const GROUPES: Groupe[] = [
 ];
 
 export function buildPermissionsSchema() {
-  return { app: APP_KEY, label: "Régie Selfizee", version: 6, groups: GROUPES };
+  return { app: APP_KEY, label: "Régie Selfizee", version: 7, groups: GROUPES };
 }
 
 /** Toutes les clés du schéma (contrôle des fautes de frappe dans les tests) */

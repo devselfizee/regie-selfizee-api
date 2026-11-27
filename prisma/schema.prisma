@@ -73,6 +73,7 @@ model User {
   evenementsLieu  EvenementLieu[]  @relation("EvenementsLieuAuteur")
   evenementsBooth EvenementBooth[] @relation("EvenementBoothCreePar")
   zipsBooth       ZipBooth[]       @relation("ZipBoothDeposePar")
+  privatisations  Privatisation[]  @relation("PrivatisationsAuteur")
   modelesMail     ModeleMail[]
 
   @@unique([compte, email])
@@ -322,6 +323,7 @@ model Lieu {
   lotsCodesRemise        LotCodesRemise[]
   utilisationsCodeRemise UtilisationCodeRemise[]
   cartesLieu             CarteLieu[]
+  privatisations         Privatisation[]
   utilisationsCarteLieu  UtilisationCarteLieu[]
   grilleTarifs           GrilleTarifs?
   medias                 Media[]
@@ -2057,6 +2059,37 @@ model MouvementCarteLieu {
 // événements (statut, URL signée, reprise). Une ligne par code booth, partagée par tous ses créneaux, sur tous les
 // lieux. Programme de la borne : `version` si `actif`, sinon 0 (la borne reprend la version de booth). L'événement
 // reste un événement booth pour tout le reste (galerie, médias, codes promo).
+// Privatisation d'un lieu (demande de Sébastien du 26/11/2026) : la borne passe en gratuit pour un événement (créé
+// dans l'appli en gratuit), et le lieu paie un forfait, ou on l'offre. Compte dans le CA du lieu, à part des ventes
+// d'impression, en entier le premier jour (pas réparti sur la période : sinon des chiffres par jour trompeurs).
+// Montant saisi HT ; TTC calculé avec le taux de TVA de la privatisation (20 % aujourd'hui, d'autres pays plus tard).
+// Pas de suivi du paiement (fait dans le CRM).
+model Privatisation {
+  id              Int      @id @default(autoincrement())
+  lieuId          Int      @map("lieu_id")
+  libelle         String   @db.VarChar(200)
+  debut           DateTime @db.Date
+  fin             DateTime @db.Date
+  // Offerte : montants à 0, gardée pour l'historique du lieu
+  offerte         Boolean  @default(false)
+  montantHtCents  Int      @map("montant_ht_cents")
+  // Taux de TVA en points de base : 2000 = 20 %
+  tauxTvaBp       Int      @default(2000) @map("taux_tva_bp")
+  montantTtcCents Int      @map("montant_ttc_cents")
+  papierInclus    Boolean  @default(true) @map("papier_inclus")
+  note            String?
+  creeParId       Int?     @map("cree_par_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lieu    Lieu  @relation(fields: [lieuId], references: [id], onDelete: Cascade)
+  creePar User? @relation("PrivatisationsAuteur", fields: [creeParId], references: [id], onDelete: SetNull)
+
+  @@index([lieuId, debut])
+  @@index([debut])
+  @@map("privatisations")
+}
+
 model ZipBooth {
   id          Int       @id @default(autoincrement())
   code        String    @unique @db.VarChar(8)
