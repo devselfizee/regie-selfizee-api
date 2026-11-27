@@ -6,7 +6,7 @@ import { asynchrone, HttpError } from "../lib/http.js";
 import { jourEtHeureLocaux } from "../lib/temps.js";
 import { envoyerClasseur, type Colonne } from "../lib/excel.js";
 import type { UtilisateurRequest } from "../middleware/utilisateur.js";
-import { creerCodes, libelleRemise, utilisationDeVente, ventesDuCode } from "../codes/codes.js";
+import { CODE_CHOISI, creerCodes, libelleRemise, normaliserCode, utilisationDeVente, ventesDuCode } from "../codes/codes.js";
 import { requirePerm } from "../middleware/permissions.js";
 
 // Codes de remise (demande de Sébastien, 02/11/2026) : génération par lots, liste, détail des utilisations, export.
@@ -213,6 +213,12 @@ codesRemiseRouter.get(
 const corpsLot = z
   .object({
     nbCodes: z.number().int().min(1).max(1000),
+    // Code au nom choisi (« ENZO ») : un seul code, à la place des codes tirés au hasard
+    code: z
+      .string()
+      .transform(normaliserCode)
+      .refine((c) => CODE_CHOISI.test(c), "Code : 3 à 20 lettres ou chiffres, sans accent ni espace")
+      .optional(),
     libelle: z.string().trim().max(120).optional(),
     type: z.enum(["OFFERT", "POURCENTAGE"]),
     // Impressions offertes par code, ou nombre d’utilisations d’un code en % (remise sur toute la commande)
@@ -224,7 +230,8 @@ const corpsLot = z
   })
   .refine((d) => d.type !== "OFFERT" || d.quantite <= 100, { message: "100 impressions offertes au plus par code", path: ["quantite"] })
   .refine((d) => d.type !== "POURCENTAGE" || d.pourcentage !== undefined, { message: "Pourcentage de remise attendu", path: ["pourcentage"] })
-  .refine((d) => !d.seulementLieu || !!d.lieuId, { message: "Choisir le lieu pour un code valable dans ce lieu seulement", path: ["lieuId"] });
+  .refine((d) => !d.seulementLieu || !!d.lieuId, { message: "Choisir le lieu pour un code valable dans ce lieu seulement", path: ["lieuId"] })
+  .refine((d) => !d.code || d.nbCodes === 1, { message: "Un code choisi est unique : 1 code", path: ["nbCodes"] });
 
 // POST /api/codes-remise/lots — génère un lot de codes (1 à 1000) aux mêmes conditions
 codesRemiseRouter.post(
@@ -233,6 +240,8 @@ codesRemiseRouter.post(
   asynchrone<UtilisateurRequest>(async (req, res) => {
     const d = corpsLot.parse(req.body);
     if (new Date(`${d.expireLe}T00:00:00Z`) < aujourdhui()) throw new HttpError(400, "DATE_PASSEE", "La date de fin de validité est passée");
+    if (d.code && (await prisma.codeRemise.findUnique({ where: { code: d.code }, select: { id: true } })))
+      throw new HttpError(409, "CODE_PRIS", `Le code ${d.code} existe déjà`);
     const lot = await prisma.lotCodesRemise.create({
       data: {
         libelle: d.libelle || null,
@@ -246,7 +255,7 @@ codesRemiseRouter.post(
         creeParId: req.utilisateur?.id ?? null,
       },
     });
-    const crees = await creerCodes(lot.id, d.nbCodes);
+    const crees = d.code ? (await prisma.codeRemise.create({ data: { code: d.code, lotId: lot.id } }), 1) : await creerCodes(lot.id, d.nbCodes);
     await prisma.auditLog.create({ data: { userId: req.utilisateur?.id ?? null, entite: "lot_codes_remise", entiteId: String(lot.id), action: "CREATION", apres: d } });
     res.status(201).json({ lotId: lot.id, codesCrees: crees });
   })

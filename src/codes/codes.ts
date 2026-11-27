@@ -19,6 +19,9 @@ export function genererCode(tirer: (n: number) => number = randomInt): string {
 /** Code tapé sur la borne : majuscules, sans espaces ni tirets */
 export const normaliserCode = (saisi: string) => saisi.toUpperCase().replace(/[\s-]/g, "");
 
+/** Code choisi à la main (« ENZO ») : 3 à 20 lettres ou chiffres une fois normalisé, la borne en accepte 20 */
+export const CODE_CHOISI = /^[A-Z0-9]{3,20}$/;
+
 export type RaisonRefus = "INCONNU" | "DESACTIVE" | "EXPIRE" | "EPUISE" | "AUTRE_LIEU";
 
 export const MESSAGES_REFUS: Record<RaisonRefus, string> = {

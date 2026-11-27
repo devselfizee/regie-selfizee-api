@@ -1472,8 +1472,9 @@ model LotCodesRemise {
 
 model CodeRemise {
   id          Int       @id @default(autoincrement())
-  // 5 caractères, chiffres et lettres sans les ambigus (0/O, 1/I/L)
-  code        String    @unique @db.Char(5)
+  // Généré : 5 caractères, chiffres et lettres sans les ambigus (0/O, 1/I/L). Choisi (« ENZO ») : 3 à 20 lettres ou
+  // chiffres, en majuscules (demande de Sébastien du 27/11/2026)
+  code        String    @unique @db.VarChar(20)
   lotId       Int       @map("lot_id")
   // Impressions déjà accordées (≤ quantite du lot)
   utilise     Int       @default(0)
